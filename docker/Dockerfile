@@ -1,20 +1,19 @@
-ARG BASE_IMAGE=noaaepic/ufschem-spack-base:latest
+ARG BASE_IMAGE=noaaepic/ufschem-spack-base-ubuntu-gcc-13-dev:latest
 FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 
-COPY . /opt/catchem/src
+COPY . /opt/cece/src
 
 RUN source /opt/ufschem/spack-stack/setup.sh && \
     spack env activate ufschem && \
-    cd /opt/catchem/src && \
+    cd /opt/cece/src && \
     mkdir build && \
     cd build && \
     cmake .. \
-      -DCATCHEM_BUILD_TESTING=ON \
-      -DCATCHEM_BUILD_NUOPC=ON \
-      -DBUILD_MUSICA=ON \
-      -DCMAKE_INSTALL_PREFIX=/opt/catchem/install \
+      -DKokkos_ENABLE_OPENMP=ON \
+      -DBUILD_PYTHON_BINDINGS=ON \
+      -DCMAKE_INSTALL_PREFIX=/opt/cece/install \
       -DCMAKE_BUILD_TYPE=Debug && \
     make -j$(nproc) && \
     make install && \
