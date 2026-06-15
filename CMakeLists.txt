@@ -392,7 +392,7 @@ if(Python3_Interpreter_FOUND)
     )
   endif()
 
-  add_test(NAME create_python_venv COMMAND ${Python3_EXECUTABLE} -m venv ${CECE_PYTHON_VENV_DIR})
+  add_test(NAME create_python_venv COMMAND ${Python3_EXECUTABLE} -I -m venv --without-pip ${CECE_PYTHON_VENV_DIR})
   add_test(
     NAME ensure_pip_in_venv
     COMMAND ${VENV_PYTHON} -I -m ensurepip --upgrade
@@ -403,12 +403,16 @@ if(Python3_Interpreter_FOUND)
   )
   set_tests_properties(
     create_python_venv
+    PROPERTIES FIXTURES_SETUP "python_venv_created"
+  )
+  set_tests_properties(
     ensure_pip_in_venv
     upgrade_pip_in_venv
     PROPERTIES FIXTURES_SETUP "python_venv_ready" ENVIRONMENT "${CECE_PIP_TEST_ENV}"
   )
   set_tests_properties(ensure_pip_in_venv PROPERTIES DEPENDS create_python_venv)
   set_tests_properties(upgrade_pip_in_venv PROPERTIES DEPENDS ensure_pip_in_venv)
+  set_tests_properties(ensure_pip_in_venv PROPERTIES FIXTURES_REQUIRED "python_venv_created")
 
   add_test(
     NAME install_python_deps
