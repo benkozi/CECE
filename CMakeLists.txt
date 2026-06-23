@@ -342,6 +342,9 @@ target_link_libraries(test_vertical_distribution_single PRIVATE cece GTest::gtes
 add_executable(test_field_resolution_priority tests/test_field_resolution_priority.cpp)
 target_link_libraries(test_field_resolution_priority PRIVATE cece GTest::gtest_main)
 
+add_executable(test_integration_harness tests/test_integration_harness.cpp)
+target_link_libraries(test_integration_harness PRIVATE cece GTest::gtest)
+
 if(CECE_HAS_FORTRAN)
   add_library(test_helpers STATIC tests/test_helpers.F90)
   target_include_directories(test_helpers PUBLIC ${ESMF_INCLUDE_DIRS})
