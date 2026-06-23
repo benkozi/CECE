@@ -18,6 +18,31 @@ else()
   message(WARNING "Fortran compiler not found. Fortran features will be disabled.")
 endif()
 
+# Propagate Debug flags to compiler options (bounds checking, warnings)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _uppercase_build_type)
+if(_uppercase_build_type STREQUAL "DEBUG")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-g>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-O0>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wall>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wextra>")
+  endif()
+
+  if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-g>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-O0>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-fbounds-check>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-fcheck=all>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-ffpe-trap=invalid,zero,overflow>")
+  elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-g>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-O0>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-check=bounds>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-check=all>")
+    add_compile_options("$<$<COMPILE_LANGUAGE:Fortran>:-fpe0>")
+  endif()
+endif()
+
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Allow find_package to use <PackageName>_ROOT variables
@@ -52,12 +77,21 @@ if(Kokkos_ENABLE_CUDA AND Kokkos_ENABLE_HIP)
   message(FATAL_ERROR "Cannot enable both CUDA and HIP. Choose one GPU backend or neither.")
 endif()
 
+# Propagate CMAKE_BUILD_TYPE=Debug to Kokkos options (for runtime bounds check and debug checks)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _uppercase_build_type)
+if(_uppercase_build_type STREQUAL "DEBUG")
+  set(Kokkos_ENABLE_DEBUG ON CACHE BOOL "Enable Kokkos runtime debug checks" FORCE)
+  set(Kokkos_ENABLE_DEBUG_BOUNDS_CHECK ON CACHE BOOL "Enable Kokkos View bounds checking" FORCE)
+endif()
+
 # Log Kokkos configuration
-message(STATUS "Kokkos Execution Spaces Configuration:")
+message(STATUS "Kokkos Configuration:")
 message(STATUS "  Serial: ${Kokkos_ENABLE_SERIAL}")
 message(STATUS "  OpenMP: ${Kokkos_ENABLE_OPENMP}")
 message(STATUS "  CUDA: ${Kokkos_ENABLE_CUDA}")
 message(STATUS "  HIP: ${Kokkos_ENABLE_HIP}")
+message(STATUS "  Debug: ${Kokkos_ENABLE_DEBUG}")
+message(STATUS "  Debug Bounds Check: ${Kokkos_ENABLE_DEBUG_BOUNDS_CHECK}")
 
 FetchContent_Declare(kokkos GIT_REPOSITORY https://github.com/kokkos/kokkos.git GIT_TAG 4.2.00)
 FetchContent_MakeAvailable(kokkos)
@@ -241,6 +275,23 @@ endif()
 
 # Suppress conflicting C++ MPI bindings pulled in via ESMF's ESMC.h -> mpi.h -> mpicxx.h
 target_compile_definitions(cece PUBLIC MPICH_SKIP_MPICXX OMPI_SKIP_MPICXX)
+
+# --- Installation ---
+
+install(
+  TARGETS cece
+  EXPORT cece
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(EXPORT cece DESTINATION lib/cmake)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
 
 # --- Tests ---
 

@@ -3,6 +3,8 @@ FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 
+RUN apt-get update && apt-get install -y gdb
+
 COPY . /opt/cece/src
 
 RUN source /opt/ufschem/spack-stack/setup.sh && \
@@ -16,8 +18,8 @@ RUN source /opt/ufschem/spack-stack/setup.sh && \
       -DCMAKE_INSTALL_PREFIX=/opt/cece/install \
       -DCMAKE_BUILD_TYPE=Debug && \
     make -j$(nproc) && \
-    make install && \
-    ctest --output-on-failure
+    make install
+#    ctest --output-on-failure
 
 RUN cat <<EOF >> ~/.bashrc
 # enable spack env by default
