@@ -235,6 +235,52 @@ private:
     std::shared_ptr<DataRetriever> retriever_;
 };
 
+#include <netcdf.h>
+
+bool ReadNetCDFVariable(const std::string& filepath, const std::string& varname, std::vector<double>& out_data) {
+    int ncid;
+    if (nc_open(filepath.c_str(), NC_NOWRITE, &ncid) != NC_NOERR) {
+        return false;
+    }
+
+    int varid;
+    if (nc_inq_varid(ncid, varname.c_str(), &varid) != NC_NOERR) {
+        nc_close(ncid);
+        return false;
+    }
+
+    int ndims;
+    if (nc_inq_varndims(ncid, varid, &ndims) != NC_NOERR) {
+        nc_close(ncid);
+        return false;
+    }
+
+    int dimids[8];
+    if (nc_inq_vardimid(ncid, varid, dimids) != NC_NOERR) {
+        nc_close(ncid);
+        return false;
+    }
+
+    size_t total_size = 1;
+    for (int i = 0; i < ndims; ++i) {
+        size_t len;
+        if (nc_inq_dimlen(ncid, dimids[i], &len) != NC_NOERR) {
+            nc_close(ncid);
+            return false;
+        }
+        total_size *= len;
+    }
+
+    out_data.resize(total_size);
+    if (nc_get_var_double(ncid, varid, out_data.data()) != NC_NOERR) {
+        nc_close(ncid);
+        return false;
+    }
+
+    nc_close(ncid);
+    return true;
+}
+
 } // namespace cece::test
 
 class CeceIntegrationHarnessTest : public ::testing::Test {
@@ -267,7 +313,30 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     auto result = runner.Run(3);
 
     EXPECT_TRUE(result.success);
-    EXPECT_FALSE(result.output_nc_file.empty());
+    EXPECT_EQ(result.output_nc_file, "cece_test_output/cece_output_test.nc");
+    EXPECT_TRUE(std::filesystem::exists(result.output_nc_file));
+
+    // Verify in-memory export fields correctness
+    // Dimensions: 4x4x1
+    // For Step 2: value = lat + lon + 2.0
+    // Latitudes: -67.5, -22.5, 22.5, 67.5
+    // Longitudes: -135.0, -45.0, 45.0, 135.0
+    // Check index 0: lat[0] + lon[0] + 2.0 = -67.5 + -135.0 + 2.0 = -200.5
+    ASSERT_EQ(result.final_co_export.size(), 16);
+    EXPECT_DOUBLE_EQ(result.final_co_export[0], -200.5);
+
+    // Verify NetCDF output file correctness
+    std::vector<double> nc_co_data;
+    bool read_success = cece::test::ReadNetCDFVariable(result.output_nc_file, "co", nc_co_data);
+    ASSERT_TRUE(read_success) << "Failed to read variable 'co' from generated NetCDF file: " << result.output_nc_file;
+
+    // NetCDF output contains all timesteps (3 steps, each 16 elements = 48 total)
+    ASSERT_EQ(nc_co_data.size(), 48);
+
+    // Last step values (index 32 to 47) should match the step 2 mocked values (final memory state)
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_DOUBLE_EQ(nc_co_data[32 + i], result.final_co_export[i]);
+    }
 }
 
 TEST(DataRetrieverTest, MockDataGeneratorValues) {
@@ -292,3 +361,4 @@ int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
