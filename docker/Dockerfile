@@ -3,12 +3,12 @@ FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 
-RUN apt-get update && apt-get install -y gdb
+RUN apt-get update && apt-get install -y gdb cmake
 
 COPY . /opt/cece/src
 
 RUN source /opt/ufschem/spack-stack/setup.sh && \
-    spack env activate ufschem && \
+    spack env activate ufschem-cece && \
     cd /opt/cece/src && \
     mkdir build && \
     cd build && \
@@ -18,13 +18,13 @@ RUN source /opt/ufschem/spack-stack/setup.sh && \
       -DCMAKE_INSTALL_PREFIX=/opt/cece/install \
       -DCMAKE_BUILD_TYPE=Debug && \
     make -j$(nproc) && \
-    make install
-#    ctest --output-on-failure
+    make install && \
+    ctest --output-on-failure
 
 RUN cat <<EOF >> ~/.bashrc
 # enable spack env by default
 source /opt/ufschem/spack-stack/setup.sh
-spack env activate ufschem
+spack env activate ufschem-cece
 EOF
 
 WORKDIR /opt

@@ -10,23 +10,24 @@ RUN apt-get update --yes && apt-get install --yes \
   python3 \
   python3-dev \
   gfortran \
-  cmake \
-  curl \
-  ca-certificates \
-  libopenmpi-dev \
-  libcurl4-openssl-dev \
-  tar \
-  gettext \
-  libgettextpo-dev \
-  nco \
-  libxml2 \
-  libxml2-dev \
-  libxml2-utils \
-  libnetcdf-dev \
-  libnetcdff-dev \
-  liblapack-dev \
-  libopenblas-dev \
-  cython3 \
+#  cmake \
+#  curl \
+#  ca-certificates \
+#  libopenmpi-dev \
+#  libcurl4-openssl-dev \
+#  tar \
+#  gettext \
+#  libgettextpo-dev \
+#  nco \
+#  libxml2 \
+#  libxml2-dev \
+#  libxml2-utils \
+#  libnetcdf-dev \
+#  libnetcdff-dev \
+#  netcdf-bin \
+#  liblapack-dev \
+#  libopenblas-dev \
+#  cython3 \
   python3-venv \
   python3-pip \
   && apt-get purge -y --auto-remove \
@@ -54,30 +55,31 @@ RUN <<INSTALL_ALL
   set -eu
   . ./setup.sh
   spack compiler find
-  spack external find rust curl perl git python py-cython cmake gettext findutils tar libxml2 openssl openmpi
-  spack config add "packages:rust:buildable:false"
-  spack config add "packages:curl:buildable:false"
-  spack config add "packages:perl:buildable:false"
-  spack config add "packages:git:buildable:false"
-  spack config add "packages:python:buildable:false"
-  spack config add "packages:py-cython:buildable:false"
-  spack config add "packages:cmake:buildable:false"
-  spack config add "packages:gettext:buildable:false"
-  spack config add "packages:findutils:buildable:false"
-  spack config add "packages:tar:buildable:false"
-  spack config add "packages:libxml2:buildable:false"
-  spack config add "packages:openssl:buildable:false"
-  spack config add "packages:openmpi:buildable:false"
+  spack external find python git rust curl
+#  spack external find rust curl perl git python py-cython cmake gettext findutils tar libxml2 openssl openmpi
+#  spack config add "packages:rust:buildable:false"
+#  spack config add "packages:curl:buildable:false"
+#  spack config add "packages:perl:buildable:false"
+#  spack config add "packages:git:buildable:false"
+#  spack config add "packages:python:buildable:false"
+#  spack config add "packages:py-cython:buildable:false"
+#  spack config add "packages:cmake:buildable:false"
+#  spack config add "packages:gettext:buildable:false"
+#  spack config add "packages:findutils:buildable:false"
+#  spack config add "packages:tar:buildable:false"
+#  spack config add "packages:libxml2:buildable:false"
+#  spack config add "packages:openssl:buildable:false"
+#  spack config add "packages:openmpi:buildable:false"
 
   # Parallelio needs to build these...
 #  spack config add "packages:netcdf-c:buildable:false"
 #  spack config add "packages:netcdf-fortran:buildable:false"
 
-  spack config add "packages:esmf:require:^openmpi"
+#  spack config add "packages:esmf:require:^openmpi"
 
-  spack env create ufschem
-  spack env activate ufschem
-  spack add esmf yaml-cpp parallelio+pnetcdf py-pip
+  spack env create ufschem-cece
+  spack env activate ufschem-cece
+  spack add esmf yaml-cpp parallelio py-pip
   spack concretize
   spack install --fail-fast
   spack gc -y
@@ -87,7 +89,7 @@ INSTALL_ALL
 RUN cat <<EOF >> ~/.bashrc
 # enable spack env by default
 source /opt/ufschem/spack-stack/setup.sh
-spack env activate ufschem
+spack env activate ufschem-cece
 EOF
 
 WORKDIR /opt
