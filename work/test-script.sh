@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+docker stop cece-test-runner && docker rm cece-test-runner
+
 set -eu
 
 # --- Configuration ---

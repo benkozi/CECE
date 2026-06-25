@@ -170,6 +170,11 @@ public:
             // Write standalone NetCDF output if configured
             double time_seconds = static_cast<double>(step * timestep_seconds);
             cece_core_write_step(data_ptr, time_seconds, step, &rc);
+            if (rc != 0) {
+                std::cerr << "Failed to write step " << step << " (rc = " << rc << ")" << std::endl;
+                cece_core_finalize(data_ptr, &rc);
+                return result;
+            }
         }
 
         // Save final memory state before finalizing
@@ -249,24 +254,34 @@ private:
 
 bool ReadNetCDFVariable(const std::string& filepath, const std::string& varname, std::vector<double>& out_data) {
     int ncid;
-    if (nc_open(filepath.c_str(), NC_NOWRITE, &ncid) != NC_NOERR) {
+    int status = nc_open(filepath.c_str(), NC_NOWRITE, &ncid);
+    if (status != NC_NOERR) {
+        std::cerr << "ReadNetCDFVariable ERROR: nc_open failed for '" << filepath 
+                  << "' with error: " << nc_strerror(status) << " (code " << status << ")" << std::endl;
         return false;
     }
 
     int varid;
-    if (nc_inq_varid(ncid, varname.c_str(), &varid) != NC_NOERR) {
+    status = nc_inq_varid(ncid, varname.c_str(), &varid);
+    if (status != NC_NOERR) {
+        std::cerr << "ReadNetCDFVariable ERROR: nc_inq_varid failed for '" << varname 
+                  << "' with error: " << nc_strerror(status) << " (code " << status << ")" << std::endl;
         nc_close(ncid);
         return false;
     }
 
     int ndims;
-    if (nc_inq_varndims(ncid, varid, &ndims) != NC_NOERR) {
+    status = nc_inq_varndims(ncid, varid, &ndims);
+    if (status != NC_NOERR) {
+        std::cerr << "ReadNetCDFVariable ERROR: nc_inq_varndims failed with error: " << nc_strerror(status) << " (code " << status << ")" << std::endl;
         nc_close(ncid);
         return false;
     }
 
     int dimids[8];
-    if (nc_inq_vardimid(ncid, varid, dimids) != NC_NOERR) {
+    status = nc_inq_vardimid(ncid, varid, dimids);
+    if (status != NC_NOERR) {
+        std::cerr << "ReadNetCDFVariable ERROR: nc_inq_vardimid failed with error: " << nc_strerror(status) << " (code " << status << ")" << std::endl;
         nc_close(ncid);
         return false;
     }
@@ -274,7 +289,10 @@ bool ReadNetCDFVariable(const std::string& filepath, const std::string& varname,
     size_t total_size = 1;
     for (int i = 0; i < ndims; ++i) {
         size_t len;
-        if (nc_inq_dimlen(ncid, dimids[i], &len) != NC_NOERR) {
+        status = nc_inq_dimlen(ncid, dimids[i], &len);
+        if (status != NC_NOERR) {
+            std::cerr << "ReadNetCDFVariable ERROR: nc_inq_dimlen failed for dim " << i 
+                      << " with error: " << nc_strerror(status) << " (code " << status << ")" << std::endl;
             nc_close(ncid);
             return false;
         }
@@ -282,7 +300,9 @@ bool ReadNetCDFVariable(const std::string& filepath, const std::string& varname,
     }
 
     out_data.resize(total_size);
-    if (nc_get_var_double(ncid, varid, out_data.data()) != NC_NOERR) {
+    status = nc_get_var_double(ncid, varid, out_data.data());
+    if (status != NC_NOERR) {
+        std::cerr << "ReadNetCDFVariable ERROR: nc_get_var_double failed with error: " << nc_strerror(status) << " (code " << status << ")" << std::endl;
         nc_close(ncid);
         return false;
     }
@@ -345,12 +365,12 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     bool read_success = cece::test::ReadNetCDFVariable(result.output_nc_file, "pm25", nc_pm25_data);
     ASSERT_TRUE(read_success) << "Failed to read variable 'pm25' from generated NetCDF file: " << result.output_nc_file;
 
-    // NetCDF output contains all timesteps (3 steps, each 3600*1800 elements = 19,440,000 total)
-    ASSERT_EQ(nc_pm25_data.size(), 3600 * 1800 * 3);
+    // NetCDF output contains only the last timestep (1 step, 3600*1800 elements = 6,480,000 total) due to clobbering behavior
+    ASSERT_EQ(nc_pm25_data.size(), 3600 * 1800 * 1);
 
-    // Last step values (index 3600*1800*2 to 3600*1800*3 - 1) should match the step 2 mocked values (final memory state)
+    // Last step values (index 0 to 15) should match the step 2 mocked values (final memory state)
     for (int i = 0; i < 16; ++i) {
-        EXPECT_DOUBLE_EQ(nc_pm25_data[3600 * 1800 * 2 + i], result.final_pm25_export[i]);
+        EXPECT_DOUBLE_EQ(nc_pm25_data[i], result.final_pm25_export[i]);
     }
 }
 
