@@ -41,3 +41,5 @@ __pycache__/
 .kiro/
 .pytest_cache/
 /data/
+
+local-data/cece-edgar-htap.yaml
