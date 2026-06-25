@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-docker stop cece-test-runner && docker rm cece-test-runner
+#docker stop cece-test-runner && docker rm cece-test-runner
 
 set -eu
 
@@ -14,19 +14,19 @@ CONTAINER_DIR=/opt/project
 
 echo "=> Starting container '$CONTAINER_NAME'..."
 # Start detached and keep alive
-docker run -d \
+docker run --rm \
   --name "$CONTAINER_NAME" \
   -v "$HOST_DIR:$CONTAINER_DIR" \
-  "$IMAGE_NAME" tail -f /dev/null
+  "$IMAGE_NAME" bash /opt/project/work/work.sh
 
-# Safety net: ensure the container is removed if the exec steps fail
-trap 'echo "=> Cleaning up..."; docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1' EXIT
-
-echo "=> Executing script..."
-# -w sets the working directory inside the container
-docker exec -w "$CONTAINER_DIR" "$CONTAINER_NAME" bash /opt/project/work/work.sh
-
-echo "=> Stopping container..."
-docker stop "$CONTAINER_NAME" >/dev/null
-
-echo "=> Success!"
+## Safety net: ensure the container is removed if the exec steps fail
+#trap 'echo "=> Cleaning up..."; docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1' EXIT
+#
+#echo "=> Executing script..."
+## -w sets the working directory inside the container
+#docker exec -w "$CONTAINER_DIR" "$CONTAINER_NAME" bash /opt/project/work/work.sh
+#
+#echo "=> Stopping container..."
+#docker stop "$CONTAINER_NAME" >/dev/null
+#
+#echo "=> Success!"

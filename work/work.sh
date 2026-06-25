@@ -10,4 +10,4 @@ cmake .. \
   -DCMAKE_BUILD_TYPE=Debug && \
   make -j$(nproc)
 #ctest --output-on-failure
-./test_integration_harness
+time ./test_integration_harness

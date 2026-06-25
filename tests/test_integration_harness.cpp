@@ -323,8 +323,8 @@ protected:
     }
 
     void TearDown() override {
-        std::filesystem::remove_all("cece_test_output");
-        std::filesystem::remove("temp_test_config.yaml");
+        // std::filesystem::remove_all("cece_test_output");
+        // std::filesystem::remove("temp_test_config.yaml");
     }
 };
 
