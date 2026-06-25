@@ -590,7 +590,7 @@ gtest_discover_tests(test_ginoux_properties)
 gtest_discover_tests(test_k14_properties)
 gtest_discover_tests(test_field_creation)
 gtest_discover_tests(test_field_pointer_passing)
-#gtest_discover_tests(test_integration_harness)
+gtest_discover_tests(test_integration_harness)
 
 # --- Python Bindings ---
 

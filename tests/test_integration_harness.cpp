@@ -77,7 +77,7 @@ public:
 struct TestExecutionResult {
     bool success = false;
     std::string output_nc_file;
-    std::vector<double> final_co_export;
+    std::vector<double> final_pm25_export;
 };
 
 class CeceTestRunner {
@@ -122,10 +122,10 @@ public:
         for (int j = 0; j < ny_; ++j) lats[j] = lat_min + (j + 0.5) * dy;
 
         // Allocate memory for bound export fields
-        std::vector<double> co_export_data(nx_ * ny_ * nz_, 0.0);
+        std::vector<double> pm25_export_data(nx_ * ny_ * nz_, 0.0);
 
         // Register export fields in internal state
-        cece_core_set_export_field(data_ptr, "co", 2, co_export_data.data(), nx_, ny_, nz_, &rc);
+        cece_core_set_export_field(data_ptr, "pm25", 4, pm25_export_data.data(), nx_, ny_, nz_, &rc);
         if (rc != 0) {
             std::cerr << "Failed to register export field" << std::endl;
             cece_core_finalize(data_ptr, &rc);
@@ -138,13 +138,13 @@ public:
             int hour = (step * (timestep_seconds / 3600)) % 24;
             int day_of_week = 0; // Monday
 
-            // Generate mocked input data for variable "co"
-            auto mocked_co = retriever_->RetrieveField("co", step, nx_, ny_, nz_, lons, lats);
+            // Generate mocked input data for variable "HTAP_PM25_ENERGY"
+            auto mocked_pm25 = retriever_->RetrieveField("HTAP_PM25_ENERGY", step, nx_, ny_, nz_, lons, lats);
 
             // Set the mocked stream field
-            cece_ingestor_set_field(data_ptr, "co", 2, mocked_co.data(), nz_, nx_ * ny_, &rc);
+            cece_ingestor_set_field(data_ptr, "HTAP_PM25_ENERGY", 16, mocked_pm25.data(), nz_, nx_ * ny_, &rc);
             if (rc != 0) {
-                std::cerr << "Failed to ingest field: co" << std::endl;
+                std::cerr << "Failed to ingest field: HTAP_PM25_ENERGY" << std::endl;
                 cece_core_finalize(data_ptr, &rc);
                 return result;
             }
@@ -164,10 +164,10 @@ public:
 
         // Save final memory state before finalizing
         auto* internal_data = static_cast<cece::CeceInternalData*>(data_ptr);
-        if (internal_data && internal_data->export_state.fields.find("co") != internal_data->export_state.fields.end()) {
-            auto view = internal_data->export_state.fields.at("co").view_host();
+        if (internal_data && internal_data->export_state.fields.find("pm25") != internal_data->export_state.fields.end()) {
+            auto view = internal_data->export_state.fields.at("pm25").view_host();
             for (size_t idx = 0; idx < view.size(); ++idx) {
-                result.final_co_export.push_back(view.data()[idx]);
+                result.final_pm25_export.push_back(view.data()[idx]);
             }
         }
 
@@ -215,7 +215,7 @@ public:
         config["output"]["directory"] = "cece_test_output";
         config["output"]["filename_pattern"] = "cece_output_test.nc";
         config["output"]["frequency_steps"] = 1;
-        config["output"]["fields"] = std::vector<std::string>{"co"};
+        config["output"]["fields"] = std::vector<std::string>{"pm25"};
 
         // Configure driver dimensions
         config["driver"]["grid"]["nx"] = nx_;
@@ -301,10 +301,16 @@ protected:
 TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     auto retriever = std::make_shared<cece::test::MockDataRetriever>();
     cece::test::CeceTestBuilder builder;
-    std::string template_path = "/opt/cece/src/examples/cece_config_ex1.yaml";
-    if (!std::filesystem::exists(template_path)) {
-        template_path = "examples/cece_config_ex1.yaml";
-    }
+    std::string template_path = "/opt/project/local-data/cece-edgar-htap.yaml";
+    // if (!std::filesystem::exists(template_path)) {
+    //     template_path = "/opt/project/src/local-data/cece-edgar-htap.yaml";
+    // }
+    // if (!std::filesystem::exists(template_path)) {
+    //     template_path = "../local-data/cece-edgar-htap.yaml";
+    // }
+    // if (!std::filesystem::exists(template_path)) {
+    //     template_path = "local-data/cece-edgar-htap.yaml";
+    // }
     builder.SetConfigTemplate(template_path)
            .SetGridDimensions(4, 4, 1)
            .SetDataRetriever(retriever);
@@ -322,20 +328,20 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     // Latitudes: -67.5, -22.5, 22.5, 67.5
     // Longitudes: -135.0, -45.0, 45.0, 135.0
     // Check index 0: lat[0] + lon[0] + 2.0 = -67.5 + -135.0 + 2.0 = -200.5
-    ASSERT_EQ(result.final_co_export.size(), 16);
-    EXPECT_DOUBLE_EQ(result.final_co_export[0], -200.5);
+    ASSERT_EQ(result.final_pm25_export.size(), 16);
+    EXPECT_DOUBLE_EQ(result.final_pm25_export[0], -200.5);
 
     // Verify NetCDF output file correctness
-    std::vector<double> nc_co_data;
-    bool read_success = cece::test::ReadNetCDFVariable(result.output_nc_file, "co", nc_co_data);
-    ASSERT_TRUE(read_success) << "Failed to read variable 'co' from generated NetCDF file: " << result.output_nc_file;
+    std::vector<double> nc_pm25_data;
+    bool read_success = cece::test::ReadNetCDFVariable(result.output_nc_file, "pm25", nc_pm25_data);
+    ASSERT_TRUE(read_success) << "Failed to read variable 'pm25' from generated NetCDF file: " << result.output_nc_file;
 
     // NetCDF output contains all timesteps (3 steps, each 16 elements = 48 total)
-    ASSERT_EQ(nc_co_data.size(), 48);
+    ASSERT_EQ(nc_pm25_data.size(), 48);
 
     // Last step values (index 32 to 47) should match the step 2 mocked values (final memory state)
     for (int i = 0; i < 16; ++i) {
-        EXPECT_DOUBLE_EQ(nc_co_data[32 + i], result.final_co_export[i]);
+        EXPECT_DOUBLE_EQ(nc_pm25_data[32 + i], result.final_pm25_export[i]);
     }
 }
 
@@ -346,7 +352,7 @@ TEST(DataRetrieverTest, MockDataGeneratorValues) {
     int nx = 4, ny = 4, nz = 1;
     int step = 2;
     
-    auto result = retriever.RetrieveField("co", step, nx, ny, nz, lons, lats);
+    auto result = retriever.RetrieveField("HTAP_PM25_ENERGY", step, nx, ny, nz, lons, lats);
     ASSERT_EQ(result.size(), 16);
     // Expected value at index 0: lats[0] + lons[0] + step = -90.0 + -180.0 + 2.0 = -268.0
     EXPECT_DOUBLE_EQ(result[0], -268.0);
@@ -354,7 +360,7 @@ TEST(DataRetrieverTest, MockDataGeneratorValues) {
 
 TEST(DataRetrieverTest, NetCDFRetrieverThrows) {
     cece::test::NetCDFDataRetriever retriever;
-    EXPECT_THROW(retriever.RetrieveField("co", 1, 4, 4, 1, {}, {}), std::runtime_error);
+    EXPECT_THROW(retriever.RetrieveField("HTAP_PM25_ENERGY", 1, 4, 4, 1, {}, {}), std::runtime_error);
 }
 
 int main(int argc, char** argv) {
