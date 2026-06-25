@@ -21,6 +21,7 @@ void cece_set_config_file_path(const char* config_path, int path_len);
 void cece_ingestor_set_field(void* data_ptr, const char* field_name, int name_len, const double* field_data, int n_lev, int n_elem, int* rc);
 void cece_core_set_export_field(void* data_ptr, const char* name, int name_len, double* field_data, int nx, int ny, int nz, int* rc);
 void cece_core_write_step(void* data_ptr, double time_seconds, int step_index, int* rc);
+void cece_core_writer_initialize(void* data_ptr, int nx, int ny, int nz, const char* start_time, int start_time_len, int* rc);
 }
 
 namespace cece::test {
@@ -105,6 +106,15 @@ public:
         cece_core_initialize_p2(data_ptr, &nx, &ny, &nz, &rc);
         if (rc != 0) {
             std::cerr << "Phase 2 Initialization failed" << std::endl;
+            cece_core_finalize(data_ptr, &rc);
+            return result;
+        }
+
+        // Initialize standalone writer
+        std::string start_time = "2020-07-15T00:00:00";
+        cece_core_writer_initialize(data_ptr, nx, ny, nz, start_time.c_str(), static_cast<int>(start_time.length()), &rc);
+        if (rc != 0) {
+            std::cerr << "Writer initialization failed" << std::endl;
             cece_core_finalize(data_ptr, &rc);
             return result;
         }
@@ -217,16 +227,16 @@ public:
         config["output"]["frequency_steps"] = 1;
         config["output"]["fields"] = std::vector<std::string>{"pm25"};
 
-        // Configure driver dimensions
-        config["driver"]["grid"]["nx"] = nx_;
-        config["driver"]["grid"]["ny"] = ny_;
-        config["driver"]["grid"]["nz"] = nz_;
+        // Extract grid dimensions directly from the yaml configuration without modifying them
+        int nx = config["driver"]["grid"]["nx"].as<int>();
+        int ny = config["driver"]["grid"]["ny"].as<int>();
+        int nz = config["driver"]["grid"]["nz"].as<int>();
 
         std::ofstream fout(output_yaml_path);
         fout << config;
         fout.close();
 
-        return CeceTestRunner(output_yaml_path, nx_, ny_, nz_, retriever_);
+        return CeceTestRunner(output_yaml_path, nx, ny, nz, retriever_);
     }
 
 private:
@@ -302,17 +312,16 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     auto retriever = std::make_shared<cece::test::MockDataRetriever>();
     cece::test::CeceTestBuilder builder;
     std::string template_path = "/opt/project/local-data/cece-edgar-htap.yaml";
-    // if (!std::filesystem::exists(template_path)) {
-    //     template_path = "/opt/project/src/local-data/cece-edgar-htap.yaml";
-    // }
-    // if (!std::filesystem::exists(template_path)) {
-    //     template_path = "../local-data/cece-edgar-htap.yaml";
-    // }
-    // if (!std::filesystem::exists(template_path)) {
-    //     template_path = "local-data/cece-edgar-htap.yaml";
-    // }
+    if (!std::filesystem::exists(template_path)) {
+        template_path = "/work/local-data/cece-edgar-htap.yaml";
+    }
+    if (!std::filesystem::exists(template_path)) {
+        template_path = "../local-data/cece-edgar-htap.yaml";
+    }
+    if (!std::filesystem::exists(template_path)) {
+        template_path = "local-data/cece-edgar-htap.yaml";
+    }
     builder.SetConfigTemplate(template_path)
-           .SetGridDimensions(4, 4, 1)
            .SetDataRetriever(retriever);
 
     auto runner = builder.Build("temp_test_config.yaml");
@@ -323,25 +332,25 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     EXPECT_TRUE(std::filesystem::exists(result.output_nc_file));
 
     // Verify in-memory export fields correctness
-    // Dimensions: 4x4x1
+    // Dimensions: 3600x1800x1
     // For Step 2: value = lat + lon + 2.0
-    // Latitudes: -67.5, -22.5, 22.5, 67.5
-    // Longitudes: -135.0, -45.0, 45.0, 135.0
-    // Check index 0: lat[0] + lon[0] + 2.0 = -67.5 + -135.0 + 2.0 = -200.5
-    ASSERT_EQ(result.final_pm25_export.size(), 16);
-    EXPECT_DOUBLE_EQ(result.final_pm25_export[0], -200.5);
+    // Latitudes index 0 center: -90.0 + 0.5 * 0.1 = -89.95
+    // Longitudes index 0 center: -180.0 + 0.5 * 0.1 = -179.95
+    // Check index 0: lat[0] + lon[0] + 2.0 = -89.95 + -179.95 + 2.0 = -267.9
+    ASSERT_EQ(result.final_pm25_export.size(), 3600 * 1800 * 1);
+    EXPECT_DOUBLE_EQ(result.final_pm25_export[0], -267.9);
 
     // Verify NetCDF output file correctness
     std::vector<double> nc_pm25_data;
     bool read_success = cece::test::ReadNetCDFVariable(result.output_nc_file, "pm25", nc_pm25_data);
     ASSERT_TRUE(read_success) << "Failed to read variable 'pm25' from generated NetCDF file: " << result.output_nc_file;
 
-    // NetCDF output contains all timesteps (3 steps, each 16 elements = 48 total)
-    ASSERT_EQ(nc_pm25_data.size(), 48);
+    // NetCDF output contains all timesteps (3 steps, each 3600*1800 elements = 19,440,000 total)
+    ASSERT_EQ(nc_pm25_data.size(), 3600 * 1800 * 3);
 
-    // Last step values (index 32 to 47) should match the step 2 mocked values (final memory state)
+    // Last step values (index 3600*1800*2 to 3600*1800*3 - 1) should match the step 2 mocked values (final memory state)
     for (int i = 0; i < 16; ++i) {
-        EXPECT_DOUBLE_EQ(nc_pm25_data[32 + i], result.final_pm25_export[i]);
+        EXPECT_DOUBLE_EQ(nc_pm25_data[3600 * 1800 * 2 + i], result.final_pm25_export[i]);
     }
 }
 
