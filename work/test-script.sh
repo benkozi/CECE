@@ -3,10 +3,10 @@
 set -eu
 
 # --- Configuration ---
-CONTAINER_NAME="cece-test-runner"
+CONTAINER_NAME=cece-test-runner
 IMAGE_NAME="ghcr.io/noaa-emc/ci-common-build-cache/ufs-weather-model-ubuntu-24.04-gcc-13-mpich-x"       # Change to your required image
 HOST_DIR=~/sandbox/git-benkozi/CECE # Change to your actual host directory
-CONTAINER_DIR="/opt/project"
+CONTAINER_DIR=/opt/project
 
 # --- Container Lifecycle ---
 
@@ -22,7 +22,7 @@ trap 'echo "=> Cleaning up..."; docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1' 
 
 echo "=> Executing script..."
 # -w sets the working directory inside the container
-docker exec -w "$CONTAINER_DIR" "$CONTAINER_NAME" "bash /opt/project/work/work.sh"
+docker exec -w "$CONTAINER_DIR" "$CONTAINER_NAME" bash /opt/project/work/work.sh
 
 echo "=> Stopping container..."
 docker stop "$CONTAINER_NAME" >/dev/null
