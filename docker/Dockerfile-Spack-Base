@@ -27,17 +27,18 @@ RUN apt-get update --yes && apt-get install --yes \
 #  netcdf-bin \
 #  liblapack-dev \
 #  libopenblas-dev \
-#  cython3 \
+#  libssl-dev \
+  cython3 \
   python3-venv \
   python3-pip \
   && apt-get purge -y --auto-remove \
   && rm -rf /var/lib/apt/lists/*
 
-# Install a more recent version of rust
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain stable
+## Install a more recent version of rust
+#ENV RUSTUP_HOME=/usr/local/rustup \
+#    CARGO_HOME=/usr/local/cargo \
+#    PATH=/usr/local/cargo/bin:$PATH
+#RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain stable
 
 # Clone spack-stack (version 2.1.1)
 WORKDIR /opt/ufschem
@@ -51,18 +52,24 @@ ENV SPACK_ROOT=/opt/ufschem/spack-stack/spack
 
 SHELL ["/bin/bash", "-c"]
 
-RUN <<INSTALL_ALL
+RUN --mount=type=cache,target=/mnt/spack_mirror <<INSTALL_ALL
   set -eu
   . ./setup.sh
+
+  spack mirror add --autopush local_mirror file:///mnt/spack_mirror
+  spack mirror set --unsigned local_mirror
+
   spack compiler find
-  spack external find python git rust curl
-#  spack external find rust curl perl git python py-cython cmake gettext findutils tar libxml2 openssl openmpi
+  spack external find python py-cython
+#  spack external find python rust curl cmake perl
+#  spack external find python rust curl cmake zlib
+#  spack external find rust curl perl python py-cython cmake gettext findutils tar libxml2 openssl openmpi
 #  spack config add "packages:rust:buildable:false"
 #  spack config add "packages:curl:buildable:false"
 #  spack config add "packages:perl:buildable:false"
 #  spack config add "packages:git:buildable:false"
-#  spack config add "packages:python:buildable:false"
-#  spack config add "packages:py-cython:buildable:false"
+  spack config add "packages:python:buildable:false"
+  spack config add "packages:py-cython:buildable:false"
 #  spack config add "packages:cmake:buildable:false"
 #  spack config add "packages:gettext:buildable:false"
 #  spack config add "packages:findutils:buildable:false"
@@ -79,9 +86,12 @@ RUN <<INSTALL_ALL
 
   spack env create ufschem-cece
   spack env activate ufschem-cece
-  spack add esmf yaml-cpp parallelio py-pip
+  spack add esmf yaml-cpp parallelio py-pip cmake git
   spack concretize
   spack install --fail-fast
+
+# Package caches are pushed automatically during build via --autopush
+
   spack gc -y
   spack clean --all
 INSTALL_ALL

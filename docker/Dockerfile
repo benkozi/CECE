@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 
-RUN apt-get update && apt-get install -y gdb cmake
+RUN apt-get update && apt-get install -y cmake
 
 COPY . /opt/cece/src
 
