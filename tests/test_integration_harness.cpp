@@ -62,16 +62,51 @@ public:
     }
 };
 
+bool ReadNetCDFVariable(const std::string& filepath, const std::string& varname, std::vector<double>& out_data);
+
 class NetCDFDataRetriever : public DataRetriever {
 public:
     std::vector<double> RetrieveField(
         const std::string& name,
         int step,
         int nx, int ny, int nz,
-        const std::vector<double>& lons,
-        const std::vector<double>& lats
+        const std::vector<double>& /*lons*/,
+        const std::vector<double>& /*lats*/
     ) override {
-        throw std::runtime_error("NetCDF file reading is not supported/implemented in this milestone.");
+        std::string filepath = "/opt/project/local-data/EDGAR_HTAP_PM2.5_ENERGY.generic.01x01.nc";
+        if (!std::filesystem::exists(filepath)) {
+            filepath = "/work/local-data/EDGAR_HTAP_PM2.5_ENERGY.generic.01x01.nc";
+        }
+        if (!std::filesystem::exists(filepath)) {
+            filepath = "../local-data/EDGAR_HTAP_PM2.5_ENERGY.generic.01x01.nc";
+        }
+        if (!std::filesystem::exists(filepath)) {
+            filepath = "local-data/EDGAR_HTAP_PM2.5_ENERGY.generic.01x01.nc";
+        }
+
+        std::string varname = (name == "HTAP_PM25_ENERGY") ? "emi_pm2.5" : name;
+        std::vector<double> full_data;
+        if (!ReadNetCDFVariable(filepath, varname, full_data)) {
+            throw std::runtime_error("Failed to read variable " + varname + " from file " + filepath);
+        }
+
+        if (nx != 3600 || ny != 1800) {
+            throw std::runtime_error("Dimension mismatch: expected 3600x1800, got " + std::to_string(nx) + "x" + std::to_string(ny));
+        }
+
+        size_t slice_size = nx * ny;
+        size_t total_slices = full_data.size() / slice_size;
+        if (total_slices == 0) {
+            throw std::runtime_error("No data slices found in " + varname);
+        }
+
+        size_t slice_idx = static_cast<size_t>(step) % total_slices;
+        size_t start_idx = slice_idx * slice_size;
+
+        std::vector<double> result(nx * ny * nz, 0.0);
+        std::copy(full_data.begin() + start_idx, full_data.begin() + start_idx + slice_size, result.begin());
+
+        return result;
     }
 };
 
@@ -329,7 +364,7 @@ protected:
 };
 
 TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
-    auto retriever = std::make_shared<cece::test::MockDataRetriever>();
+    auto retriever = std::make_shared<cece::test::NetCDFDataRetriever>();
     cece::test::CeceTestBuilder builder;
     std::string template_path = "/opt/project/local-data/cece-edgar-htap.yaml";
     if (!std::filesystem::exists(template_path)) {
@@ -353,12 +388,14 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
 
     // Verify in-memory export fields correctness
     // Dimensions: 3600x1800x1
-    // For Step 2: value = lat + lon + 2.0
-    // Latitudes index 0 center: -90.0 + 0.5 * 0.1 = -89.95
-    // Longitudes index 0 center: -180.0 + 0.5 * 0.1 = -179.95
-    // Check index 0: lat[0] + lon[0] + 2.0 = -89.95 + -179.95 + 2.0 = -267.9
     ASSERT_EQ(result.final_pm25_export.size(), 3600 * 1800 * 1);
-    EXPECT_DOUBLE_EQ(result.final_pm25_export[0], -267.9);
+    
+    // Retrieve the expected step 2 data from the NetCDF file directly using the retriever
+    auto expected_pm25 = retriever->RetrieveField("HTAP_PM25_ENERGY", 2, 3600, 1800, 1, {}, {});
+    ASSERT_EQ(result.final_pm25_export.size(), expected_pm25.size());
+    for (size_t i = 0; i < 1000; ++i) {
+        EXPECT_DOUBLE_EQ(result.final_pm25_export[i], expected_pm25[i]);
+    }
 
     // Verify NetCDF output file correctness
     std::vector<double> nc_pm25_data;
@@ -368,7 +405,7 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     // NetCDF output contains only the last timestep (1 step, 3600*1800 elements = 6,480,000 total) due to clobbering behavior
     ASSERT_EQ(nc_pm25_data.size(), 3600 * 1800 * 1);
 
-    // Last step values (index 0 to 15) should match the step 2 mocked values (final memory state)
+    // Last step values (index 0 to 15) should match the step 2 values (final memory state)
     for (int i = 0; i < 16; ++i) {
         EXPECT_DOUBLE_EQ(nc_pm25_data[i], result.final_pm25_export[i]);
     }
