@@ -390,6 +390,16 @@ TEST_F(CeceIntegrationHarnessTest, EndToEndMockedRun) {
     // Dimensions: 3600x1800x1
     ASSERT_EQ(result.final_pm25_export.size(), 3600 * 1800 * 1);
     
+    // Assert that some output pm25 values are over 0
+    bool has_positive = false;
+    for (double val : result.final_pm25_export) {
+        if (val > 0.0) {
+            has_positive = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(has_positive) << "Expected some output PM25 values to be greater than 0.0, but all were <= 0.0.";
+    
     // Retrieve the expected step 2 data from the NetCDF file directly using the retriever
     auto expected_pm25 = retriever->RetrieveField("HTAP_PM25_ENERGY", 2, 3600, 1800, 1, {}, {});
     ASSERT_EQ(result.final_pm25_export.size(), expected_pm25.size());
