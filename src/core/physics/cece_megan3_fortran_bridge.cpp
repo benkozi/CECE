@@ -251,7 +251,7 @@ void Megan3FortranScheme::Run(CeceImportState& import_state, CeceExportState& ex
         dv_export.sync<Kokkos::HostSpace>();
 
         double* export_ptr = dv_export.view_host().data();
-        double* src_ptr = output_buffer.data() + s * cells_per_species;
+        double* src_ptr = output_buffer.data() + static_cast<std::ptrdiff_t>(s) * cells_per_species;
         std::copy(src_ptr, src_ptr + cells_per_species, export_ptr);
 
         dv_export.modify<Kokkos::HostSpace>();

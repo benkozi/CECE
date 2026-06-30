@@ -186,6 +186,7 @@ void SpeciationConfigLoader::ParseMapping(const YAML::Node& node, SpeciationConf
                 try {
                     class_name = key_node.as<std::string>();
                 } catch (...) {
+                    class_name = "";
                 }
             }
 

@@ -18,6 +18,12 @@ class CeceDriverOrchestrator {
                            MPI_Comm comm_c);
     ~CeceDriverOrchestrator();
 
+    // Prevent copy/move construction and assignment (Rule of Five)
+    CeceDriverOrchestrator(const CeceDriverOrchestrator&) = delete;
+    CeceDriverOrchestrator& operator=(const CeceDriverOrchestrator&) = delete;
+    CeceDriverOrchestrator(CeceDriverOrchestrator&&) = delete;
+    CeceDriverOrchestrator& operator=(CeceDriverOrchestrator&&) = delete;
+
     bool AdvanceTime(const std::string& time_iso8601, void* cece_core_data_ptr);
 
    private:

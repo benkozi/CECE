@@ -14,7 +14,7 @@ class CeceIO {
     CeceIO() = default;
     ~CeceIO() = default;
 
-    void Initialize(const std::string& config_file);
+    void Initialize(const std::string& config_file, int nx, int ny, int nz);
     void Finalize();
 
     std::vector<std::string> GetOutputVarNames() const {

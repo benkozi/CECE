@@ -3,6 +3,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <Kokkos_Core.hpp>
+#include <axis/topology/named_grid_registry.hpp>
 #include <cmath>
 #include <fstream>
 #include <halo/communicator.hpp>
@@ -64,9 +65,52 @@ int main(int argc, char* argv[]) {
         YAML::Node config = YAML::LoadFile(config_file);
 
         // A. Grid Dimensions
-        int nx = config["driver"]["grid"]["nx"].as<int>();
-        int ny = config["driver"]["grid"]["ny"].as<int>();
-        int nz = config["driver"]["grid"]["nz"].as<int>(1);  // Default to 2D (nz=1)
+        int nx = 4;
+        int ny = 4;
+        int nz = 1;
+        std::string grid_name = "";
+        if (config["driver"] && config["driver"]["grid"]) {
+            auto grid_node = config["driver"]["grid"];
+            if (grid_node["nz"]) {
+                nz = grid_node["nz"].as<int>(1);
+            }
+            if (grid_node["grid_name"]) {
+                grid_name = grid_node["grid_name"].as<std::string>();
+            }
+            if (grid_name.empty()) {
+                nx = grid_node["nx"].as<int>(4);
+                ny = grid_node["ny"].as<int>(4);
+            } else {
+                try {
+                    auto parsed = axis::topology::NamedGridRegistry::parse(grid_name);
+                    if (parsed.family == 'F') {
+                        int expected_nx = 4 * parsed.number;
+                        int expected_ny = 2 * parsed.number;
+
+                        int declared_nx = grid_node["nx"].as<int>(0);
+                        int declared_ny = grid_node["ny"].as<int>(0);
+                        if (declared_nx != 0 && declared_ny != 0) {
+                            if (declared_nx != expected_nx || declared_ny != expected_ny) {
+                                std::cerr << "ERROR: Grid dimensions nx=" << declared_nx << ", ny=" << declared_ny
+                                          << " do not match the expected dimensions for Named Grid " << grid_name << " (" << expected_nx << "x"
+                                          << expected_ny << ")!" << std::endl;
+                                return -1;
+                            }
+                        }
+                        nx = expected_nx;
+                        ny = expected_ny;
+                    } else {
+                        std::cerr
+                            << "ERROR: Only regular Gaussian grids (family 'F', e.g. 'F360') are currently supported as structured CECE target grids."
+                            << std::endl;
+                        return -1;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "ERROR: Failed to parse named grid '" << grid_name << "': " << e.what() << std::endl;
+                    return -1;
+                }
+            }
+        }
 
         // B. Simulation Clock Timing
         std::string start_time_str = config["driver"]["start_time"].as<std::string>();
@@ -96,92 +140,63 @@ int main(int argc, char* argv[]) {
         if (config["output"] && config["output"]["fields"]) {
             for (const auto& field_node : config["output"]["fields"]) {
                 std::string field_name = field_node.as<std::string>();
-                std::vector<double> field_mem(nx * ny * nz, 0.0);
+                std::vector<double> field_mem(static_cast<std::size_t>(nx) * ny * nz, 0.0);
                 cece_core_set_export_field(cece_data_ptr, field_name.c_str(), static_cast<int>(field_name.length()), field_mem.data(), nx, ny, nz,
                                            &rc);
             }
         }
 
-        // Setup coordinate arrays (used as baseline map grid coordinates)
+        // Setup CECE grid coordinate arrays (either generated dynamically from NamedGridRegistry, or calculated uniformly)
         std::vector<double> file_lons(nx, 0.0);
         std::vector<double> file_lats(ny, 0.0);
         bool has_file_coords = false;
 
-        std::string input_file_path = "../scripts/data/MACCity_4x5.nc";  // default fallback
-        if (config["cece_data"] && config["cece_data"]["streams"]) {
-            auto stream = config["cece_data"]["streams"][0];
-            if (stream["file"]) {
-                input_file_path = stream["file"].as<std::string>();
-            }
-        }
-
-        std::string read_manifest_path = "amio_coord_manifest.yaml";
-        std::ofstream m_file_coords(read_manifest_path);
-        m_file_coords << "backend: netcdf4\n"
-                      << "path: " << input_file_path << "\n"
-                      << "data_model: enhanced\n"
-                      << "staging_pool:\n"
-                      << "  buffer_count: 16\n"
-                      << "  buffer_capacity_bytes: 104857600\n"
-                      << "worker_pool:\n"
-                      << "  threads: 0\n";
-        m_file_coords.close();
-
-        amio_core_handle coord_core = nullptr;
-        amio_dataset_handle coord_dataset = nullptr;
-        amio_view_handle lon_view = nullptr;
-        amio_view_handle lat_view = nullptr;
-
-        amio_status_t amio_rc = amio_init(read_manifest_path.c_str(), &coord_core);
-        if (amio_rc == AMIO_OK) {
-            amio_rc = amio_open_dataset(coord_core, read_manifest_path.c_str(), AMIO_MODE_READ, &coord_dataset);
-            if (amio_rc == AMIO_OK) {
-                // Read lon coordinate
-                if (amio_read(coord_dataset, "lon", 0, nullptr, &lon_view) == AMIO_OK) {
-                    const void* view_data = nullptr;
-                    size_t view_size = 0;
-                    if (amio_view_data(lon_view, &view_data, &view_size) == AMIO_OK) {
-                        amio_shape_t lon_shape{};
-                        if (amio_view_shape(lon_view, &lon_shape) == AMIO_OK) {
-                            int file_nx = static_cast<int>(lon_shape.extents[0]);
-                            bool is_float = (view_size == static_cast<size_t>(file_nx) * 4);
-                            const float* float_data = static_cast<const float*>(view_data);
-                            const double* double_data = static_cast<const double*>(view_data);
-                            for (int i = 0; i < nx; ++i) {
-                                int src_idx = static_cast<int>(std::round((static_cast<double>(i) / nx) * file_nx));
-                                if (src_idx >= file_nx) src_idx = file_nx - 1;
-                                file_lons[i] = is_float ? static_cast<double>(float_data[src_idx]) : double_data[src_idx];
-                            }
-                        }
+        if (!grid_name.empty()) {
+            try {
+                auto mesh = axis::topology::NamedGridRegistry::generate<Kokkos::HostSpace>(grid_name);
+                auto coords = mesh.node_coords();
+                for (int i = 0; i < nx; ++i) {
+                    double lon = coords(i, 0);
+                    if (lon >= 180.0) {
+                        lon -= 360.0;
                     }
-                    amio_release_view(lon_view);
+                    file_lons[i] = lon;
                 }
-                // Read lat coordinate
-                if (amio_read(coord_dataset, "lat", 0, nullptr, &lat_view) == AMIO_OK) {
-                    const void* view_data = nullptr;
-                    size_t view_size = 0;
-                    if (amio_view_data(lat_view, &view_data, &view_size) == AMIO_OK) {
-                        amio_shape_t lat_shape{};
-                        if (amio_view_shape(lat_view, &lat_shape) == AMIO_OK) {
-                            int file_ny = static_cast<int>(lat_shape.extents[0]);
-                            bool is_float = (view_size == static_cast<size_t>(file_ny) * 4);
-                            const float* float_data = static_cast<const float*>(view_data);
-                            const double* double_data = static_cast<const double*>(view_data);
-                            for (int j = 0; j < ny; ++j) {
-                                int src_idx = static_cast<int>(std::round((static_cast<double>(j) / ny) * file_ny));
-                                if (src_idx >= file_ny) src_idx = file_ny - 1;
-                                file_lats[j] = is_float ? static_cast<double>(float_data[src_idx]) : double_data[src_idx];
-                            }
-                            has_file_coords = true;
-                        }
-                    }
-                    amio_release_view(lat_view);
+                for (int j = 0; j < ny; ++j) {
+                    file_lats[j] = coords(j * nx, 1);
                 }
-                amio_close(coord_dataset);
+                std::sort(file_lons.begin(), file_lons.end());
+                std::sort(file_lats.begin(), file_lats.end());
+                has_file_coords = true;
+            } catch (const std::exception& e) {
+                std::cerr << "ERROR: Failed to retrieve coordinates from named grid '" << grid_name << "': " << e.what() << std::endl;
+                return -1;
             }
-            amio_finalize(coord_core);
+        } else {
+            double lon_min = -180.0;
+            double lon_max = 180.0;
+            double lat_min = -90.0;
+            double lat_max = 90.0;
+
+            if (config["driver"] && config["driver"]["grid"]) {
+                auto grid_node = config["driver"]["grid"];
+                lon_min = grid_node["lon_min"].as<double>(-180.0);
+                lon_max = grid_node["lon_max"].as<double>(180.0);
+                lat_min = grid_node["lat_min"].as<double>(-90.0);
+                lat_max = grid_node["lat_max"].as<double>(90.0);
+            }
+
+            double dlon = (lon_max - lon_min) / nx;
+            double dlat = (lat_max - lat_min) / ny;
+
+            for (int i = 0; i < nx; ++i) {
+                file_lons[i] = lon_min + dlon * (i + 0.5);
+            }
+            for (int j = 0; j < ny; ++j) {
+                file_lats[j] = lat_min + dlat * (j + 0.5);
+            }
+            has_file_coords = true;
         }
-        std::remove(read_manifest_path.c_str());
 
         // 5. Initialize the cece_driver orchestrator facade
         void* cece_driver_data = nullptr;

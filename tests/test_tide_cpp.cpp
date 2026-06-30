@@ -25,7 +25,7 @@ std::string GetConfigPath() {
 
 TEST(TideTest, TestBMIPointerAllocation) {
     cece::io::CeceIO cece_io;
-    EXPECT_THROW(cece_io.Initialize("non_existent_file.yaml"), std::runtime_error);
+    EXPECT_THROW(cece_io.Initialize("non_existent_file.yaml", 72, 46, 1), std::runtime_error);
 }
 
 TEST(TideTest, TestDynamicGraphCompilation) {
@@ -33,7 +33,7 @@ TEST(TideTest, TestDynamicGraphCompilation) {
     cece::io::CeceIO cece_io;
 
     std::string mock_config = GetConfigPath();
-    cece_io.Initialize(mock_config);
+    cece_io.Initialize(mock_config, 72, 46, 1);
     CompileHelmGraph(mock_config, dagr, cece_io);
 
     EXPECT_TRUE(true);

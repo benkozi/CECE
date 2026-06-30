@@ -4,8 +4,9 @@ driver:
   end_time: "2020-01-01T03:00:00"
   timestep_seconds: 3600
   grid:
-    nx: 72
-    ny: 46
+    grid_name: "F360"
+    # nx: 180
+    # ny: 90
     lon_min: -180.0
     lon_max: 180.0
     lat_min: -90.0
