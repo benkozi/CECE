@@ -22,5 +22,5 @@ fi
 # Using -print0 and read -r -d '' to robustly handle spaces or special characters in paths.
 find "$SEARCH_DIR" -type f \( -name "*.yaml" -o -name "*.yml" \) -print0 | while IFS= read -r -d '' y; do
     echo "Executing: ./cece_standalone_driver \"$y\""
-    ./cece_standalone_driver "$y"
+    ./build/cece_standalone_driver "$y"
 done
