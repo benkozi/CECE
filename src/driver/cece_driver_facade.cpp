@@ -36,7 +36,7 @@ CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, i
       target_lats_(lat_coords, lat_coords + ny),
       comm_c_(comm_c) {
     cece_io_ = std::make_unique<io::CeceIO>();
-    cece_io_->Initialize(config_file_);
+    cece_io_->Initialize(config_file_, nx_, ny_, nz_);
     CompileHelmGraph(config_file_, dagr_, *cece_io_, comm_c_);
 }
 

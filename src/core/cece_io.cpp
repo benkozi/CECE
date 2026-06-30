@@ -8,16 +8,16 @@
 namespace cece {
 namespace io {
 
-void CeceIO::Initialize(const std::string& config_file) {
+void CeceIO::Initialize(const std::string& config_file, int nx, int ny, int nz) {
     std::ifstream f(config_file);
     if (!f.good()) {
         throw std::runtime_error("File not found: " + config_file);
     }
 
     YAML::Node config = YAML::LoadFile(config_file);
-    nx_ = config["driver"]["grid"]["nx"].as<int>();
-    ny_ = config["driver"]["grid"]["ny"].as<int>();
-    nz_ = config["driver"]["grid"]["nz"].as<int>(1);
+    nx_ = nx;
+    ny_ = ny;
+    nz_ = nz;
 
     if (config["cece_data"] && config["cece_data"]["streams"]) {
         for (const auto& stream : config["cece_data"]["streams"]) {

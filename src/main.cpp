@@ -84,8 +84,21 @@ int main(int argc, char* argv[]) {
                 try {
                     auto parsed = axis::topology::NamedGridRegistry::parse(grid_name);
                     if (parsed.family == 'F') {
-                        nx = 4 * parsed.number;
-                        ny = 2 * parsed.number;
+                        int expected_nx = 4 * parsed.number;
+                        int expected_ny = 2 * parsed.number;
+
+                        int declared_nx = grid_node["nx"].as<int>(0);
+                        int declared_ny = grid_node["ny"].as<int>(0);
+                        if (declared_nx != 0 && declared_ny != 0) {
+                            if (declared_nx != expected_nx || declared_ny != expected_ny) {
+                                std::cerr << "ERROR: Grid dimensions nx=" << declared_nx << ", ny=" << declared_ny
+                                          << " do not match the expected dimensions for Named Grid " << grid_name << " (" << expected_nx << "x"
+                                          << expected_ny << ")!" << std::endl;
+                                return -1;
+                            }
+                        }
+                        nx = expected_nx;
+                        ny = expected_ny;
                     } else {
                         std::cerr
                             << "ERROR: Only regular Gaussian grids (family 'F', e.g. 'F360') are currently supported as structured CECE target grids."
@@ -143,11 +156,17 @@ int main(int argc, char* argv[]) {
                 auto mesh = axis::topology::NamedGridRegistry::generate<Kokkos::HostSpace>(grid_name);
                 auto coords = mesh.node_coords();
                 for (int i = 0; i < nx; ++i) {
-                    file_lons[i] = coords(i, 0);
+                    double lon = coords(i, 0);
+                    if (lon >= 180.0) {
+                        lon -= 360.0;
+                    }
+                    file_lons[i] = lon;
                 }
                 for (int j = 0; j < ny; ++j) {
                     file_lats[j] = coords(j * nx, 1);
                 }
+                std::sort(file_lons.begin(), file_lons.end());
+                std::sort(file_lats.begin(), file_lats.end());
                 has_file_coords = true;
             } catch (const std::exception& e) {
                 std::cerr << "ERROR: Failed to retrieve coordinates from named grid '" << grid_name << "': " << e.what() << std::endl;
