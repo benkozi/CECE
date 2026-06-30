@@ -62,6 +62,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         // Parse input file path and variable name dynamically from YAML config cece_data block
         std::string input_file_path = "../scripts/data/MACCity_4x5.nc";  // default fallback
         std::string input_var_name = "MACCity";                          // default fallback
+        std::string mapalgo = "consd";                                   // default fallback
         if (config["cece_data"] && config["cece_data"]["streams"]) {
             for (const auto& stream : config["cece_data"]["streams"]) {
                 bool found_var = false;
@@ -72,6 +73,9 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                         }
                         if (var["file"]) {
                             input_var_name = var["file"].as<std::string>();
+                        }
+                        if (stream["mapalgo"]) {
+                            mapalgo = stream["mapalgo"].as<std::string>();
                         }
                         found_var = true;
                         break;
@@ -202,7 +206,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                             // Invoke conservative regridding utility
                             read_success =
                                 cece::io::regrid_stream_field(read_dataset, input_var_name, step_index_, file_nt, time_offset, is_float, view_data,
-                                                              file_nx, file_ny, nx_, ny_, target_lons_, target_lats_, tide_view);
+                                                              file_nx, file_ny, nx_, ny_, target_lons_, target_lats_, mapalgo, tide_view);
                             if (!read_success) {
                                 std::cout << "[DRIVER DEBUG] regrid_stream_field returned false!" << std::endl;
                             }

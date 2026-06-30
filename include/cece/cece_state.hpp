@@ -160,6 +160,14 @@ class CeceStateResolver : public FieldResolver {
         }
         return {};
     }
+
+    void MarkModified(const std::string& name) override {
+        auto& fields_rw = const_cast<std::unordered_map<std::string, DualView3D>&>(export_state.fields);
+        auto it = fields_rw.find(name);
+        if (it != fields_rw.end()) {
+            it->second.modify_device();
+        }
+    }
 };
 
 }  // namespace cece

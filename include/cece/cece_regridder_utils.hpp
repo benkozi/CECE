@@ -20,7 +20,7 @@ axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int ni, int 
 /// Dynamically regrids a source field from an open AMIO dataset to a target Kokkos view conservatively using AXIS.
 bool regrid_stream_field(amio_dataset_handle read_dataset, const std::string& input_var_name, int step_index, int file_nt, size_t time_offset,
                          bool is_float, const void* view_data, int file_nx, int file_ny, int nx, int ny, const std::vector<double>& target_lons,
-                         const std::vector<double>& target_lats,
+                         const std::vector<double>& target_lats, const std::string& map_algo,
                          Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace>& tide_view);
 
 }  // namespace cece::io

@@ -46,6 +46,11 @@ class FieldResolver {
      */
     virtual Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace> ResolveExportDevice(const std::string& name, int nx, int ny,
                                                                                                            int nz) = 0;
+
+    /**
+     * @brief Marks an export field as modified on the device.
+     */
+    virtual void MarkModified(const std::string& /*name*/) {}
 };
 
 /**

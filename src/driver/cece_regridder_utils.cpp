@@ -30,7 +30,7 @@ axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_axis_mesh(int ni, int 
 
 bool regrid_stream_field(amio_dataset_handle read_dataset, const std::string& input_var_name, int step_index, int file_nt, size_t time_offset,
                          bool is_float, const void* view_data, int file_nx, int file_ny, int nx, int ny, const std::vector<double>& target_lons,
-                         const std::vector<double>& target_lats,
+                         const std::vector<double>& target_lats, const std::string& map_algo,
                          Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace>& tide_view) {
     // 1. Read 'lon' coordinates dynamically from this file
     std::vector<double> src_lons;
@@ -86,9 +86,20 @@ bool regrid_stream_field(amio_dataset_handle read_dataset, const std::string& in
     auto src_mesh = build_axis_mesh(file_nx, file_ny, src_lons, src_lats);
     auto dst_mesh = build_axis_mesh(nx, ny, target_lons, target_lats);
 
-    // B. Configure conservative weight generation
+    // B. Configure weight generation method
     axis::solver::RegridConfig regrid_cfg;
     regrid_cfg.method = axis::solver::InterpolationMethod::Conservative1stOrder;
+    if (map_algo == "nearest" || map_algo == "near" || map_algo == "nn") {
+        regrid_cfg.method = axis::solver::InterpolationMethod::NearestNeighbor;
+    } else if (map_algo == "bilinear" || map_algo == "bilin" || map_algo == "bi") {
+        regrid_cfg.method = axis::solver::InterpolationMethod::Bilinear;
+    } else if (map_algo == "cubic" || map_algo == "bicubic" || map_algo == "cu") {
+        regrid_cfg.method = axis::solver::InterpolationMethod::Bicubic;
+    } else if (map_algo == "conss" || map_algo == "conservative2nd" || map_algo == "cons2nd") {
+        regrid_cfg.method = axis::solver::InterpolationMethod::Conservative2ndOrder;
+    } else if (map_algo == "consd" || map_algo == "conservative" || map_algo == "cons" || map_algo == "conservative1st") {
+        regrid_cfg.method = axis::solver::InterpolationMethod::Conservative1stOrder;
+    }
     regrid_cfg.norm_type = axis::solver::NormType::DstArea;
     regrid_cfg.unmapped = axis::solver::UnmappedAction::Ignore;
 
