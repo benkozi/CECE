@@ -25,6 +25,10 @@ RUN apt-get update && apt-get install -y \
     libbz2-dev \
     libxml2-dev \
     libgtest-dev \
+    python3 \
+    vim \
+    less \
+    tree \
     && rm -rf /var/lib/apt/lists/*
 
 # Set GCC-13 as the default compiler (C, C++, and Fortran)
@@ -85,18 +89,18 @@ RUN git clone --depth 1 https://github.com/kokkos/kokkos-kernels.git /tmp/kokkos
     && cmake --install build \
     && rm -rf /tmp/kokkos-kernels
 
-# 6. Clone and install ESMF (with NUOPC support)
-RUN git clone --depth 1 -b v8.9.1 https://github.com/esmf-org/esmf.git /tmp/esmf \
-    && cd /tmp/esmf \
-    && export ESMF_DIR=/tmp/esmf \
-    && export ESMF_COMPILER=gfortran \
-    && export ESMF_COMM=openmpi \
-    && export ESMF_NETCDF=nc-config \
-    && export ESMF_NETCDF_LIBS="-lnetcdf -lnetcdff" \
-    && export ESMF_INSTALL_PREFIX=/usr/local \
-    && make -j$(nproc) \
-    && make install \
-    && rm -rf /tmp/esmf
+## 6. Clone and install ESMF (with NUOPC support)
+#RUN git clone --depth 1 -b v8.9.1 https://github.com/esmf-org/esmf.git /tmp/esmf \
+#    && cd /tmp/esmf \
+#    && export ESMF_DIR=/tmp/esmf \
+#    && export ESMF_COMPILER=gfortran \
+#    && export ESMF_COMM=openmpi \
+#    && export ESMF_NETCDF=nc-config \
+#    && export ESMF_NETCDF_LIBS="-lnetcdf -lnetcdff" \
+#    && export ESMF_INSTALL_PREFIX=/usr/local \
+#    && make -j$(nproc) \
+#    && make install \
+#    && rm -rf /tmp/esmf
 
 # Set standard environment variables
 ENV ESMFMKFILE=/usr/local/lib/libO/Linux.gfortran.32.openmpi.default/esmf.mk

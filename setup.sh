@@ -13,7 +13,7 @@
 set -e
 
 # Define the container image name
-IMAGE="cece-dev"
+IMAGE="deckyfre/cece-dev"
 
 # Ensure docker is installed
 if ! command -v docker &> /dev/null; then
@@ -27,7 +27,10 @@ if docker image inspect "$IMAGE" &> /dev/null; then
 else
     if [ -f "Dockerfile" ]; then
         echo "Docker image $IMAGE not found. Building it from Dockerfile..."
-        docker build -t "$IMAGE" .
+        docker buildx build --platform linux/arm64 \
+          --builder cloud-bkrlps-cece-builder \
+          --push \
+          -t "$IMAGE" .
     else
         echo "Error: Dockerfile not found at root directory to build $IMAGE."
         exit 1
