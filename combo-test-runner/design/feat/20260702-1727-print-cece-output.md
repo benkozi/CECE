@@ -1,0 +1,2 @@
+- when i run pytest on the suite, i need to see the output printed after each cece driver call to make sure the driver is actually running
+- after each driver call, make sure the output from the cece driver is visible when using `pytest -vs`
