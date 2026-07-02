@@ -149,13 +149,19 @@ builds it). One driver invocation per container, container removed on exit
 
 ```
 docker run --rm \
-    -v <cece-repo-root>:/work \
-    -w /work \
+    -v <host-cece-repo-root>:/work \   # bind mount: <host path>:<container path>
+    -w /work \                         # working directory inside the container
     -e OMPI_ALLOW_RUN_AS_ROOT=1 \
     -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
     deckyfre/cece-dev \
     ./build/cece_standalone_driver <output-root>/<combo-name>/<combo-name>.yaml
 ```
+
+The `-v` flag carries the host→container mapping: the host-side CECE repo
+root (the `root` setting, `CECE_ROOT`) maps to `/work` in the container. The
+`-w` flag takes a container path only — it sets the driver's working
+directory to the mounted repo root, so the relative `./build/...` driver path
+and `/work`-relative config paths resolve correctly.
 
 Invoked with `subprocess.check_output(..., stderr=subprocess.STDOUT)` so the
 driver's combined stdout/stderr is captured. The runner writes the captured
