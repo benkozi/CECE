@@ -2,23 +2,62 @@
 
 ## Goal
 
-A standalone pytest-based test suite that exercises `cece_standalone_driver` across
-every combination of the enum-valued configuration options defined in
-`combo-test-runner/src/models/cece_config.py`. Each combination is rendered to a
-YAML config, executed in an isolated Docker container, and passes if the driver
-exits cleanly. A later phase adds output/error assertions.
+A standalone pytest-based test suite that exercises `cece_standalone_driver`
+across combinations of the enum-valued configuration options defined in
+`combo-test-runner/src/models/cece_config.py`. The combinations to sweep are
+declared in a YAML **suite configuration** validated by pydantic. Each
+combination is rendered to a driver YAML config, executed in an isolated
+Docker container with its output captured to a log, and passes if the driver
+exits 0. A later phase adds assertions that inspect the logs and NetCDF
+output.
 
 ## Non-goals (v1)
 
 - No standalone CLI — pytest's command line is the only entry point.
 - No dependency on existing CECE Python infrastructure; the runner lives in its
   own `uv`-managed environment under `combo-test-runner/`.
-- No validation of NetCDF output contents. v1's pass criterion is driver exit
-  code 0 (`subprocess.check_call` raises on nonzero).
+- No validation of NetCDF output contents or log contents. v1's pass criterion
+  is driver exit code 0.
+
+## Suite configuration
+
+The sweep is defined in a YAML file loaded into a pydantic model — not
+hardcoded. Each entry names an enum dimension and lists the values to sweep;
+enums absent from the file are **not swept** and stay at their base-config
+values. The combination space is the cartesian product of the listed values.
+
+```yaml
+# suite.yaml — initial suite
+sweep:
+  mapalgo: [bilinear, consd, passthrough]
+```
+
+```python
+class Sweep(BaseModel):
+    operation: list[Operation] | None = None
+    category: list[Category] | None = None
+    vdist_method: list[VdistMethod] | None = None
+    taxmode: list[Taxmode] | None = None
+    tintalgo: list[Tintalgo] | None = None
+    mapalgo: list[Mapalgo] | None = None
+
+class SuiteConfig(BaseModel):
+    sweep: Sweep
+```
+
+Reusing the enums from `cece_config.py` means invalid values fail at suite-load
+time with a pydantic error, before any container runs.
+
+The **initial suite** sweeps only `Mapalgo` over `bilinear`, `consd`, and
+`passthrough` — 3 combinations. The full 6-enum product (864 combinations)
+remains expressible later purely by editing the suite YAML.
+
+The suite file path is a pytest option (`--suite-config`, default:
+`combo-test-runner/suite.yaml`, checked in with the initial sweep).
 
 ## Combination space
 
-`cece_config.py` defines six enums. A combination is one value chosen from each:
+Where each enum dimension is injected into the driver config:
 
 | Enum          | Values | Injected at                                  |
 |---------------|--------|----------------------------------------------|
@@ -29,11 +68,8 @@ exits cleanly. A later phase adds output/error assertions.
 | `Tintalgo`    | 2      | `cece_data.streams[0].tintalgo`               |
 | `Mapalgo`     | 6      | `cece_data.streams[0].mapalgo`                |
 
-Full cartesian product: **2 × 6 × 3 × 2 × 2 × 6 = 864 combinations**, i.e. 864
-container runs per full suite execution.
-
 Some enum values require companion fields to form a valid config; the generator
-is responsible for supplying them:
+supplies them:
 
 - `VdistMethod.height` → set `vdist_h_start` / `vdist_h_end` to fixed sensible
   defaults (e.g. 0.0 / 100.0 m).
@@ -43,55 +79,60 @@ is responsible for supplying them:
 ### Combination naming
 
 Each combination gets a deterministic, filesystem-safe unique name built from
-its enum values in a fixed order:
+the **swept dimensions only**, in a fixed canonical order
+(`op`, `cat`, `vd`, `tax`, `tint`, `map`):
 
-```
-op-{operation}_cat-{category}_vd-{vdist}_tax-{taxmode}_tint-{tintalgo}_map-{mapalgo}
-```
-
-Example: `op-add_cat-anthropogenic_vd-PBL_tax-cycle_tint-linear_map-consd`
+- Initial suite: `map-bilinear`, `map-consd`, `map-passthrough`
+- A hypothetical two-dimension sweep: `op-add_map-consd`, …
 
 This name is used as the pytest parameter id, the per-combo directory name, and
-the YAML filename — so `pytest -k 'map-consd and vd-PBL'` selects slices of the
-suite for free.
+the YAML filename — so `pytest -k <expr>` selects slices of the suite for free.
+Unswept dimensions are omitted from the name; they are constant across the run
+and recorded in the generated YAML itself.
 
 ## Base configuration
 
 Combinations are diffs applied to a **base config** — a known-good
 `CeceConfig` (modeled on `examples/cece_config_ex1.yaml`: single species `co`,
-single `MACCITY` stream, coarse global grid, one-hour run). The base config is
-defined in code (constructed as a `CeceConfig` instance) so the runner has zero
-runtime dependency on files elsewhere in the repo. For each combination the
-generator:
+single `MACCITY` stream reading `/work/data/MACCity_4x5.nc`, coarse global
+grid, one-hour run). The base config is defined in code (constructed as a
+`CeceConfig` instance) so the runner has zero runtime dependency on files
+elsewhere in the repo. For each combination the generator:
 
 1. Deep-copies the base config.
-2. Applies the six enum values (plus companion vdist fields) at the injection
-   points above.
+2. Applies the swept enum values (plus companion vdist fields) at the
+   injection points above.
 3. Points `output.directory` at the combo's own directory (see layout below).
 4. Serializes with `CeceConfig.to_yaml()`.
+
+**Requirement — all config construction goes through `cece_config.py`.**
+Every generated driver config is built as a `CeceConfig` model instance
+(base config and per-combo mutations alike) and written to disk only via
+`CeceConfig.to_yaml()`. No hand-assembled dicts, string templates, or direct
+`yaml.dump` calls anywhere in the generator. This guarantees every config the
+driver receives has passed pydantic validation, and keeps serialization
+behavior (`exclude_none`, key ordering, the YAML 1.2 boolean handling in
+`cece_config.py`) in one place. If a combination needs a field the model
+doesn't have, the fix is to extend `cece_config.py` — not to bypass it.
 
 ## Directory layout (runtime artifacts)
 
 All paths below are as seen **inside the container**, where the CECE repo root
-is mounted at `/work`. The output root defaults to a directory under `/work` so
-results persist on the host through the bind mount.
+is mounted at `/work`. The output root lives under `/work` so results persist
+on the host through the bind mount. Relative `--combo-output-root` values are
+resolved against `/work`.
 
 ```
-<output-root>/                        # configurable, default: /work/combo_runs
-  op-add_cat-..._map-consd/           # one directory per combination
-    op-add_cat-..._map-consd.yaml     # generated driver config
-    *.nc                              # driver NetCDF output (output.directory
-                                      #   in the yaml points here)
+<output-root>/                 # configurable, default: /work/combo_runs
+  map-consd/                   # one directory per combination
+    map-consd.yaml             # generated driver config
+    map-consd.log              # captured driver stdout+stderr
+    *.nc                       # driver NetCDF output (output.directory in
+                               #   the yaml points here)
 ```
 
-The generated YAML sets `output.directory` to
-`<output-root>/<combo-name>/` so every artifact for a combination lives in one
-place. Relative `--combo-output-root` values are resolved against `/work`.
-
-Note: the original notes say the output root "will be relative to the /root
-directory in the container". This design interprets that as the mounted repo
-root (`/work`); writing under the container's `/root` home would be lost when
-the container is removed. **Confirm this interpretation.**
+Everything produced by or for a combination — config, log, NetCDF — lives in
+that combination's directory.
 
 ## Execution model
 
@@ -110,21 +151,26 @@ docker run --rm \
     ./build/cece_standalone_driver <output-root>/<combo-name>/<combo-name>.yaml
 ```
 
-Invoked with `subprocess.check_call(...)` — a nonzero driver exit raises
-`CalledProcessError` and fails that combination's test. The environment
-variables mirror `setup.sh` (the container runs as root and the driver calls
-`MPI_Init`).
+Invoked with `subprocess.check_output(..., stderr=subprocess.STDOUT)` so the
+driver's combined stdout/stderr is captured. The runner writes the captured
+output to `<combo-name>.log` in the combo directory **whether the run passes
+or fails** (on failure, `CalledProcessError.output` carries the text; the
+runner writes the log, then re-raises so the test fails). A nonzero driver
+exit is the failure condition. The environment variables mirror `setup.sh`
+(the container runs as root and the driver calls `MPI_Init`).
 
 ## Pytest integration
 
-- **One test, parameterized by combo.** A session-scoped step generates all 864
-  YAML files up front; a parameterized fixture hands each test a single YAML
-  path (host path + matching container path). The test body is just the docker
-  invocation.
+- **One test, parameterized by combo.** A session-scoped step loads the suite
+  config and generates all combo YAML files up front; a parameterized fixture
+  hands each test a single YAML path (host path + matching container path).
+  The test body is just the docker invocation.
 - **Fail fast vs. continue** uses pytest built-ins — no custom flags:
   - continue (default): plain `pytest`
   - fail fast: `pytest -x` (or `--maxfail=N`)
 - **Custom options** (registered in `conftest.py` via `pytest_addoption`):
+  - `--suite-config=PATH` — suite YAML defining the sweep (default:
+    `combo-test-runner/suite.yaml`).
   - `--combo-output-root=PATH` — root artifact directory (container-relative
     semantics as above; default `combo_runs`).
 - **Selection**: `pytest -k <expr>` against the combo-name ids runs subsets.
@@ -150,11 +196,14 @@ its own `pyproject.toml` at `combo-test-runner/`:
 ```
 combo-test-runner/
   pyproject.toml          # uv project: pytest, pydantic>=2, pydantic-settings, pyyaml
+  suite.yaml              # initial sweep: mapalgo = [bilinear, consd, passthrough]
   design/design.md
   src/
-    models/cece_config.py # existing pydantic model of the driver config
-    combos.py             # enum-product enumeration, combo naming, config generation
-    runner.py             # docker run construction + subprocess.check_call
+    models/
+      cece_config.py      # existing pydantic model of the driver config
+      suite_config.py     # SuiteConfig / Sweep models + YAML loader
+    combos.py             # sweep → combinations, combo naming, config generation
+    runner.py             # docker run construction, check_output, log writing
     settings.py           # pydantic-settings
     tests/
       conftest.py         # options, session fixture (generate yamls), param fixture
@@ -166,27 +215,23 @@ imported from the CECE repo outside `combo-test-runner/`.
 
 ## Future work
 
-- **Suite configuration file**: YAML + pydantic config for the test suite
-  itself (which enums to sweep, base-config overrides, per-combo excludes),
-  replacing/augmenting the in-code base config.
-- **Assertion step**: post-run evaluation that reads the produced NetCDF and/or
-  captured driver output to assert on values and expected-error conditions,
-  rather than exit code alone.
+- **Assertion / evaluation step**: post-run evaluation that inspects the
+  captured driver logs (already persisted per combo) and the produced NetCDF
+  to assert on values and expected-error conditions, rather than exit code
+  alone.
+- **Richer suite configuration**: base-config overrides, per-combo excludes /
+  expected-failure lists, multiple named sweeps in one file.
 - Possible `pytest-xdist` parallelism — combinations are already fully isolated
   (own container, own directory), so `-n auto` should be safe.
 
-## Open questions
+## Resolved decisions
 
-1. **Output-root semantics**: confirm the `/work`-relative interpretation over
-   the container's literal `/root` home directory.
-2. **Full product vs. constrained product**: 864 serial container runs is a
-   long suite. Is the full cartesian product intended for every run, with
-   `-k` slicing for day-to-day use — or should v1 constrain the product (e.g.
-   pairwise coverage)?
-3. **Expected failures**: are all 864 combinations expected to be *valid*
-   driver configs (exit 0), or are some enum combinations legitimately
-   rejected by the driver? If the latter, v1 needs an expected-failure list
-   before the assertion step lands.
-4. **Data dependency**: the base config's stream references
-   `/work/data/MACCity_4x5.nc`. Confirm that file is guaranteed present in the
-   repo checkout that gets mounted.
+- Output root lives under the `/work` mount (not the container's `/root`
+  home), so artifacts survive `--rm`.
+- Input data (`/work/data/MACCity_4x5.nc`) is guaranteed present in the
+  mounted checkout.
+- Exit code 0 is the sole pass criterion for v1; log/NetCDF inspection comes
+  with the future evaluation step.
+- The sweep is YAML-configured from day one; the initial suite covers only
+  `mapalgo ∈ {bilinear, consd, passthrough}` (3 runs), not the 864-combo full
+  product.
