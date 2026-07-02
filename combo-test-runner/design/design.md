@@ -1,0 +1,15 @@
+- create a combinatorial pytest runner in combo-test-runner/src. all new code goes here
+- the test should generate yaml files in a temporary directory for every enum combination in combo-test-runner/src/models/cece_config.py
+- it needs to run ./build/cece_standalone_driver <generated yaml config> for every generated combination
+- output netcdf data needs the structure <root directory>/<unique combo name>/<unique combo name>.yaml
+  - output configured should be written to the <unique combo name> directory
+- each driver call should execute independently in a docker container defined in setup.sh
+  - the docker container will be built already
+  - the docker container should be removed after directory
+  - map ./CECE to /work in the container
+- each test should run with a single yaml path parameterized from a fixture
+- two options are needed: fail fast and continue
+- we should use pytest's command line options for everything. no need for a separate cli
+- use subprocess check_call in python to execute the docker run --rm commands
+- create a separate python uv environment in combo-test-runner to execute the pytest calls
+- pydantic 2.0 will be needed and pydantic-settings used for any environment variables
