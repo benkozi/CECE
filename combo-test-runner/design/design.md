@@ -134,6 +134,11 @@ resolved against `/work`.
 Everything produced by or for a combination — config, log, NetCDF — lives in
 that combination's directory.
 
+The output root must not exist when a session starts: an existing root fails
+the run immediately unless `--combo-clean-root` is passed, which removes the
+old root first (see Pytest integration). Each run therefore always starts
+from an empty root.
+
 ## Execution model
 
 Each combination runs independently in a fresh container using the image built
@@ -175,6 +180,15 @@ exit is the failure condition. The environment variables mirror `setup.sh`
     `combo-test-runner/suite.yaml`).
   - `--combo-output-root=PATH` — root artifact directory (container-relative
     semantics as above; default `combo_runs`).
+  - `--combo-clean-root` — flag; if the output root already exists, remove it
+    (`shutil.rmtree`) before generating configs.
+- **Existing output root is an error by default.** At session start, before
+  any configs are generated or containers run, the runner checks whether the
+  output root exists on the host. If it does and `--combo-clean-root` was not
+  given, the session fails immediately with a clear message — prior results
+  are never silently mixed with or overwritten by a new run. With
+  `--combo-clean-root`, the existing root is deleted wholesale and recreated.
+  The rmtree targets only the resolved output root, never its parent.
 - **Selection**: `pytest -k <expr>` against the combo-name ids runs subsets.
 
 ## Settings
@@ -233,6 +247,8 @@ stage: enough for a user to set up and run the suite. It covers:
   - a subset: `uv run pytest -k map-consd`
   - alternate suite file / output root: `--suite-config`,
     `--combo-output-root`
+  - rerun over an existing output root: `--combo-clean-root` (without it,
+    an existing root is an error)
 - **Where results land**: the per-combo directory layout (yaml, log, NetCDF)
   under the output root.
 - **Environment variables**: the `CECE_*` settings table.
