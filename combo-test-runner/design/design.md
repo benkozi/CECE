@@ -165,9 +165,11 @@ exit is the failure condition. The environment variables mirror `setup.sh`
   config and generates all combo YAML files up front; a parameterized fixture
   hands each test a single YAML path (host path + matching container path).
   The test body is just the docker invocation.
-- **Fail fast vs. continue** uses pytest built-ins — no custom flags:
-  - continue (default): plain `pytest`
-  - fail fast: `pytest -x` (or `--maxfail=N`)
+- **Fail fast vs. continue** uses pytest built-ins — no custom flags.
+  **Continue is the default and the desired behavior**: a plain `pytest`
+  invocation runs every combination to completion regardless of individual
+  failures, so one bad combo never hides results for the rest. Fail-fast is
+  opt-in via `pytest -x` (first failure) or `--maxfail=N`.
 - **Custom options** (registered in `conftest.py` via `pytest_addoption`):
   - `--suite-config=PATH` — suite YAML defining the sweep (default:
     `combo-test-runner/suite.yaml`).
@@ -177,16 +179,18 @@ exit is the failure condition. The environment variables mirror `setup.sh`
 
 ## Settings
 
-`pydantic-settings` (`BaseSettings`, env prefix `CECE_COMBO_`) supplies
+`pydantic-settings` (`BaseSettings`, env prefix `CECE_`) supplies
 environment-derived configuration, keeping the pytest CLI for run-shaping
-options only:
+options only. The prefix is deliberately `CECE_` rather than something
+runner-specific: the settings class may later host other variable groups
+beyond the test runner.
 
-| Setting          | Env var                     | Default              |
-|------------------|-----------------------------|----------------------|
-| `docker_image`   | `CECE_COMBO_DOCKER_IMAGE`   | `deckyfre/cece-dev`  |
-| `cece_root`      | `CECE_COMBO_CECE_ROOT`      | repo root (derived)  |
-| `driver_path`    | `CECE_COMBO_DRIVER_PATH`    | `./build/cece_standalone_driver` |
-| `run_timeout_s`  | `CECE_COMBO_RUN_TIMEOUT_S`  | e.g. 300             |
+| Setting          | Env var               | Default              |
+|------------------|-----------------------|----------------------|
+| `docker_image`   | `CECE_DOCKER_IMAGE`   | `deckyfre/cece-dev`  |
+| `root`           | `CECE_ROOT`           | repo root (derived)  |
+| `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
+| `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | e.g. 300             |
 
 ## Code layout
 
