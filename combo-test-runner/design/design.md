@@ -201,6 +201,7 @@ its own `pyproject.toml` at `combo-test-runner/`:
 combo-test-runner/
   pyproject.toml          # uv project: pytest, pydantic>=2, pydantic-settings, pyyaml
   suite.yaml              # initial sweep: mapalgo = [bilinear, consd, passthrough]
+  README.md               # user-facing setup + run instructions
   design/design.md
   src/
     models/
@@ -216,6 +217,29 @@ combo-test-runner/
 
 Dependencies: `pytest`, `pydantic>=2`, `pydantic-settings`, `pyyaml`. Nothing
 imported from the CECE repo outside `combo-test-runner/`.
+
+## README (user documentation)
+
+A `combo-test-runner/README.md` ships with v1 — deliberately simple at this
+stage: enough for a user to set up and run the suite. It covers:
+
+- **Prerequisites**: Docker with the `deckyfre/cece-dev` image available
+  (built via `./setup.sh` at the repo root), the driver built at
+  `./build/cece_standalone_driver`, and `uv` installed.
+- **Setup**: `cd combo-test-runner && uv sync`.
+- **Running**:
+  - full suite: `uv run pytest`
+  - fail fast: `uv run pytest -x`
+  - a subset: `uv run pytest -k map-consd`
+  - alternate suite file / output root: `--suite-config`,
+    `--combo-output-root`
+- **Where results land**: the per-combo directory layout (yaml, log, NetCDF)
+  under the output root.
+- **Environment variables**: the `CECE_*` settings table.
+
+The README grows alongside future features (evaluation step, richer suite
+config) but stays a quick-start document; design rationale lives here, not
+there.
 
 ## Future work
 
