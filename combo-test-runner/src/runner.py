@@ -39,6 +39,14 @@ def build_command(
     return command
 
 
+def _print_output(out_path: Path, output: bytes) -> None:
+    # out_path.stem is the combo name. Visibility is delegated to pytest's
+    # capture model: shown live with -s, in failure reports otherwise.
+    print(f"----- cece driver output [{out_path.stem}] -----")
+    print(output.decode("utf-8", errors="replace"), end="")
+    print(f"----- end driver output [{out_path.stem}] -----")
+
+
 def run_driver(
     settings: Settings,
     container_yaml: PurePosixPath,
@@ -47,13 +55,16 @@ def run_driver(
 ) -> None:
     """Run one driver invocation in a fresh container.
 
-    Combined stdout/stderr is written to out_path whether the run passes or
-    fails; a nonzero exit re-raises CalledProcessError to fail the test.
+    Combined stdout/stderr is written to out_path and printed whether the run
+    passes or fails; a nonzero exit re-raises CalledProcessError to fail the
+    test.
     """
     command = build_command(settings, container_yaml, output_mount=output_mount)
     try:
         output = subprocess.check_output(command, stderr=subprocess.STDOUT, timeout=settings.run_timeout_s)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         out_path.write_bytes(exc.output or b"")
+        _print_output(out_path, exc.output or b"")
         raise
     out_path.write_bytes(output)
+    _print_output(out_path, output)
