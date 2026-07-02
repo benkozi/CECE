@@ -7,17 +7,17 @@ across combinations of the enum-valued configuration options defined in
 `combo-test-runner/src/models/cece_config.py`. The combinations to sweep are
 declared in a YAML **suite configuration** validated by pydantic. Each
 combination is rendered to a driver YAML config, executed in an isolated
-Docker container with its output captured to a log, and passes if the driver
-exits 0. A later phase adds assertions that inspect the logs and NetCDF
-output.
+Docker container with its stdout/stderr captured to a per-combo `.out` file,
+and passes if the driver exits 0. A later phase adds assertions that inspect
+the captured output and NetCDF output.
 
 ## Non-goals (v1)
 
 - No standalone CLI — pytest's command line is the only entry point.
 - No dependency on existing CECE Python infrastructure; the runner lives in its
   own `uv`-managed environment under `combo-test-runner/`.
-- No validation of NetCDF output contents or log contents. v1's pass criterion
-  is driver exit code 0.
+- No validation of NetCDF output contents or captured driver output. v1's
+  pass criterion is driver exit code 0.
 
 ## Suite configuration
 
@@ -126,13 +126,14 @@ resolved against `/work`.
 <output-root>/                 # configurable, default: /work/combo_runs
   map-consd/                   # one directory per combination
     map-consd.yaml             # generated driver config
-    map-consd.log              # captured driver stdout+stderr
+    map-consd.out              # captured driver stdout+stderr (".log" is
+                               #   reserved for a future real driver log file)
     *.nc                       # driver NetCDF output (output.directory in
                                #   the yaml points here)
 ```
 
-Everything produced by or for a combination — config, log, NetCDF — lives in
-that combination's directory.
+Everything produced by or for a combination — config, captured output,
+NetCDF — lives in that combination's directory.
 
 The output root must not exist when a session starts: an existing root fails
 the run immediately unless `--combo-clean-root` is passed, which removes the
@@ -158,9 +159,9 @@ docker run --rm \
 
 Invoked with `subprocess.check_output(..., stderr=subprocess.STDOUT)` so the
 driver's combined stdout/stderr is captured. The runner writes the captured
-output to `<combo-name>.log` in the combo directory **whether the run passes
+output to `<combo-name>.out` in the combo directory **whether the run passes
 or fails** (on failure, `CalledProcessError.output` carries the text; the
-runner writes the log, then re-raises so the test fails). A nonzero driver
+runner writes the capture, then re-raises so the test fails). A nonzero driver
 exit is the failure condition. The environment variables mirror `setup.sh`
 (the container runs as root and the driver calls `MPI_Init`).
 
@@ -222,7 +223,7 @@ combo-test-runner/
       cece_config.py      # existing pydantic model of the driver config
       suite_config.py     # SuiteConfig / Sweep models + YAML loader
     combos.py             # sweep → combinations, combo naming, config generation
-    runner.py             # docker run construction, check_output, log writing
+    runner.py             # docker run construction, check_output, .out writing
     settings.py           # pydantic-settings
     tests/
       conftest.py         # options, session fixture (generate yamls), param fixture
@@ -249,8 +250,8 @@ stage: enough for a user to set up and run the suite. It covers:
     `--combo-output-root`
   - rerun over an existing output root: `--combo-clean-root` (without it,
     an existing root is an error)
-- **Where results land**: the per-combo directory layout (yaml, log, NetCDF)
-  under the output root.
+- **Where results land**: the per-combo directory layout (yaml, `.out`,
+  NetCDF) under the output root.
 - **Environment variables**: the `CECE_*` settings table.
 
 The README grows alongside future features (evaluation step, richer suite
@@ -260,7 +261,8 @@ there.
 ## Future work
 
 - **Assertion / evaluation step**: post-run evaluation that inspects the
-  captured driver logs (already persisted per combo) and the produced NetCDF
+  captured driver output (already persisted per combo as `.out`), eventual
+  real driver log files, and the produced NetCDF
   to assert on values and expected-error conditions, rather than exit code
   alone.
 - **Richer suite configuration**: base-config overrides, per-combo excludes /
