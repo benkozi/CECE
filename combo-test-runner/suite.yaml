@@ -1,0 +1,6 @@
+# Test-suite sweep configuration (see design/design.md).
+# Each key names an enum dimension from src/models/cece_config.py; the
+# combination space is the cartesian product of the listed values. Enums
+# absent from `sweep` are not swept and stay at their base-config values.
+sweep:
+  mapalgo: [bilinear, consd, passthrough]

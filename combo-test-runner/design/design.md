@@ -117,13 +117,20 @@ doesn't have, the fix is to extend `cece_config.py` — not to bypass it.
 
 ## Directory layout (runtime artifacts)
 
-All paths below are as seen **inside the container**, where the CECE repo root
-is mounted at `/work`. The output root lives under `/work` so results persist
-on the host through the bind mount. Relative `--combo-output-root` values are
-resolved against `/work`.
+**By default, all test-generated data — combo yamls, captured output, NetCDF —
+is written to a pytest-managed temporary directory** (session-scoped
+`tmp_path_factory`, the machinery behind the `tmp_path` fixture). Nothing
+lands in the repo checkout and nothing needs git-ignoring; pytest keeps the
+last few runs under its base temp dir and prunes older ones.
+
+Passing `--combo-output-root=PATH` opts out of the temp default: the path is
+then interpreted as container-relative, resolved against `/work` (the mounted
+repo root), so results persist in the checkout.
+
+Layout under the output root is the same either way:
 
 ```
-<output-root>/                 # configurable, default: /work/combo_runs
+<output-root>/                 # default: pytest tmp dir; else /work-relative
   map-consd/                   # one directory per combination
     map-consd.yaml             # generated driver config
     map-consd.out              # captured driver stdout+stderr (".log" is
@@ -138,7 +145,9 @@ NetCDF — lives in that combination's directory.
 The output root must not exist when a session starts: an existing root fails
 the run immediately unless `--combo-clean-root` is passed, which removes the
 old root first (see Pytest integration). Each run therefore always starts
-from an empty root.
+from an empty root. This check only has teeth for an explicit
+`--combo-output-root`; the default pytest temp root is freshly created every
+session and can never pre-exist.
 
 ## Execution model
 
@@ -163,6 +172,13 @@ root (the `root` setting, `CECE_ROOT`) maps to `/work` in the container. The
 directory to the mounted repo root, so the relative `./build/...` driver path
 and `/work`-relative config paths resolve correctly.
 
+When the output root is the default pytest temp directory, it lies outside
+the repo and therefore outside the `/work` mount — the command gains a second
+bind mount, `-v <host-tmp-root>:/combo_runs`, and the generated configs and
+driver arguments reference the output root as `/combo_runs`. With an explicit
+`--combo-output-root` the output root already lives under `/work` and no
+extra mount is added.
+
 Invoked with `subprocess.check_output(..., stderr=subprocess.STDOUT)` so the
 driver's combined stdout/stderr is captured. The runner writes the captured
 output to `<combo-name>.out` in the combo directory **whether the run passes
@@ -186,16 +202,20 @@ exit is the failure condition. The environment variables mirror `setup.sh`
   - `--suite-config=PATH` — suite YAML defining the sweep (default:
     `combo-test-runner/suite.yaml`).
   - `--combo-output-root=PATH` — root artifact directory (container-relative
-    semantics as above; default `combo_runs`).
-  - `--combo-clean-root` — flag; if the output root already exists, remove it
-    (`shutil.rmtree`) before generating configs.
-- **Existing output root is an error by default.** At session start, before
-  any configs are generated or containers run, the runner checks whether the
-  output root exists on the host. If it does and `--combo-clean-root` was not
-  given, the session fails immediately with a clear message — prior results
-  are never silently mixed with or overwritten by a new run. With
-  `--combo-clean-root`, the existing root is deleted wholesale and recreated.
-  The rmtree targets only the resolved output root, never its parent.
+    semantics as above). Default: unset, meaning a pytest-managed temporary
+    directory via session-scoped `tmp_path_factory`.
+  - `--combo-clean-root` — flag; if an explicitly given output root already
+    exists, remove it (`shutil.rmtree`) before generating configs. Has no
+    effect with the default temp root, which is always freshly created.
+- **Existing explicit output root is an error by default.** When
+  `--combo-output-root` is given, the runner checks at session start — before
+  any configs are generated or containers run — whether that root exists on
+  the host. If it does and `--combo-clean-root` was not given, the session
+  fails immediately with a clear message — prior results are never silently
+  mixed with or overwritten by a new run. With `--combo-clean-root`, the
+  existing root is deleted wholesale and recreated. The rmtree targets only
+  the resolved output root, never its parent. The default temp root needs no
+  guard: `tmp_path_factory` allocates a fresh directory every session.
 - **Selection**: `pytest -k <expr>` against the combo-name ids runs subsets.
 
 ## Settings
@@ -278,8 +298,11 @@ there.
 
 ## Resolved decisions
 
-- Output root lives under the `/work` mount (not the container's `/root`
-  home), so artifacts survive `--rm`.
+- Test-generated data goes to a pytest temp directory by default (mounted
+  into the container at `/combo_runs`), so the repo checkout stays clean and
+  no `.gitignore` entries are needed. An explicit `--combo-output-root` opts
+  into a `/work`-relative root that persists in the checkout. Either way the
+  root is bind-mounted, so artifacts survive `--rm`.
 - Input data (`/work/data/MACCity_4x5.nc`) is guaranteed present in the
   mounted checkout.
 - Exit code 0 is the sole pass criterion for v1; log/NetCDF inspection comes

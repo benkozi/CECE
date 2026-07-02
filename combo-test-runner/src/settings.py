@@ -1,0 +1,18 @@
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# combo-test-runner/src/settings.py -> CECE repo root is two levels up from src/
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class Settings(BaseSettings):
+    """Environment-derived configuration. The CECE_ prefix is deliberately not
+    runner-specific so this class can host other variable groups later."""
+
+    model_config = SettingsConfigDict(env_prefix="CECE_")
+
+    docker_image: str = "deckyfre/cece-dev"
+    root: Path = _REPO_ROOT
+    driver_path: str = "./build/cece_standalone_driver"
+    run_timeout_s: int = 300
