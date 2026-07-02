@@ -10,6 +10,9 @@
 - each test should run with a single yaml path parameterized from a fixture
 - two options are needed: fail fast and continue
 - we should use pytest's command line options for everything. no need for a separate cli
+  - root output directory should be configurable. the output path will be relative to the /root directory in the container 
 - use subprocess check_call in python to execute the docker run --rm commands
 - create a separate python uv environment in combo-test-runner to execute the pytest calls
 - pydantic 2.0 will be needed and pydantic-settings used for any environment variables
+- future features will add yaml-based + pydantic configuration for the test suite
+  - there will also be an assertion step that will read output or evaluate error conditions
