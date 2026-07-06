@@ -44,6 +44,13 @@ module cece_cap_mod
       integer(c_int), value :: path_len
     end subroutine
 
+    subroutine cece_run_log_setup(config_path, path_len) &
+                                  bind(C, name="cece_run_log_setup")
+      import :: c_char, c_int
+      character(kind=c_char), intent(in) :: config_path(*)
+      integer(c_int), value :: path_len
+    end subroutine
+
     subroutine cece_core_initialize_p1(data_ptr, rc) &
                                         bind(C, name="cece_core_initialize_p1")
       import :: c_ptr, c_int
@@ -233,6 +240,12 @@ contains
     ! Set YAML configuration path in the core C-API
     call cece_set_config_file_path(trim(g_config_file_path)//c_null_char, &
                                    int(len_trim(g_config_file_path), c_int))
+
+    ! Configure run logging (optional log file, per-rank stdout suppression) and
+    ! print the startup banner. Shared with the standalone driver so behavior is
+    ! identical regardless of how CECE is launched.
+    call cece_run_log_setup(trim(g_config_file_path)//c_null_char, &
+                            int(len_trim(g_config_file_path), c_int))
 
     ! Allocate core C++ data structures
     call cece_core_initialize_p1(g_cece_data_ptr, c_rc)

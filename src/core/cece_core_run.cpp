@@ -64,8 +64,8 @@ void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc) {
                 return;
             }
 
-            std::cout << "CECE_Run: executing step (hour=" << step.hour_of_day << ", day=" << step.day_of_week << ", elapsed=" << step.elapsed_seconds
-                      << ")\n";
+            std::cout << "CECE_Run: executing step (hour=" << step.hour_of_day << ", day_of_week=" << step.day_of_week
+                      << ", elapsed=" << step.elapsed_seconds << ")\n";
 
             // Track whether we've already ingested this step (multiple data
             // streams may be due, but IngestEmissionsInline handles all at once)
@@ -118,7 +118,7 @@ void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc) {
             }
         } else {
             // Backward compatibility: no clock, execute all components unconditionally
-            std::cout << "CECE_Run: executing step (hour=" << hour << ", day=" << day_of_week << ")\n";
+            std::cout << "CECE_Run: executing step (hour=" << hour << ", day_of_week=" << day_of_week << ")\n";
 
             // Ingest emissions from configured streams before stacking
             if (!d->config.cece_data.streams.empty()) {

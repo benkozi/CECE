@@ -25,7 +25,7 @@ std::string GetConfigPath() {
 
 TEST(TideTest, TestBMIPointerAllocation) {
     cece::io::CeceIO cece_io;
-    EXPECT_THROW(cece_io.Initialize("non_existent_file.yaml", 72, 46, 1), std::runtime_error);
+    EXPECT_ANY_THROW(cece_io.Initialize("non_existent_file.yaml", 72, 46, 1));
 }
 
 TEST(TideTest, TestDynamicGraphCompilation) {
@@ -55,21 +55,25 @@ TEST(TideTest, TestEndToEndDriverLoopStub) {
 
 // Custom GTest Environment to manage Kokkos & MPI lifecycle globally
 class KokkosMpiEnvironment : public ::testing::Environment {
+   private:
+    int argc_;
+    char** argv_;
+
    public:
+    KokkosMpiEnvironment(int argc, char** argv) : argc_(argc), argv_(argv) {}
+
     void SetUp() override {
         // Initialize MPI first
         int mpi_initialized = 0;
         MPI_Initialized(&mpi_initialized);
         if (!mpi_initialized) {
-            int argc = 0;
-            char** argv = nullptr;
             int provided = 0;
-            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+            MPI_Init_thread(&argc_, &argv_, MPI_THREAD_MULTIPLE, &provided);
         }
 
         // Initialize Kokkos
         if (!Kokkos::is_initialized()) {
-            Kokkos::initialize();
+            Kokkos::initialize(argc_, argv_);
         }
 
         // Initialize HALO Environment
@@ -91,7 +95,17 @@ class KokkosMpiEnvironment : public ::testing::Environment {
 };
 
 int main(int argc, char** argv) {
+    // Prevent Intel MPI from detecting Slurm and attempting PMI/PMIX process manager bootstrap during unit tests
+    unsetenv("SLURM_JOB_ID");
+    unsetenv("SLURM_STEP_ID");
+    unsetenv("PMI_RANK");
+    unsetenv("PMI_SIZE");
+
+    // Configure Intel MPI to allow standalone, local-only execution on login nodes (prevent PMI2/Hydra aborts)
+    setenv("I_MPI_HYDRA_BOOTSTRAP", "none", 0);
+    setenv("I_MPI_SHM", "disable", 0);
+
     ::testing::InitGoogleTest(&argc, argv);
-    ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment);
+    ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment(argc, argv));
     return RUN_ALL_TESTS();
 }

@@ -1,6 +1,7 @@
 #include "cece/cece_standalone_writer.hpp"
 
 #include <amio/amio.h>
+#include <mpi.h>
 
 #include <cstring>
 #include <ctime>
@@ -186,66 +187,84 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
     amio_dataset_handle dataset = nullptr;
 
     try {
-        // Step 1: Write dynamic AMIO netcdf4 manifest YAML
-        std::ofstream m_file(manifest_path);
-
-        std::string time_units = "seconds since " + start_time_iso8601_;
-        size_t t_pos = time_units.find('T');
-        if (t_pos != std::string::npos) {
-            time_units[t_pos] = ' ';
+        int rank = 0;
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (mpi_initialized) {
+            MPI_Comm_rank(MPI_COMM_WORLD, &rank);
         }
 
-        m_file << "backend: netcdf4\n"
-               << "path: " << filename << "\n"
-               << "data_model: enhanced\n"
-               << "staging_pool:\n"
-               << "  buffer_count: 16\n"
-               << "  buffer_capacity_bytes: 104857600\n"
-               << "worker_pool:\n"
-               << "  threads: 1\n"
-               << "prefetch:\n"
-               << "  depth: 4\n"
-               << "  read_timeout_s: 60\n"
-               << "staging_timeout_ms: 10000\n"
-               << "global_attributes:\n"
-               << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
-               << "  Conventions: \"CF-1.8\"\n"
-               << "variable_names: [\"lon\", \"lat\", \"lev\", \"time\"";
-        for (const auto& name : config_.fields) {
-            if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
-                continue;
+        if (rank == 0) {
+            // Step 1: Write dynamic AMIO netcdf4 manifest YAML (Rank 0 only to avoid parallel write conflicts)
+            std::ofstream m_file(manifest_path);
+            if (!m_file.is_open()) {
+                CECE_LOG_ERROR("Failed to open manifest file for writing: " + manifest_path);
+                return -1;
             }
-            m_file << ", \"" << name << "\"";
-        }
-        m_file << "]\n"
-               << "variables:\n"
-               << "  lon:\n"
-               << "    attributes:\n"
-               << "      units: \"degrees_east\"\n"
-               << "      long_name: \"longitude\"\n"
-               << "  lat:\n"
-               << "    attributes:\n"
-               << "      units: \"degrees_north\"\n"
-               << "      long_name: \"latitude\"\n"
-               << "  lev:\n"
-               << "    attributes:\n"
-               << "      units: \"level\"\n"
-               << "      long_name: \"vertical level\"\n"
-               << "  time:\n"
-               << "    attributes:\n"
-               << "      units: \"" << time_units << "\"\n"
-               << "      long_name: \"time\"\n";
-        for (const auto& name : config_.fields) {
-            if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
-                continue;
+
+            std::string time_units = "seconds since " + start_time_iso8601_;
+            size_t t_pos = time_units.find('T');
+            if (t_pos != std::string::npos) {
+                time_units[t_pos] = ' ';
             }
-            m_file << "  " << name << ":\n"
+
+            m_file << "backend: netcdf4\n"
+                   << "path: " << filename << "\n"
+                   << "data_model: enhanced\n"
+                   << "staging_pool:\n"
+                   << "  buffer_count: 16\n"
+                   << "  buffer_capacity_bytes: 104857600\n"
+                   << "worker_pool:\n"
+                   << "  threads: 1\n"
+                   << "prefetch:\n"
+                   << "  depth: 4\n"
+                   << "  read_timeout_s: 60\n"
+                   << "staging_timeout_ms: 10000\n"
+                   << "global_attributes:\n"
+                   << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
+                   << "  Conventions: \"CF-1.8\"\n"
+                   << "variable_names: [\"lon\", \"lat\", \"lev\", \"time\"";
+            for (const auto& name : config_.fields) {
+                if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
+                    continue;
+                }
+                m_file << ", \"" << name << "\"";
+            }
+            m_file << "]\n"
+                   << "variables:\n"
+                   << "  lon:\n"
                    << "    attributes:\n"
-                   << "      units: \"mol mol-1\"\n"
-                   << "      long_name: \"mole_fraction_of_" << name << "_in_air\"\n"
-                   << "      coordinates: \"lon lat\"\n";
+                   << "      units: \"degrees_east\"\n"
+                   << "      long_name: \"longitude\"\n"
+                   << "  lat:\n"
+                   << "    attributes:\n"
+                   << "      units: \"degrees_north\"\n"
+                   << "      long_name: \"latitude\"\n"
+                   << "  lev:\n"
+                   << "    attributes:\n"
+                   << "      units: \"level\"\n"
+                   << "      long_name: \"vertical level\"\n"
+                   << "  time:\n"
+                   << "    attributes:\n"
+                   << "      units: \"" << time_units << "\"\n"
+                   << "      long_name: \"time\"\n";
+            for (const auto& name : config_.fields) {
+                if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
+                    continue;
+                }
+                m_file << "  " << name << ":\n"
+                       << "    attributes:\n"
+                       << "      units: \"mol mol-1\"\n"
+                       << "      long_name: \"mole_fraction_of_" << name << "_in_air\"\n"
+                       << "      coordinates: \"lon lat\"\n";
+            }
+            m_file.close();
         }
-        m_file.close();
+
+        // Wait for Rank 0 to finish writing the manifest before any other rank attempts to load it
+        if (mpi_initialized) {
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
 
         // Step 2: Initialize AMIO Core
         check_amio_rc(amio_init(manifest_path.c_str(), &core), "amio_init");
@@ -351,10 +370,14 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
 
                 amio_shape_t field_shape;
                 std::memset(&field_shape, 0, sizeof(field_shape));
-                field_shape.rank = 3;
-                field_shape.extents[0] = nz_;
-                field_shape.extents[1] = ny_;
-                field_shape.extents[2] = nx_;
+                // Write with a leading (unlimited) time axis so per-timestep files
+                // form a proper CF time series: [time=1, lev, ny, nx]. The data
+                // layout is unchanged since the leading time extent is 1.
+                field_shape.rank = 4;
+                field_shape.extents[0] = 1;
+                field_shape.extents[1] = nz_;
+                field_shape.extents[2] = ny_;
+                field_shape.extents[3] = nx_;
 
                 amio_io_handle field_io = nullptr;
                 check_amio_rc(amio_write(dataset, name.c_str(), netcdf_buffer.data(), AMIO_DTYPE_F64, &field_shape, &field_io),

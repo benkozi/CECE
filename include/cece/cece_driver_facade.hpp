@@ -6,9 +6,11 @@
 #include <dagr/dagr.hpp>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "cece/cece_io.hpp"
+#include "cece/cece_regridder_utils.hpp"
 
 namespace cece {
 
@@ -33,6 +35,11 @@ class CeceDriverOrchestrator {
     std::vector<double> target_lats_;
     int step_index_{0};
     MPI_Comm comm_c_{MPI_COMM_NULL};
+
+    // Cached regridding plans keyed by model variable name. The expensive
+    // interpolation weights are built once (per rank-local destination band)
+    // and reused for every timestep.
+    std::unordered_map<std::string, io::RegridPlan> regrid_plans_;
 
     // HELM Orchestration and pipeline components
     std::unique_ptr<dagr::GraphOrchestrator> dagr_;

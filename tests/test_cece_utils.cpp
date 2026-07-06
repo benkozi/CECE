@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <mpi.h>
+#include <unistd.h>
 
 #include <Kokkos_Core.hpp>
 #include <algorithm>
@@ -53,9 +54,10 @@ TEST_F(CeceUtilsTest, WrapESMCFieldUpdatesRawData) {
 }
 
 TEST_F(CeceUtilsTest, StandaloneWriterDuplicateCoordsDetection) {
+    std::string test_dir = "test_output_dir_" + std::to_string(getpid());
     CeceOutputConfig config;
     config.enabled = true;
-    config.directory = "test_output_dir";
+    config.directory = test_dir;
 
     CeceStandaloneWriter writer(config);
 
@@ -81,15 +83,16 @@ TEST_F(CeceUtilsTest, StandaloneWriterDuplicateCoordsDetection) {
     writer.Finalize();
 
     // Cleanup output directory if created
-    if (std::filesystem::exists("test_output_dir")) {
-        std::filesystem::remove_all("test_output_dir");
+    if (std::filesystem::exists(test_dir)) {
+        std::filesystem::remove_all(test_dir);
     }
 }
 
 TEST_F(CeceUtilsTest, StandaloneWriterDuplicateFieldsFiltering) {
+    std::string test_dir = "test_output_dir_fields_" + std::to_string(getpid());
     CeceOutputConfig config;
     config.enabled = true;
-    config.directory = "test_output_dir_fields";
+    config.directory = test_dir;
     config.fields = {"lon", "lat", "lev", "time", "test_field"};
 
     CeceStandaloneWriter writer(config);
@@ -120,11 +123,11 @@ TEST_F(CeceUtilsTest, StandaloneWriterDuplicateFieldsFiltering) {
     writer.Finalize();
 
     // Verify file exists
-    std::string expected_file = "test_output_dir_fields/cece_output_20260629_120000.nc";
+    std::string expected_file = test_dir + "/cece_output_20260629_120000.nc";
     EXPECT_TRUE(std::filesystem::exists(expected_file));
 
-    if (std::filesystem::exists("test_output_dir_fields")) {
-        std::filesystem::remove_all("test_output_dir_fields");
+    if (std::filesystem::exists(test_dir)) {
+        std::filesystem::remove_all(test_dir);
     }
 }
 
@@ -132,21 +135,25 @@ TEST_F(CeceUtilsTest, StandaloneWriterDuplicateFieldsFiltering) {
 
 // Custom GTest Environment to manage Kokkos & MPI lifecycle globally
 class KokkosMpiEnvironment : public ::testing::Environment {
+   private:
+    int argc_;
+    char** argv_;
+
    public:
+    KokkosMpiEnvironment(int argc, char** argv) : argc_(argc), argv_(argv) {}
+
     void SetUp() override {
         // Initialize MPI first
         int mpi_initialized = 0;
         MPI_Initialized(&mpi_initialized);
         if (!mpi_initialized) {
-            int argc = 0;
-            char** argv = nullptr;
             int provided = 0;
-            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+            MPI_Init_thread(&argc_, &argv_, MPI_THREAD_MULTIPLE, &provided);
         }
 
         // Initialize Kokkos
         if (!Kokkos::is_initialized()) {
-            Kokkos::initialize();
+            Kokkos::initialize(argc_, argv_);
         }
     }
     void TearDown() override {
@@ -165,7 +172,41 @@ class KokkosMpiEnvironment : public ::testing::Environment {
 };
 
 int main(int argc, char** argv) {
+    bool is_discovery = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--gtest_list_tests") {
+            is_discovery = true;
+            break;
+        }
+    }
+
+    if (!is_discovery) {
+        // Prevent Intel MPI from detecting Slurm and attempting PMI/PMIX process manager bootstrap during unit tests
+        unsetenv("SLURM_JOB_ID");
+        unsetenv("SLURM_STEP_ID");
+        unsetenv("PMI_RANK");
+        unsetenv("PMI_SIZE");
+
+        // Configure Intel MPI to allow standalone, local-only execution on login nodes (prevent PMI2/Hydra aborts)
+        setenv("I_MPI_HYDRA_BOOTSTRAP", "none", 0);
+        setenv("I_MPI_SHM", "disable", 0);
+
+        // Initialize MPI to check rank and prevent parallel duplicate execution conflicts of local unit tests
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (!mpi_initialized) {
+            int provided = 0;
+            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+        }
+        int rank = 0;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        if (rank > 0) {
+            MPI_Finalize();
+            return 0;
+        }
+    }
+
     ::testing::InitGoogleTest(&argc, argv);
-    ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment);
+    ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment(argc, argv));
     return RUN_ALL_TESTS();
 }

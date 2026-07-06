@@ -240,12 +240,13 @@ TEST_F(KokkosConfigurationTest, ExecutionSpaceProperties) {
  * Requirement: 6.21
  */
 TEST_F(KokkosConfigurationTest, JCSDADockerConfiguration) {
-    // In JCSDA Docker, we should have at least Serial and OpenMP
+    // In JCSDA Docker, we should have at least Serial and OpenMP, but on HPC clusters we might use CUDA or HIP
     std::string space_name = Kokkos::DefaultExecutionSpace::name();
 
-    // Should be Serial or OpenMP in JCSDA Docker
-    bool is_cpu_space = (space_name == "Serial" || space_name == "OpenMP");
-    EXPECT_TRUE(is_cpu_space) << "Expected CPU execution space in JCSDA Docker, got: " << space_name;
+    // Support Serial, OpenMP, CUDA, HIP, or SYCL as valid default execution spaces
+    bool is_valid_space = (space_name == "Serial" || space_name == "OpenMP" || space_name == "Cuda" || space_name == "CUDA" || space_name == "HIP" ||
+                           space_name == "Hip" || space_name == "SYCL" || space_name == "Sycl");
+    EXPECT_TRUE(is_valid_space) << "Expected valid execution space, got: " << space_name;
 }
 
 int main(int argc, char** argv) {

@@ -78,8 +78,8 @@ void CeceDataIngestor::SetField(const std::string& name, const double* data, int
         return;
     }
 
-    // Determine if this is 2D emission data from TIDE
-    // TIDE provides 2D data where n_lev * n_elem == nx * ny (horizontal grid)
+    // Determine if this is 2D emission data from AMIO/AXIS stream
+    // This provides 2D data where n_lev * n_elem == nx * ny (horizontal grid)
     bool is_2d_emission = (n_lev * n_elem == nx * ny);
 
     int actual_nz;
@@ -87,7 +87,7 @@ void CeceDataIngestor::SetField(const std::string& name, const double* data, int
         // For 2D emission data, use single vertical level initially
         actual_nz = 1;
         std::cout << "[CECE] SetField: Setting 2D emission field " << name << " " << nx << "x" << ny << "x" << actual_nz << " (from " << n_lev << "x"
-                  << n_elem << " TIDE data)" << std::endl;
+                  << n_elem << " AMIO/AXIS stream)" << std::endl;
     } else {
         // For 3D data, use provided dimensions
         actual_nz = (n_lev * n_elem == nx * ny * nz) ? nz : n_lev;
@@ -101,7 +101,7 @@ void CeceDataIngestor::SetField(const std::string& name, const double* data, int
 
     if (is_2d_emission) {
         // For 2D emission data, reshape from 1D array to 2D grid with 1 vertical level
-        // TIDE provides data in column-major (Fortran) order: j * nx + i
+        // Input stream provides data in column-major (Fortran) order: j * nx + i
         for (int i = 0; i < nx; ++i) {
             for (int j = 0; j < ny; ++j) {
                 int linear_idx = j * nx + i;  // Column-major (Fortran) ordering

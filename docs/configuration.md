@@ -537,6 +537,7 @@ Configuration for TIDE (Temporal Interpolation & Data Extraction) data streams f
 | `taxmode` | String | Time axis mode: `cycle`, `extend`, or `limit` |
 | `tintalgo` | String | Temporal interpolation: `linear`, `nearest`, or `bpch` |
 | `mapalgo` | String | Spatial regridding: `consd`, `bilinear`, `consf`, `nn`, `redist`, or `passthrough` (skip regridding — data must be on the model grid already, sizes are validated) |
+| `data_model` | String | (Optional) AMIO NetCDF data model for reads: `enhanced`, `classic`, or `auto`. Default behavior is auto (`enhanced` first, then `classic` fallback on backend open failure). |
 | `variables` | List | Variable mappings between file and model |
 
 ### Variable Mapping
@@ -570,6 +571,7 @@ cece_data:
       taxmode: "extend"         # Extend last value beyond data range
       tintalgo: "linear"
       mapalgo: "consd"
+      data_model: "classic"     # Force classic model for legacy files
       variables:
         - file: "NOx_TOTAL"
           model: "regional_nox_override"

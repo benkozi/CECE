@@ -42,3 +42,8 @@ __pycache__/
 .pytest_cache/
 /ex1-combos/
 /ctr-output/
+
+# ---------- CECE runtime-generated AMIO manifests ----------
+amio_read_manifest_facade_*.yaml
+amio_coord_manifest.yaml
+core.*
