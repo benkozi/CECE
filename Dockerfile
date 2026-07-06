@@ -108,6 +108,7 @@ ENV OMPI_ALLOW_RUN_AS_ROOT=1
 ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
 
 # Build CECE
+ENV CACHE_BUST=1
 RUN git clone --recursive --depth=1 --branch feature/helm-benkozi git@github.com:benkozi/CECE.git
 RUN mkdir build && cd build && cmake .. && make -j4
 
