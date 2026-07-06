@@ -41,3 +41,4 @@ __pycache__/
 .kiro/
 .pytest_cache/
 /ex1-combos/
+/ctr-output/
