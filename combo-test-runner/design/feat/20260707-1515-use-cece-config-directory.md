@@ -1,0 +1,5 @@
+- a destination configuration yaml file should be configurable at the suite level (suite_config.yaml)
+- it should be a parameter at the suite.yaml level call config_path
+- for suite.yaml, make the path relative to find combo-test-runner/src/tests/config/cece/simple-maccity.yaml
+- move suite.yaml to combo-test-runner/src/tests/cfg/suite and rename to simple-maccity-suite.yaml
+- all tests need to pass
