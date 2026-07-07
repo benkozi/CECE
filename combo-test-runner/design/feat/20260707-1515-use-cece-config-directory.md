@@ -36,6 +36,37 @@ as a unit. `SuiteConfig.from_yaml(path)` resolves `config_path` to an
 absolute host path at load time and fails immediately (pydantic validation)
 if the file does not exist — before any containers run.
 
+### Search-path settings
+
+Two new optional settings on `settings.py` (unset by default) let configs
+live in directories outside the checked-in `config/` tree — e.g. a shared
+scenario library — while suites and CLI options refer to them by name:
+
+| Setting                    | Env var                          | Default |
+|----------------------------|----------------------------------|---------|
+| `config_search_path`       | `CECE_CONFIG_SEARCH_PATH`        | unset   |
+| `suite_config_search_path` | `CECE_SUITE_CONFIG_SEARCH_PATH`  | unset   |
+
+When set, a search path is **prepended to the provided path**, which is kept
+whole — nested directories and extension included — so config trees can be
+organized hierarchically under the search directory:
+
+- `suite_config_search_path` set → the `--suite-config` value `X` resolves to
+  `<suite_config_search_path>/<X>` (e.g. `nightly/simple-maccity-suite.yaml`
+  under the search dir).
+- `config_search_path` set → the suite's `config_path` value `Y` resolves to
+  `<config_search_path>/<Y>` (the suite-relative resolution above is
+  skipped).
+
+An absolute provided path is used as-is; a search path only applies to
+relative values. A provided path containing `..` may resolve outside the
+search directory (e.g. the default suite's `../cece/simple-maccity.yaml`) —
+this is intentional and accepted: the provided path is prepended verbatim,
+with no containment check. When the search paths are unset (default), behavior is
+exactly as described above. Existence is still checked at load time either
+way, so a path missing from the search directory fails before any docker
+runs.
+
 ### Base config loading
 
 `combos.build_config()` starts from `CeceConfig.from_yaml(config_path)`
@@ -69,7 +100,9 @@ from the suite file.
 
 ### Ripple effects
 
-- `conftest.py`: only the `--suite-config` default changes.
+- `conftest.py`: the `--suite-config` default changes, and its resolution
+  consults `suite_config_search_path` when set.
+- `settings.py`: the two new optional search-path fields.
 - Main `design.md` needs updating: the "Base configuration" section currently
   states the base config is defined in code with zero runtime dependency on
   files elsewhere in the repo. The zero-dependency rationale is preserved —
@@ -92,5 +125,9 @@ from the suite file.
   with unchanged behavior (same combos, same generated configs).
 - A suite file with a missing/typo'd `config_path` fails at session start
   with a clear validation error, before any docker runs.
+- With `CECE_SUITE_CONFIG_SEARCH_PATH` and/or `CECE_CONFIG_SEARCH_PATH`
+  set to directories containing copies of the configs (possibly in nested
+  subdirectories), relative suite/config paths resolve under those
+  directories and all tests pass; unset, behavior is unchanged.
 - `combo-test-runner/suite.yaml` no longer exists; `combos.base_config()` is
   removed.

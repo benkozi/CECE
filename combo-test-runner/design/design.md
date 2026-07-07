@@ -232,6 +232,13 @@ beyond the test runner.
 | `root`           | `CECE_ROOT`           | repo root (derived)  |
 | `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
 | `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | e.g. 300             |
+| `config_search_path`       | `CECE_CONFIG_SEARCH_PATH`       | unset |
+| `suite_config_search_path` | `CECE_SUITE_CONFIG_SEARCH_PATH` | unset |
+
+The search-path settings, when set, override normal config resolution: the
+search directory is prepended to the provided (relative) suite/CECE config
+path, which is kept whole so nested directories work. Full semantics live in
+`design/feat/20260707-1515-use-cece-config-directory.md`.
 
 ## Code layout
 
