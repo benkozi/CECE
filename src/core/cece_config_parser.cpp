@@ -397,6 +397,14 @@ CeceConfig ParseConfig(const std::string& filename) {
         if (out_node["diagnostics"]) {
             config.output_config.include_diagnostics = out_node["diagnostics"].as<bool>();
         }
+        if (out_node["amio_worker_threads"]) {
+            int threads = out_node["amio_worker_threads"].as<int>();
+            if (threads < 1) {
+                std::cerr << "WARNING: Invalid output amio_worker_threads: " << threads << ". Must be >= 1. Defaulting to 1.\n";
+                threads = 1;
+            }
+            config.output_config.amio_worker_threads = threads;
+        }
 
         // Validate output directory writability; log INFO if it needs to be created.
         // Actual directory creation is deferred to CeceStandaloneWriter::Initialize.
@@ -452,6 +460,14 @@ CeceConfig ParseConfig(const std::string& filename) {
         }
         if (driver_node["stacking_refresh_interval_seconds"]) {
             config.driver_config.stacking_refresh_interval_seconds = driver_node["stacking_refresh_interval_seconds"].as<int>();
+        }
+        if (driver_node["amio_worker_threads"]) {
+            int threads = driver_node["amio_worker_threads"].as<int>();
+            if (threads < 1) {
+                std::cerr << "WARNING: Invalid amio_worker_threads: " << threads << ". Must be >= 1. Defaulting to 1.\n";
+                threads = 1;
+            }
+            config.driver_config.amio_worker_threads = threads;
         }
     }
 

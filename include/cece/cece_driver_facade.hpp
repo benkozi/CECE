@@ -40,6 +40,7 @@ class CeceDriverOrchestrator {
     // interpolation weights are built once (per rank-local destination band)
     // and reused for every timestep.
     std::unordered_map<std::string, io::RegridPlan> regrid_plans_;
+    std::unordered_map<std::string, int> file_nt_cache_;
 
     // HELM Orchestration and pipeline components
     std::unique_ptr<dagr::GraphOrchestrator> dagr_;

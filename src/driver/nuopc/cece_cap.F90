@@ -141,7 +141,8 @@ module cece_cap_mod
 
     subroutine cece_core_writer_initialize_with_coords(data_ptr, nx, ny, nz, &
                                                        lon_coords, lat_coords, &
-                                                       start_time, start_time_len, rc) &
+                                                       start_time, start_time_len, &
+                                                       mpi_comm_f, rc) &
                                                        bind(C, name="cece_core_writer_initialize_with_coords")
       import :: c_ptr, c_char, c_int, c_double
       type(c_ptr), value :: data_ptr
@@ -149,6 +150,20 @@ module cece_cap_mod
       real(c_double), intent(in) :: lon_coords(*), lat_coords(*)
       character(kind=c_char), intent(in) :: start_time(*)
       integer(c_int), value :: start_time_len
+      integer(c_int), value :: mpi_comm_f
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
+    subroutine cece_core_writer_initialize(data_ptr, nx, ny, nz, &
+                                           start_time, start_time_len, &
+                                           mpi_comm_f, rc) &
+                                           bind(C, name="cece_core_writer_initialize")
+      import :: c_ptr, c_char, c_int
+      type(c_ptr), value :: data_ptr
+      integer(c_int), value :: nx, ny, nz
+      character(kind=c_char), intent(in) :: start_time(*)
+      integer(c_int), value :: start_time_len
+      integer(c_int), value :: mpi_comm_f
       integer(c_int), intent(out) :: rc
     end subroutine
 
@@ -372,7 +387,8 @@ contains
                                                  int(g_nx, c_int), int(g_ny, c_int), int(g_nz, c_int), &
                                                  lon_coords, lat_coords, &
                                                  trim(start_time_str)//c_null_char, &
-                                                 int(len_trim(start_time_str), c_int), c_rc)
+                                                 int(len_trim(start_time_str), c_int), &
+                                                 int(mpi_comm_val, c_int), c_rc)
     if (c_rc /= 0) then
       write(*,'(A)') "ERROR: [Cap] Failed to initialize Core Output Writer"
       rc = ESMF_FAILURE

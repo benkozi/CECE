@@ -258,6 +258,146 @@ species:
     EXPECT_EQ(config.driver_config.grid.nz, 72);
 }
 
+TEST_F(DriverConfigurationTest, ParseAmioWorkerThreads) {
+    // 1. Verify custom positive values are successfully parsed
+    WriteConfigFile(test_config_file, R"(
+driver:
+  start_time: "2010-01-01T00:00:00"
+  end_time: "2010-01-01T23:00:00"
+  timestep_seconds: 3600
+  amio_worker_threads: 4
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.driver_config.amio_worker_threads, 4);
+
+    // 2. Verify invalid (0 or negative) values are clamped to 1
+    WriteConfigFile(test_config_file, R"(
+driver:
+  start_time: "2010-01-01T00:00:00"
+  end_time: "2010-01-01T23:00:00"
+  timestep_seconds: 3600
+  amio_worker_threads: -3
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.driver_config.amio_worker_threads, 1);
+
+    // 3. Verify omitted values default to 1
+    WriteConfigFile(test_config_file, R"(
+driver:
+  start_time: "2010-01-01T00:00:00"
+  end_time: "2010-01-01T23:00:00"
+  timestep_seconds: 3600
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.driver_config.amio_worker_threads, 1);
+}
+
+TEST_F(DriverConfigurationTest, ParseAmioWorkerThreadsOutput) {
+    // 1. Verify custom positive values parse correctly in output block
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  directory: ./cece_output
+  filename_pattern: "cece_ex1_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
+  frequency_steps: 1
+  fields: [CO]
+  amio_worker_threads: 3
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.output_config.amio_worker_threads, 3);
+
+    // 2. Verify invalid output values are clamped to 1
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  directory: ./cece_output
+  filename_pattern: "cece_ex1_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
+  frequency_steps: 1
+  fields: [CO]
+  amio_worker_threads: 0
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.output_config.amio_worker_threads, 1);
+
+    // 3. Verify omitted output values default to -1 (representing fallback unset)
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  directory: ./cece_output
+  filename_pattern: "cece_ex1_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
+  frequency_steps: 1
+  fields: [CO]
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    config = ParseConfig(test_config_file);
+    EXPECT_EQ(config.output_config.amio_worker_threads, -1);
+}
+
 // ---------------------------------------------------------------------------
 // Tests for Configuration Validation (Task 1.5)
 // ---------------------------------------------------------------------------

@@ -21,8 +21,15 @@ void CompileHelmGraph(const std::string& config_file, std::unique_ptr<dagr::Grap
     // Build the Pipeline_Config dynamically from standard YAML
     dagr::Pipeline_Config pc;
     pc.max_concurrency = 4;
-    pc.deadlock_timeout_s = 300;
-    pc.shutdown_timeout_s = 300;
+    // CECE currently performs its emission computation synchronously in the run
+    // loop (cece_core_run / AdvanceTime), not through DAGR task callbacks, so the
+    // placeholder pipeline task is dispatched but never completed. That leaves a
+    // phantom in-flight task at teardown. A short shutdown drain lets
+    // GraphOrchestrator::shutdown() force-cancel it quickly and exit cleanly
+    // instead of stalling. The deadlock timer is kept long so the phantom task
+    // does not trip a spurious "potential deadlock" warning during normal runs.
+    pc.deadlock_timeout_s = 3600;
+    pc.shutdown_timeout_s = 5;
 
     // Load active variables from CeceIO and dynamically compile them into HELM Stream Descriptors
     for (const auto& var_name : cece_io.GetOutputVarNames()) {

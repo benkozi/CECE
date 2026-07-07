@@ -95,16 +95,26 @@ void cece_run_log_setup(const char* config_path, int path_len) {
     }
 
     // On rank 0, tee stdout to the log file (if requested).
-    static std::ofstream log_file_stream;
-    static std::unique_ptr<cece::TeeStreambuf> tee_buf;
+    //
+    // The log stream, tee streambuf, and (non-root) /dev/null sink are
+    // intentionally leaked (heap-allocated and never freed). They must outlive
+    // the destruction of std::cout's standard stream objects (ios_base::Init)
+    // at process exit: because we point std::cout.rdbuf() at the tee/null
+    // streambuf, the final flush performed by ios_base::Init::~Init() would
+    // otherwise dereference an already-destroyed streambuf and segfault. Since
+    // these objects live for the entire process, leaking them is harmless and
+    // is the standard idiom for redirecting a standard stream's buffer.
+    static bool stdout_redirected = false;
     std::streambuf* const console_buf = std::cout.rdbuf();
-    if (my_rank == 0 && !log_file_path.empty() && !log_file_stream.is_open()) {
-        log_file_stream.open(log_file_path);
-        if (log_file_stream.is_open()) {
-            tee_buf = std::make_unique<cece::TeeStreambuf>(console_buf, log_file_stream.rdbuf());
-            std::cout.rdbuf(tee_buf.get());
+    if (!stdout_redirected && my_rank == 0 && !log_file_path.empty()) {
+        auto* log_file_stream = new std::ofstream(log_file_path);
+        if (log_file_stream->is_open()) {
+            auto* tee_buf = new cece::TeeStreambuf(console_buf, log_file_stream->rdbuf());
+            std::cout.rdbuf(tee_buf);
+            stdout_redirected = true;
         } else {
             std::cerr << "WARNING: Could not open log file '" << log_file_path << "' - continuing with console output only." << std::endl;
+            delete log_file_stream;
         }
     }
 
@@ -112,10 +122,10 @@ void cece_run_log_setup(const char* config_path, int path_len) {
     cece::SetRealStdoutBuf(std::cout.rdbuf());
 
     // Suppress routine stdout on non-root ranks.
-    static std::ofstream cout_null_sink;
-    if (my_rank != 0 && !cout_null_sink.is_open()) {
-        cout_null_sink.open("/dev/null");
-        std::cout.rdbuf(cout_null_sink.rdbuf());
+    if (!stdout_redirected && my_rank != 0) {
+        auto* cout_null_sink = new std::ofstream("/dev/null");
+        std::cout.rdbuf(cout_null_sink->rdbuf());
+        stdout_redirected = true;
     }
 
     // Only rank 0 renders the banner (others are suppressed anyway).

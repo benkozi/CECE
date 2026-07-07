@@ -1,6 +1,7 @@
 #ifndef CECE_STANDALONE_WRITER_HPP
 #define CECE_STANDALONE_WRITER_HPP
 
+#include <mpi.h>
 #include <Kokkos_Core.hpp>
 #include <memory>
 #include <string>
@@ -14,7 +15,7 @@ namespace cece {
 
 class CeceStandaloneWriter {
    public:
-    explicit CeceStandaloneWriter(const CeceOutputConfig& config);
+    explicit CeceStandaloneWriter(const CeceOutputConfig& config, MPI_Comm comm = MPI_COMM_SELF);
     ~CeceStandaloneWriter();
 
     CeceStandaloneWriter(const CeceStandaloneWriter&) = delete;
@@ -44,6 +45,7 @@ class CeceStandaloneWriter {
     std::vector<double> lon_coords_;
     std::vector<double> lat_coords_;
     bool use_custom_coords_ = false;
+    MPI_Comm comm_ = MPI_COMM_SELF;
 
     std::string ResolveFilename(double time_seconds_since_start) const;
 };

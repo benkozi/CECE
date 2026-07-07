@@ -27,9 +27,9 @@ void cece_core_realize(void* data_ptr, int* rc);
 void cece_core_initialize_p2(void* data_ptr, int* nx, int* ny, int* nz, int* rc);
 void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc);
 void cece_core_finalize(void* data_ptr, int* rc);
-void cece_core_writer_initialize(void* data_ptr, int nx, int ny, int nz, const char* start_time_iso8601, int start_time_len, int* rc);
+void cece_core_writer_initialize(void* data_ptr, int nx, int ny, int nz, const char* start_time_iso8601, int start_time_len, int mpi_comm_f, int* rc);
 void cece_core_writer_initialize_with_coords(void* data_ptr, int nx, int ny, int nz, const double* lon_coords, const double* lat_coords,
-                                             const char* start_time_iso8601, int start_time_len, int* rc);
+                                             const char* start_time_iso8601, int start_time_len, int mpi_comm_f, int* rc);
 void cece_core_write_step(void* data_ptr, double time_seconds, int step_index, int* rc);
 void cece_core_set_export_field(void* data_ptr, const char* name, int name_len, const double* field_data, int nx, int ny, int nz, int* rc);
 }
@@ -303,11 +303,12 @@ int main(int argc, char* argv[]) {
                            &cece_driver_data, &rc);
 
         // Standalone Writer: Initialize output writing if configured
+        int writer_comm_f = MPI_Comm_c2f(MPI_COMM_WORLD);
         if (has_file_coords) {
             cece_core_writer_initialize_with_coords(cece_data_ptr, nx, ny, nz, file_lons.data(), file_lats.data(), start_time_str.c_str(),
-                                                    start_time_str.length(), &rc);
+                                                    start_time_str.length(), writer_comm_f, &rc);
         } else {
-            cece_core_writer_initialize(cece_data_ptr, nx, ny, nz, start_time_str.c_str(), start_time_str.length(), &rc);
+            cece_core_writer_initialize(cece_data_ptr, nx, ny, nz, start_time_str.c_str(), start_time_str.length(), writer_comm_f, &rc);
         }
 
         if (my_rank == 0) {

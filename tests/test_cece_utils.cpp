@@ -88,6 +88,31 @@ TEST_F(CeceUtilsTest, StandaloneWriterDuplicateCoordsDetection) {
     }
 }
 
+TEST_F(CeceUtilsTest, StandaloneWriterCustomCommunicator) {
+    std::string test_dir = "test_output_dir_comm_" + std::to_string(getpid());
+    CeceOutputConfig config;
+    config.enabled = true;
+    config.directory = test_dir;
+
+    MPI_Comm custom_comm;
+    MPI_Comm_dup(MPI_COMM_SELF, &custom_comm);
+
+    CeceStandaloneWriter writer(config, custom_comm);
+
+    std::vector<double> lon_ok = {-180.0, -90.0, 0.0, 90.0};
+    std::vector<double> lat_ok = {-90.0, -45.0, 0.0, 45.0};
+
+    int rc = writer.InitializeWithCoords("2026-06-29T12:00:00", 4, 4, 1, lon_ok, lat_ok);
+    EXPECT_EQ(rc, 0);
+    writer.Finalize();
+
+    MPI_Comm_free(&custom_comm);
+
+    if (std::filesystem::exists(test_dir)) {
+        std::filesystem::remove_all(test_dir);
+    }
+}
+
 TEST_F(CeceUtilsTest, StandaloneWriterDuplicateFieldsFiltering) {
     std::string test_dir = "test_output_dir_fields_" + std::to_string(getpid());
     CeceOutputConfig config;

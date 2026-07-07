@@ -3,6 +3,10 @@
 #include <amio/amio.h>
 #include <mpi.h>
 
+extern "C" {
+void amio_set_parent_communicator(MPI_Fint comm);
+}
+
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -86,7 +90,8 @@ void check_amio_rc(amio_status_t status, const std::string& context) {
 
 }  // namespace
 
-CeceStandaloneWriter::CeceStandaloneWriter(const CeceOutputConfig& config) : config_(config) {}
+CeceStandaloneWriter::CeceStandaloneWriter(const CeceOutputConfig& config, MPI_Comm comm)
+    : config_(config), initialized_(false), use_custom_coords_(false), nx_(0), ny_(0), nz_(0), comm_(comm) {}
 
 CeceStandaloneWriter::~CeceStandaloneWriter() {
     Finalize();
@@ -176,6 +181,17 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
 
     if (step % config_.frequency_steps != 0) return 0;
 
+    int rank = 0;
+    int mpi_initialized = 0;
+    MPI_Initialized(&mpi_initialized);
+    if (mpi_initialized && comm_ != MPI_COMM_NULL) {
+        MPI_Comm_rank(comm_, &rank);
+    }
+
+    if (rank != 0) {
+        return 0; // Standalone writing is strictly serial and executed on Rank 0 only to avoid conflicts
+    }
+
     CECE_LOG_INFO("[CECE] Writing time step " + std::to_string(step) + " (t=" + std::to_string(time_seconds) + ") via AMIO");
 
     std::string filename = ResolveFilename(time_seconds);
@@ -187,13 +203,6 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
     amio_dataset_handle dataset = nullptr;
 
     try {
-        int rank = 0;
-        int mpi_initialized = 0;
-        MPI_Initialized(&mpi_initialized);
-        if (mpi_initialized) {
-            MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        }
-
         if (rank == 0) {
             // Step 1: Write dynamic AMIO netcdf4 manifest YAML (Rank 0 only to avoid parallel write conflicts)
             std::ofstream m_file(manifest_path);
@@ -208,6 +217,11 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 time_units[t_pos] = ' ';
             }
 
+            int write_threads = config_.amio_worker_threads;
+            if (write_threads < 1) {
+                write_threads = 1;
+            }
+
             m_file << "backend: netcdf4\n"
                    << "path: " << filename << "\n"
                    << "data_model: enhanced\n"
@@ -215,7 +229,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "  buffer_count: 16\n"
                    << "  buffer_capacity_bytes: 104857600\n"
                    << "worker_pool:\n"
-                   << "  threads: 1\n"
+                   << "  threads: " << write_threads << "\n"
                    << "prefetch:\n"
                    << "  depth: 4\n"
                    << "  read_timeout_s: 60\n"
@@ -261,12 +275,10 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
             m_file.close();
         }
 
-        // Wait for Rank 0 to finish writing the manifest before any other rank attempts to load it
-        if (mpi_initialized) {
-            MPI_Barrier(MPI_COMM_WORLD);
-        }
-
         // Step 2: Initialize AMIO Core
+        if (mpi_initialized) {
+            amio_set_parent_communicator(MPI_Comm_c2f(MPI_COMM_SELF));
+        }
         check_amio_rc(amio_init(manifest_path.c_str(), &core), "amio_init");
 
         // Step 3: Open Dataset
