@@ -1,45 +1,41 @@
-# Simple testing configuration with minimal grid
 driver:
-  start_time: "2020-01-01T00:00:00"
-  end_time: "2020-01-01T01:00:00"
+  start_time: '2010-01-01T00:00:00'
+  end_time: '2010-01-01T01:00:00'
   timestep_seconds: 3600
   grid:
-    nx: 2
-    ny: 2
+    nx: 72
+    ny: 46
     lon_min: -180.0
     lon_max: 180.0
     lat_min: -90.0
     lat_max: 90.0
-
+meteorology: {}
 species:
   co:
-    - field: "MACCITY_CO"
-      category: "anthropogenic"
-      hierarchy: 1
-      operation: "add"
-
+  - field: co
+    operation: add
+    scale: 1.0
 cece_data:
   streams:
-    - name: "MACCITY_CO"
-      file: "/work/data/MACCity_4x5.nc"
-      yearFirst: 2000
-      yearLast: 2010
-      yearAlign: 2020
-      taxmode: "cycle"
-      tintalgo: "linear"
-      mapalgo: "consd"
-      variables:
-        - file: "MACCity"
-          model: "MACCITY_CO"
-
+  - name: MACCITY
+    file: /work/data/MACCity_4x5.nc
+    yearFirst: 2000
+    yearLast: 2010
+    yearAlign: 2020
+    taxmode: cycle
+    tintalgo: linear
+    mapalgo: consd
+    variables:
+    - file: MACCity
+      model: co
 diagnostics:
   output_interval_seconds: 3600
-  variables: ["co"]
-
+  variables:
+  - co
 output:
   enabled: true
-  directory: ./cece_output
-  filename_pattern: "cece_simple_maccity_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
+  directory: .
+  filename_pattern: cece_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc
   frequency_steps: 1
   fields:
-    - co
+  - co

@@ -16,16 +16,10 @@ from typing import Callable
 from models.cece_config import (
     Category,
     CeceConfig,
-    CeceData,
-    Diagnostics,
-    Driver,
-    Grid,
     Mapalgo,
     Operation,
-    Output,
     SpeciesEntry,
     Stream,
-    StreamVariable,
     Taxmode,
     Tintalgo,
     VdistMethod,
@@ -114,48 +108,11 @@ def enumerate_combos(sweep: Sweep) -> list[Combo]:
     ]
 
 
-def base_config() -> CeceConfig:
-    """Known-good baseline (modeled on examples/cece_config_ex1.yaml): single
-    species co, single MACCITY stream, coarse global grid, one-hour run."""
-    return CeceConfig(
-        driver=Driver(
-            start_time="2010-01-01T00:00:00",
-            end_time="2010-01-01T01:00:00",
-            timestep_seconds=3600,
-            grid=Grid(nx=72, ny=46, lon_min=-180.0, lon_max=180.0, lat_min=-90.0, lat_max=90.0),
-        ),
-        meteorology={},
-        species={"co": [SpeciesEntry(field="co", operation=Operation.add, scale=1.0)]},
-        cece_data=CeceData(
-            streams=[
-                Stream(
-                    name="MACCITY",
-                    file=Path("/work/data/MACCity_4x5.nc"),
-                    yearFirst=2000,
-                    yearLast=2010,
-                    yearAlign=2020,
-                    taxmode=Taxmode.cycle,
-                    tintalgo=Tintalgo.linear,
-                    mapalgo=Mapalgo.consd,
-                    variables=[StreamVariable(file="MACCity", model="co")],
-                )
-            ]
-        ),
-        diagnostics=Diagnostics(output_interval_seconds=3600, variables=["co"]),
-        output=Output(
-            enabled=True,
-            directory=".",  # overwritten per combo in build_config
-            filename_pattern="cece_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc",
-            frequency_steps=1,
-            fields=["co"],
-        ),
-    )
-
-
-def build_config(combo: Combo, output_directory: str) -> CeceConfig:
-    """Fresh base config with the combo's enum values applied and NetCDF output
-    pointed at the combo's own directory."""
-    config = base_config()
+def build_config(combo: Combo, output_directory: str, config_path: Path) -> CeceConfig:
+    """Fresh base config loaded from config_path with the combo's enum values
+    applied and NetCDF output pointed at the combo's own directory. Loading
+    per combo keeps combinations isolated."""
+    config = CeceConfig.from_yaml(config_path)
     for dim, value in combo.values:
         dim.apply(config, value)
     assert config.output is not None

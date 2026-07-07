@@ -36,8 +36,10 @@ quiet and failing tests include the output in their report under
 
 Options:
 
-- `--suite-config=PATH` — suite YAML defining the sweep
-  (default: `combo-test-runner/suite.yaml`).
+- `--suite-config=PATH` — suite YAML defining the base driver config
+  (`config_path`), the per-combination timeout (`timeout_s`), and the sweep
+  (default: `src/tests/config/suite/simple-maccity-suite.yaml`). Use the
+  `--suite-config=PATH` form (with `=`), not a space.
 - `--combo-output-root=PATH` — root artifact directory; relative paths
   resolve against `/work` in the container, so results persist in the repo
   checkout. Default: a pytest-managed temporary directory (nothing is
@@ -63,9 +65,11 @@ failures point there; pytest keeps the last few runs under e.g.
 
 ## Environment variables
 
-| Env var              | Meaning                          | Default                          |
-|----------------------|----------------------------------|----------------------------------|
-| `CECE_DOCKER_IMAGE`  | container image                  | `deckyfre/cece-dev`              |
-| `CECE_ROOT`          | host repo root mounted at /work  | derived from this checkout       |
-| `CECE_DRIVER_PATH`   | driver path inside the container | `./build/cece_standalone_driver` |
-| `CECE_RUN_TIMEOUT_S` | per-run timeout (seconds)        | `300`                            |
+| Env var                         | Meaning                                        | Default                          |
+|---------------------------------|------------------------------------------------|----------------------------------|
+| `CECE_DOCKER_IMAGE`             | container image                                | `deckyfre/cece-dev`              |
+| `CECE_ROOT`                     | host repo root mounted at /work                | derived from this checkout       |
+| `CECE_DRIVER_PATH`              | driver path inside the container               | `./build/cece_standalone_driver` |
+| `CECE_RUN_TIMEOUT_S`            | caps the suite `timeout_s` when smaller        | `300`                            |
+| `CECE_CONFIG_SEARCH_PATH`       | prepended to relative `config_path` values     | unset                            |
+| `CECE_SUITE_CONFIG_SEARCH_PATH` | prepended to relative `--suite-config` values  | unset                            |

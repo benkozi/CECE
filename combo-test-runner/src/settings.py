@@ -16,3 +16,7 @@ class Settings(BaseSettings):
     root: Path = _REPO_ROOT
     driver_path: str = "./build/cece_standalone_driver"
     run_timeout_s: int = 300
+    # When set, prepended to relative config paths (kept whole, so nested and
+    # ../ paths work); absolute provided paths are always used as-is.
+    config_search_path: Path | None = None  # applies to the suite's config_path
+    suite_config_search_path: Path | None = None  # applies to --suite-config

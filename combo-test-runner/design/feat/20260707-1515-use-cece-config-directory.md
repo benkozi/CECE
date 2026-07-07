@@ -98,11 +98,38 @@ Both subdirectories share the `src/tests/config/` parent (resolved: `config`
 over `cfg`), giving the tidy relative reference `../cece/simple-maccity.yaml`
 from the suite file.
 
+### Per-combination timeout
+
+The suite config gains a required `timeout_s` field: the per-combination
+timeout in seconds, passed to the driver `subprocess` call. The settings
+value `run_timeout_s` (`CECE_RUN_TIMEOUT_S`, default 300) acts as a cap: it
+overrides the suite value **only when it is smaller**, i.e.
+
+```
+effective timeout = min(suite.timeout_s, settings.run_timeout_s)
+```
+
+The initial suite sets `timeout_s: 5` — five seconds per combination.
+
+**Timeouts firing is acceptable for this iteration.** The driver under test
+currently has issues and may hang; the goal right now is that the suite
+*executes* — configs generate, containers launch, and a hung driver is
+reliably killed after the effective timeout. A timed-out combination fails
+its test (`subprocess.TimeoutExpired` propagates, `.out` is still written
+with whatever output was captured), and a run whose tests fail only by
+timeout is considered a successful outcome for this iteration. Pass/fail
+semantics are unchanged — exit 0 passes; the future evaluation step will
+revisit expected-failure handling.
+
 ### Ripple effects
 
-- `conftest.py`: the `--suite-config` default changes, and its resolution
-  consults `suite_config_search_path` when set.
-- `settings.py`: the two new optional search-path fields.
+- `conftest.py`: the `--suite-config` default changes, its resolution
+  consults `suite_config_search_path` when set, and the effective timeout is
+  computed from suite + settings.
+- `settings.py`: the two new optional search-path fields; `run_timeout_s`
+  becomes the cap on the suite-level `timeout_s`.
+- `runner.py`: `run_driver` takes the effective timeout instead of reading
+  `settings.run_timeout_s` directly.
 - Main `design.md` needs updating: the "Base configuration" section currently
   states the base config is defined in code with zero runtime dependency on
   files elsewhere in the repo. The zero-dependency rationale is preserved —
@@ -131,3 +158,8 @@ from the suite file.
   directories and all tests pass; unset, behavior is unchanged.
 - `combo-test-runner/suite.yaml` no longer exists; `combos.base_config()` is
   removed.
+- Each combination runs with a 5-second effective timeout
+  (`min(suite timeout_s=5, settings run_timeout_s=300)`). The suite
+  *executes* end to end; combinations that time out fail with
+  `TimeoutExpired` and still write their `.out` — for this iteration that
+  counts as success.

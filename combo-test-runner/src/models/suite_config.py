@@ -22,9 +22,34 @@ class Sweep(BaseModel):
 
 
 class SuiteConfig(BaseModel):
+    config_path: Path = Field(description="Base CECE driver config this suite's combinations are diffs of")
+    timeout_s: int = Field(
+        gt=0,
+        description="Per-combination driver timeout in seconds; capped by the run_timeout_s setting",
+    )
     sweep: Sweep = Field(description="Enum dimensions and values defining the combination space")
 
     @classmethod
-    def from_yaml(cls, path: Path) -> SuiteConfig:
+    def from_yaml(cls, path: Path, config_search_path: Path | None = None) -> SuiteConfig:
+        """Load a suite file; config_path is resolved to an absolute host path.
+
+        Relative config_path values resolve against the suite file's own
+        directory, or against config_search_path when set (prepended verbatim,
+        so nested and ../ paths work). Absolute values are used as-is. A
+        missing target fails here, before any containers run.
+        """
         with open(path) as f:
-            return cls.model_validate(yaml.safe_load(f))
+            suite = cls.model_validate(yaml.safe_load(f))
+        if suite.config_path.is_absolute():
+            resolved = suite.config_path
+        elif config_search_path is not None:
+            resolved = config_search_path / suite.config_path
+        else:
+            resolved = path.parent / suite.config_path
+        resolved = resolved.resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(
+                f"suite config_path {str(suite.config_path)!r} resolved to {resolved}, which does not exist"
+            )
+        suite.config_path = resolved
+        return suite

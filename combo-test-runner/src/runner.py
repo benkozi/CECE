@@ -51,17 +51,18 @@ def run_driver(
     settings: Settings,
     container_yaml: PurePosixPath,
     out_path: Path,
+    timeout_s: int,
     output_mount: tuple[Path, PurePosixPath] | None = None,
 ) -> None:
     """Run one driver invocation in a fresh container.
 
     Combined stdout/stderr is written to out_path and printed whether the run
     passes or fails; a nonzero exit re-raises CalledProcessError to fail the
-    test.
+    test, and a hung driver fails with TimeoutExpired after timeout_s.
     """
     command = build_command(settings, container_yaml, output_mount=output_mount)
     try:
-        output = subprocess.check_output(command, stderr=subprocess.STDOUT, timeout=settings.run_timeout_s)
+        output = subprocess.check_output(command, stderr=subprocess.STDOUT, timeout=timeout_s)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         out_path.write_bytes(exc.output or b"")
         _print_output(out_path, exc.output or b"")

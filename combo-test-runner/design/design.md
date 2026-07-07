@@ -27,7 +27,9 @@ enums absent from the file are **not swept** and stay at their base-config
 values. The combination space is the cartesian product of the listed values.
 
 ```yaml
-# suite.yaml — initial suite
+# simple-maccity-suite.yaml — initial suite
+config_path: ../cece/simple-maccity.yaml   # base driver config (suite-relative)
+timeout_s: 5                               # per combination; capped by CECE_RUN_TIMEOUT_S
 sweep:
   mapalgo: [bilinear, consd, passthrough]
 ```
@@ -42,8 +44,15 @@ class Sweep(BaseModel):
     mapalgo: list[Mapalgo] | None = None
 
 class SuiteConfig(BaseModel):
+    config_path: Path   # base CECE driver config; relative → suite-file dir
+    timeout_s: int      # per-combination driver timeout (seconds)
     sweep: Sweep
 ```
+
+A suite file fully describes a run: which base scenario (`config_path`),
+the per-combination timeout, and which sweep. Full `config_path` resolution
+and timeout semantics live in
+`design/feat/20260707-1515-use-cece-config-directory.md`.
 
 Reusing the enums from `cece_config.py` means invalid values fail at suite-load
 time with a pydantic error, before any container runs.
@@ -53,7 +62,8 @@ The **initial suite** sweeps only `Mapalgo` over `bilinear`, `consd`, and
 remains expressible later purely by editing the suite YAML.
 
 The suite file path is a pytest option (`--suite-config`, default:
-`combo-test-runner/suite.yaml`, checked in with the initial sweep).
+`combo-test-runner/src/tests/config/suite/simple-maccity-suite.yaml`,
+checked in with the initial sweep).
 
 ## Combination space
 
@@ -92,14 +102,15 @@ and recorded in the generated YAML itself.
 
 ## Base configuration
 
-Combinations are diffs applied to a **base config** — a known-good
-`CeceConfig` (modeled on `examples/cece_config_ex1.yaml`: single species `co`,
-single `MACCITY` stream reading `/work/data/MACCity_4x5.nc`, coarse global
-grid, one-hour run). The base config is defined in code (constructed as a
-`CeceConfig` instance) so the runner has zero runtime dependency on files
-elsewhere in the repo. For each combination the generator:
+Combinations are diffs applied to a **base config** — a known-good driver
+config selected by the suite's `config_path` (the initial
+`src/tests/config/cece/simple-maccity.yaml`, modeled on
+`examples/cece_config_ex1.yaml`: single species `co`, single `MACCITY` stream
+reading `/work/data/MACCity_4x5.nc`, coarse global grid, one-hour run). Base
+configs live inside `combo-test-runner/`, preserving zero runtime dependency
+on files elsewhere in the repo. For each combination the generator:
 
-1. Deep-copies the base config.
+1. Loads the base config via `CeceConfig.from_yaml(config_path)`.
 2. Applies the swept enum values (plus companion vdist fields) at the
    injection points above.
 3. Points `output.directory` at the combo's own directory (see layout below).
@@ -231,7 +242,7 @@ beyond the test runner.
 | `docker_image`   | `CECE_DOCKER_IMAGE`   | `deckyfre/cece-dev`  |
 | `root`           | `CECE_ROOT`           | repo root (derived)  |
 | `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
-| `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | e.g. 300             |
+| `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | 300 — caps the suite's `timeout_s` when smaller |
 | `config_search_path`       | `CECE_CONFIG_SEARCH_PATH`       | unset |
 | `suite_config_search_path` | `CECE_SUITE_CONFIG_SEARCH_PATH` | unset |
 
@@ -248,7 +259,6 @@ its own `pyproject.toml` at `combo-test-runner/`:
 ```
 combo-test-runner/
   pyproject.toml          # uv project: pytest, pydantic>=2, pydantic-settings, pyyaml
-  suite.yaml              # initial sweep: mapalgo = [bilinear, consd, passthrough]
   README.md               # user-facing setup + run instructions
   design/design.md
   src/
@@ -259,6 +269,9 @@ combo-test-runner/
     runner.py             # docker run construction, check_output, .out writing
     settings.py           # pydantic-settings
     tests/
+      config/
+        cece/simple-maccity.yaml          # base driver config
+        suite/simple-maccity-suite.yaml   # initial suite (--suite-config default)
       conftest.py         # options, session fixture (generate yamls), param fixture
       test_driver_combos.py
 ```
