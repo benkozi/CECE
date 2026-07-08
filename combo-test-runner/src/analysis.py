@@ -7,10 +7,13 @@ dask.compute call (executed on the active distributed client).
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import dask
 import dask.array as dsa
+import numpy as np
 import pandas as pd
 import xarray as xr
 from pydantic import BaseModel, ConfigDict
@@ -24,12 +27,24 @@ _STATS_PER_VARIABLE = 7  # count, sum, mean, std, min, max, median
 
 class VariableStats(BaseModel):
     """Descriptive statistics for one data variable of one NetCDF file, all
-    values flattened (a lev dimension, when present, is flattened too)."""
+    values flattened (a lev dimension, when present, is flattened too).
+
+    The timestamp columns carry the file's time coordinate (first value) —
+    what the data claims, not what the filename says — split into parts down
+    to seconds for easy time summaries; null when the file has no datetime
+    time coordinate."""
 
     model_config = ConfigDict(frozen=True)
 
     combo: str
     file: str  # NetCDF filename, not path
+    time: str | None  # ISO-8601
+    year: int | None
+    month: int | None
+    day: int | None
+    hour: int | None
+    minute: int | None
+    second: int | None
     variable: str
     count: int
     sum: float
@@ -40,9 +55,34 @@ class VariableStats(BaseModel):
     median: float
 
 
+def _file_time(ds: xr.Dataset) -> datetime | None:
+    """First value of the dataset's time coordinate, if present and datetime."""
+    if "time" not in ds.coords or ds["time"].size == 0:
+        return None
+    value = np.asarray(ds["time"].values).ravel()[0]
+    if not np.issubdtype(np.asarray(value).dtype, np.datetime64):
+        return None
+    return pd.Timestamp(value).to_pydatetime()
+
+
+def _time_fields(when: datetime | None) -> dict[str, Any]:
+    if when is None:
+        return {"time": None, "year": None, "month": None, "day": None, "hour": None, "minute": None, "second": None}
+    return {
+        "time": when.isoformat(),
+        "year": when.year,
+        "month": when.month,
+        "day": when.day,
+        "hour": when.hour,
+        "minute": when.minute,
+        "second": when.second,
+    }
+
+
 def compute_file_stats(nc_path: Path, combo: str) -> list[VariableStats]:
     """Nan-aware descriptive stats for every data variable in one NetCDF file."""
     with xr.open_dataset(nc_path, chunks="auto", engine="netcdf4") as ds:
+        time_fields = _time_fields(_file_time(ds))
         deferred: list[object] = []
         names: list[str] = []
         for name in ds.data_vars:
@@ -70,6 +110,7 @@ def compute_file_stats(nc_path: Path, combo: str) -> list[VariableStats]:
             VariableStats(
                 combo=combo,
                 file=nc_path.name,
+                **time_fields,
                 variable=name,
                 count=int(count),
                 sum=float(total),

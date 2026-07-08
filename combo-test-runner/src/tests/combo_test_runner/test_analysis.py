@@ -33,6 +33,13 @@ def _stats_rows() -> list[VariableStats]:
         VariableStats(
             combo="map-consd",
             file=f"cece_2010010{day}_010000.nc",
+            time=f"2010-01-0{day}T01:00:00",
+            year=2010,
+            month=1,
+            day=day,
+            hour=1,
+            minute=0,
+            second=0,
             variable="co",
             count=40,
             sum=20.0,
@@ -51,6 +58,10 @@ def test_compute_file_stats_matches_numpy(dask_client, driver_like_nc: tuple[Pat
     (stats,) = compute_file_stats(path, combo="map-consd")
 
     assert (stats.combo, stats.file, stats.variable) == ("map-consd", path.name, "co")
+    # Timestamp columns come from the file's time coordinate (first value).
+    assert stats.time == "2010-01-01T01:00:00"
+    assert (stats.year, stats.month, stats.day) == (2010, 1, 1)
+    assert (stats.hour, stats.minute, stats.second) == (1, 0, 0)
     assert stats.count == int(np.sum(~np.isnan(data)))
     assert stats.sum == pytest.approx(np.nansum(data))
     assert stats.mean == pytest.approx(np.nanmean(data))
@@ -58,6 +69,19 @@ def test_compute_file_stats_matches_numpy(dask_client, driver_like_nc: tuple[Pat
     assert stats.min == pytest.approx(np.nanmin(data))
     assert stats.max == pytest.approx(np.nanmax(data))
     assert stats.median == pytest.approx(np.nanmedian(data))
+
+
+def test_compute_file_stats_null_time_without_time_coordinate(dask_client, tmp_path: Path) -> None:
+    dataset = xr.Dataset({"co": (("y", "x"), np.ones((2, 3)))})
+    path = tmp_path / "timeless.nc"
+    dataset.to_netcdf(path, engine="netcdf4")
+
+    (stats,) = compute_file_stats(path, combo="map-consd")
+
+    assert stats.time is None
+    assert (stats.year, stats.month, stats.day) == (None, None, None)
+    assert (stats.hour, stats.minute, stats.second) == (None, None, None)
+    assert stats.count == 6  # stats themselves are unaffected
 
 
 def test_write_combo_stats_csv_one_row_per_file_variable(tmp_path: Path) -> None:

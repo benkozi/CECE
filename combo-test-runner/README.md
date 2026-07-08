@@ -84,6 +84,12 @@ failures point there; pytest keeps the last few runs under e.g.
     *.nc                   # driver NetCDF output
 ```
 
+Stats CSV columns: identity (`combo`, `file`, `variable`), the file's
+timestamp from its NetCDF time coordinate as `time` (ISO-8601) plus part
+columns `year`/`month`/`day`/`hour`/`minute`/`second` for easy time
+summaries (null if the file has no time coordinate), and the nan-aware
+statistics (`count`, `sum`, `mean`, `std`, `min`, `max`, `median`).
+
 ## Environment variables
 
 | Env var                         | Meaning                                        | Default                          |
