@@ -1,12 +1,19 @@
 import shutil
+import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import pytest
 
-from combos import build_config, enumerate_combos
-from models.suite_config import SuiteConfig
+from combos import Combo, build_config, enumerate_combos
+from logs import configure_logging, get_logger
+from models.cece_config import CeceConfig
+from models.suite_config import Assertions, SuiteConfig
+from runner import run_driver
 from settings import Settings
+
+logger = get_logger("conftest")
 
 # combo-test-runner/src/tests/conftest.py -> combo-test-runner/src/tests/
 _TESTS_ROOT = Path(__file__).resolve().parent
@@ -27,6 +34,28 @@ class ComboRoots:
     @property
     def output_mount(self) -> tuple[Path, PurePosixPath] | None:
         return (self.host, self.container) if self.needs_mount else None
+
+
+@dataclass(frozen=True)
+class GeneratedCombo:
+    """A combination's generated driver config and where it lives."""
+
+    host_dir: Path
+    container_yaml: PurePosixPath
+    config: CeceConfig
+
+
+@dataclass(frozen=True)
+class DriverRunResult:
+    """Outcome of one driver invocation. The driver-run fixture never raises;
+    execution failure is reported explicitly by test_driver_execution and
+    downstream assertion tests skip."""
+
+    combo: Combo
+    combo_dir: Path
+    out_path: Path
+    config: CeceConfig
+    error: Exception | None
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -82,6 +111,7 @@ def _resolve_suite_path(option: str, settings: Settings) -> Path:
 def pytest_sessionstart(session: pytest.Session) -> None:
     config = session.config
     settings = Settings()
+    configure_logging(settings.log_level)
     suite_path = _resolve_suite_path(config.getoption("--suite-config"), settings)
     try:
         suite = SuiteConfig.from_yaml(suite_path, config_search_path=settings.config_search_path)
@@ -112,14 +142,19 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    if "combo" in metafunc.fixturenames:
+    if "driver_run" in metafunc.fixturenames:
         combos = metafunc.config._combos  # type: ignore[attr-defined]
-        metafunc.parametrize("combo", combos, ids=[combo.name for combo in combos])
+        metafunc.parametrize("driver_run", combos, ids=[combo.name for combo in combos], indirect=True)
 
 
 @pytest.fixture(scope="session")
 def settings(request: pytest.FixtureRequest) -> Settings:
     return request.config._combo_settings  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="session")
+def suite_assertions(request: pytest.FixtureRequest) -> Assertions:
+    return request.config._combo_suite.assertions  # type: ignore[attr-defined]
 
 
 @pytest.fixture(scope="session")
@@ -147,16 +182,62 @@ def combo_roots(
 
 
 @pytest.fixture(scope="session")
-def generated_yamls(request: pytest.FixtureRequest, combo_roots: ComboRoots) -> dict[str, PurePosixPath]:
-    """Generate every combo's driver config up front; map combo name to the
-    config's container-side path."""
+def generated_combos(request: pytest.FixtureRequest, combo_roots: ComboRoots) -> dict[str, GeneratedCombo]:
+    """Generate every combo's driver config up front; map combo name to its
+    generated config and paths."""
     suite = request.config._combo_suite  # type: ignore[attr-defined]
-    container_yamls: dict[str, PurePosixPath] = {}
+    generated: dict[str, GeneratedCombo] = {}
     for combo in request.config._combos:  # type: ignore[attr-defined]
         combo_dir = combo_roots.host / combo.name
         combo_dir.mkdir(parents=True)
         container_dir = combo_roots.container / combo.name
         config = build_config(combo, output_directory=str(container_dir), config_path=suite.config_path)
         config.to_yaml(combo_dir / f"{combo.name}.yaml")
-        container_yamls[combo.name] = container_dir / f"{combo.name}.yaml"
-    return container_yamls
+        generated[combo.name] = GeneratedCombo(
+            host_dir=combo_dir,
+            container_yaml=container_dir / f"{combo.name}.yaml",
+            config=config,
+        )
+    return generated
+
+
+@pytest.fixture(scope="session")
+def driver_run(
+    request: pytest.FixtureRequest,
+    combo_roots: ComboRoots,
+    generated_combos: dict[str, GeneratedCombo],
+    settings: Settings,
+    run_timeout_s: int,
+) -> DriverRunResult:
+    """Run the driver once per combination (session-scoped, combo-parameterized)
+    and capture the outcome without raising."""
+    combo: Combo = request.param
+    generated = generated_combos[combo.name]
+    out_path = generated.host_dir / f"{combo.name}.out"
+
+    logger.info("running combo %s (timeout=%ss)", combo.name, run_timeout_s)
+    start = time.monotonic()
+    error: Exception | None = None
+    try:
+        run_driver(
+            settings,
+            container_yaml=generated.container_yaml,
+            out_path=out_path,
+            timeout_s=run_timeout_s,
+            output_mount=combo_roots.output_mount,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        error = exc
+    duration = time.monotonic() - start
+    if error is None:
+        logger.info("combo %s completed in %.1fs", combo.name, duration)
+    else:
+        logger.error("combo %s FAILED after %.1fs: %s", combo.name, duration, type(error).__name__)
+
+    return DriverRunResult(
+        combo=combo,
+        combo_dir=generated.host_dir,
+        out_path=out_path,
+        config=generated.config,
+        error=error,
+    )

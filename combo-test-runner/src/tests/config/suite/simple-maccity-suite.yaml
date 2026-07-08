@@ -6,5 +6,7 @@
 # absent from `sweep` are not swept and stay at their base-config values.
 config_path: ../cece/simple-maccity.yaml
 timeout_s: 10  # per combination; capped by CECE_RUN_TIMEOUT_S when that is smaller
+assertions:
+  expected_nc_file_count: null  # null = derive from the combo config
 sweep:
   mapalgo: [bilinear, consd, passthrough]

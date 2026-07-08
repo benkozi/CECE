@@ -1,24 +1,22 @@
-from pathlib import PurePosixPath
+import pytest
+from conftest import DriverRunResult
 
-from conftest import ComboRoots
-
-from combos import Combo
-from runner import run_driver
-from settings import Settings
+from assertions import assert_nc_file_count
+from models.suite_config import Assertions
 
 
-def test_driver_combo(
-    combo: Combo,
-    generated_yamls: dict[str, PurePosixPath],
-    combo_roots: ComboRoots,
-    settings: Settings,
-    run_timeout_s: int,
-) -> None:
-    out_path = combo_roots.host / combo.name / f"{combo.name}.out"
-    run_driver(
-        settings,
-        container_yaml=generated_yamls[combo.name],
-        out_path=out_path,
-        timeout_s=run_timeout_s,
-        output_mount=combo_roots.output_mount,
+def test_driver_execution(driver_run: DriverRunResult) -> None:
+    """The driver ran to completion with exit code 0."""
+    if driver_run.error is not None:
+        pytest.fail(f"driver run failed: {driver_run.error}")
+
+
+def test_nc_file_count(driver_run: DriverRunResult, suite_assertions: Assertions) -> None:
+    """The combo directory holds the expected number of NetCDF output files."""
+    if driver_run.error is not None:
+        pytest.skip(f"driver run failed: {driver_run.error}")
+    assert_nc_file_count(
+        driver_run.combo_dir,
+        driver_run.config,
+        suite_assertions.expected_nc_file_count,
     )

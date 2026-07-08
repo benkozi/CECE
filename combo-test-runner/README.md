@@ -34,6 +34,12 @@ appears in the terminal as the suite runs; without `-s`, passing tests stay
 quiet and failing tests include the output in their report under
 "Captured stdout call".
 
+Each combination produces one test per assertion — `test_driver_execution`
+(driver exits 0) and `test_nc_file_count` (expected NetCDF output count) —
+with the driver running once per combination. If the driver run fails, its
+`test_driver_execution` fails and that combination's assertion tests are
+skipped with a `driver run failed: ...` reason.
+
 Options:
 
 - `--suite-config=PATH` — suite YAML defining the base driver config
@@ -71,5 +77,6 @@ failures point there; pytest keeps the last few runs under e.g.
 | `CECE_ROOT`                     | host repo root mounted at /work                | derived from this checkout       |
 | `CECE_DRIVER_PATH`              | driver path inside the container               | `./build/cece_standalone_driver` |
 | `CECE_RUN_TIMEOUT_S`            | caps the suite `timeout_s` when smaller        | `300`                            |
+| `CECE_LOG_LEVEL`                | runner log level (`DEBUG`, `INFO`, ...)        | `INFO`                           |
 | `CECE_CONFIG_SEARCH_PATH`       | prepended to relative `config_path` values     | unset                            |
 | `CECE_SUITE_CONFIG_SEARCH_PATH` | prepended to relative `--suite-config` values  | unset                            |

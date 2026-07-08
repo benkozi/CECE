@@ -29,7 +29,9 @@ values. The combination space is the cartesian product of the listed values.
 ```yaml
 # simple-maccity-suite.yaml — initial suite
 config_path: ../cece/simple-maccity.yaml   # base driver config (suite-relative)
-timeout_s: 5                               # per combination; capped by CECE_RUN_TIMEOUT_S
+timeout_s: 10                              # per combination; capped by CECE_RUN_TIMEOUT_S
+assertions:
+  expected_nc_file_count: null             # null = derive from the combo config
 sweep:
   mapalgo: [bilinear, consd, passthrough]
 ```
@@ -200,10 +202,13 @@ exit is the failure condition. The environment variables mirror `setup.sh`
 
 ## Pytest integration
 
-- **One test, parameterized by combo.** A session-scoped step loads the suite
-  config and generates all combo YAML files up front; a parameterized fixture
-  hands each test a single YAML path (host path + matching container path).
-  The test body is just the docker invocation.
+- **One test per assertion, parameterized by combo.** A session-scoped step
+  loads the suite config and generates all combo YAML files up front. The
+  driver runs once per combination in a combo-parameterized, session-scoped
+  fixture that captures the outcome without raising; `test_driver_execution`
+  asserts exit 0, and each post-run assertion (`test_nc_file_count`, …) is
+  its own test that skips explicitly when the run failed. See
+  `design/feat/20260708-1055-add-assertions-for-file-counts.md`.
 - **Fail fast vs. continue** uses pytest built-ins — no custom flags.
   **Continue is the default and the desired behavior**: a plain `pytest`
   invocation runs every combination to completion regardless of individual
@@ -243,6 +248,7 @@ beyond the test runner.
 | `root`           | `CECE_ROOT`           | repo root (derived)  |
 | `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
 | `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | 300 — caps the suite's `timeout_s` when smaller |
+| `log_level`      | `CECE_LOG_LEVEL`      | `INFO`               |
 | `config_search_path`       | `CECE_CONFIG_SEARCH_PATH`       | unset |
 | `suite_config_search_path` | `CECE_SUITE_CONFIG_SEARCH_PATH` | unset |
 
@@ -265,7 +271,9 @@ combo-test-runner/
     models/
       cece_config.py      # existing pydantic model of the driver config
       suite_config.py     # SuiteConfig / Sweep models + YAML loader
+    assertions.py         # post-run assertions (NetCDF file count, ...)
     combos.py             # sweep → combinations, combo naming, config generation
+    logs.py               # namespace logger, level from CECE_LOG_LEVEL
     runner.py             # docker run construction, check_output, .out writing
     settings.py           # pydantic-settings
     tests/

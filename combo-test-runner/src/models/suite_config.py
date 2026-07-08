@@ -21,8 +21,23 @@ class Sweep(BaseModel):
     mapalgo: list[Mapalgo] | None = Field(None, min_length=1)
 
 
+class Assertions(BaseModel):
+    """What each combination's output is expected to look like. Configures
+    expectations only — never run behavior (fail-fast stays pytest's -x)."""
+
+    expected_nc_file_count: int | None = Field(
+        None,
+        ge=0,
+        description="Exact NetCDF file count per combo; None derives it from the combo config; 0 means none expected",
+    )
+
+
 class SuiteConfig(BaseModel):
     config_path: Path = Field(description="Base CECE driver config this suite's combinations are diffs of")
+    assertions: Assertions = Field(
+        default_factory=Assertions,
+        description="Post-run assertion expectations; defaults apply when absent",
+    )
     timeout_s: int = Field(
         gt=0,
         description="Per-combination driver timeout in seconds; capped by the run_timeout_s setting",
