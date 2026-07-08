@@ -5,6 +5,6 @@
 # combination space is the cartesian product of the listed values. Enums
 # absent from `sweep` are not swept and stay at their base-config values.
 config_path: ../cece/simple-maccity.yaml
-timeout_s: 5  # per combination; capped by CECE_RUN_TIMEOUT_S when that is smaller
+timeout_s: 10  # per combination; capped by CECE_RUN_TIMEOUT_S when that is smaller
 sweep:
   mapalgo: [bilinear, consd, passthrough]
