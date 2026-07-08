@@ -338,3 +338,9 @@ there.
 - The sweep is YAML-configured from day one; the initial suite covers only
   `mapalgo ∈ {bilinear, consd, passthrough}` (3 runs), not the 864-combo full
   product.
+- Data-carrying objects (`ComboRoots`, `GeneratedCombo`, `DriverRunResult`)
+  are frozen pydantic models, consistent with the config models — not
+  dataclasses. The exception is the enumeration machinery in `combos.py`
+  (`Dimension`, `Combo`), which holds callables and generic enum members
+  that pydantic cannot deep-validate; those stay dataclasses and are
+  isinstance-checked (`InstanceOf`) where they appear as model fields.

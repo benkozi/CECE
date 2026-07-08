@@ -1,10 +1,10 @@
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import pytest
+from pydantic import BaseModel, ConfigDict, InstanceOf
 
 from combos import Combo, build_config, enumerate_combos
 from logs import configure_logging, get_logger
@@ -25,8 +25,9 @@ _CONTAINER_WORK = PurePosixPath("/work")
 _CONTAINER_TMP_ROOT = PurePosixPath("/combo_runs")
 
 
-@dataclass(frozen=True)
-class ComboRoots:
+class ComboRoots(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     host: Path
     container: PurePosixPath
     needs_mount: bool  # True when the host root is outside the /work mount
@@ -36,26 +37,30 @@ class ComboRoots:
         return (self.host, self.container) if self.needs_mount else None
 
 
-@dataclass(frozen=True)
-class GeneratedCombo:
+class GeneratedCombo(BaseModel):
     """A combination's generated driver config and where it lives."""
+
+    model_config = ConfigDict(frozen=True)
 
     host_dir: Path
     container_yaml: PurePosixPath
     config: CeceConfig
 
 
-@dataclass(frozen=True)
-class DriverRunResult:
+class DriverRunResult(BaseModel):
     """Outcome of one driver invocation. The driver-run fixture never raises;
     execution failure is reported explicitly by test_driver_execution and
     downstream assertion tests skip."""
 
-    combo: Combo
+    model_config = ConfigDict(frozen=True)
+
+    # InstanceOf: Combo is enumeration machinery (callables, enum members),
+    # validated by isinstance rather than deep pydantic validation.
+    combo: InstanceOf[Combo]
     combo_dir: Path
     out_path: Path
     config: CeceConfig
-    error: Exception | None
+    error: InstanceOf[Exception] | None
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

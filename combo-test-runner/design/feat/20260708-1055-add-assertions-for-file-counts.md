@@ -84,15 +84,20 @@ surface as incidental setup errors on downstream tests. So the fixture
 **never raises**; it captures the outcome:
 
 ```python
-@dataclass(frozen=True)
-class DriverRunResult:
-    combo: Combo
-    out_path: Path          # captured driver output (.out)
-    combo_dir: Path         # host-side combo directory
-    config: CeceConfig      # the generated config the driver ran
-    error: Exception | None # None on success; CalledProcessError /
-                            # TimeoutExpired / OSError otherwise
+class DriverRunResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    combo: InstanceOf[Combo]           # isinstance-validated (enumeration machinery)
+    out_path: Path                     # captured driver output (.out)
+    combo_dir: Path                    # host-side combo directory
+    config: CeceConfig                 # the generated config the driver ran
+    error: InstanceOf[Exception] | None  # None on success; CalledProcessError /
+                                         # TimeoutExpired / OSError otherwise
 ```
+
+Data carriers are frozen **pydantic models**, not dataclasses, consistent
+with the config models. Types pydantic cannot deep-validate (`Combo`,
+`Exception`) use `InstanceOf` isinstance checks.
 
 - `test_driver_execution` fails iff `result.error is not None` — execution
   failure is always reported by exactly one clearly named test.
