@@ -28,9 +28,13 @@ def driver_like_nc(tmp_path: Path) -> tuple[Path, np.ndarray]:
     return path, data
 
 
+_RUN_ID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"  # fixed 26-char ULID-shaped id for row fixtures
+
+
 def _stats_rows() -> list[VariableStats]:
     return [
         VariableStats(
+            run_id=_RUN_ID,
             combo="map-consd",
             file=f"cece_2010010{day}_010000.nc",
             time=f"2010-01-0{day}T01:00:00",
@@ -54,9 +58,13 @@ def _stats_rows() -> list[VariableStats]:
 
 
 def test_compute_file_stats_matches_numpy(dask_client, driver_like_nc: tuple[Path, np.ndarray]) -> None:
-    path, data = driver_like_nc
-    (stats,) = compute_file_stats(path, combo="map-consd")
+    from ulid import ULID
 
+    path, data = driver_like_nc
+    run_id = str(ULID())
+    (stats,) = compute_file_stats(path, combo="map-consd", run_id=run_id)
+
+    assert stats.run_id == run_id and len(stats.run_id) == 26
     assert (stats.combo, stats.file, stats.variable) == ("map-consd", path.name, "co")
     # Timestamp columns come from the file's time coordinate (first value).
     assert stats.time == "2010-01-01T01:00:00"
@@ -76,7 +84,7 @@ def test_compute_file_stats_null_time_without_time_coordinate(dask_client, tmp_p
     path = tmp_path / "timeless.nc"
     dataset.to_netcdf(path, engine="netcdf4")
 
-    (stats,) = compute_file_stats(path, combo="map-consd")
+    (stats,) = compute_file_stats(path, combo="map-consd", run_id=_RUN_ID)
 
     assert stats.time is None
     assert (stats.year, stats.month, stats.day) == (None, None, None)
@@ -112,3 +120,4 @@ def test_concatenate_stats_csvs(tmp_path: Path) -> None:
     assert (tmp_path / "descriptive_stats.csv").is_file()
     assert len(combined) == 2
     assert set(combined["combo"]) == {"map-consd", "map-bilinear"}
+    assert set(combined["run_id"]) == {_RUN_ID}  # run id survives both CSV layers

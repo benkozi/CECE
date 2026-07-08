@@ -10,7 +10,8 @@ from analysis import concatenate_stats_csvs
 from combos import Combo, build_config, enumerate_combos
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
-from models.suite_config import Analysis, Assertions, SuiteConfig
+from models.suite_config import Analysis, Assertions, RunManifest, SuiteConfig
+from ulid import ULID
 from resolution import resolve_output_roots, resolve_suite_path
 from runner import DriverRunResult, run_driver
 from settings import Settings
@@ -83,6 +84,11 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     except FileNotFoundError as exc:
         raise pytest.UsageError(str(exc)) from exc
 
+    # One ULID per test run, generated at runtime only — never configuration.
+    run_id = str(ULID())
+    logger.info("starting run %s (suite=%s)", run_id, suite_path)
+    config._combo_run_id = run_id  # type: ignore[attr-defined]
+
     # An explicit output root is resolved and guarded here, before anything
     # runs. The default (pytest tmp) root is created lazily in combo_roots —
     # it is freshly created each session and can never pre-exist.
@@ -145,6 +151,11 @@ def suite_analysis(request: pytest.FixtureRequest) -> Analysis:
 
 
 @pytest.fixture(scope="session")
+def run_id(request: pytest.FixtureRequest) -> str:
+    return request.config._combo_run_id  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="session")
 def dask_client(settings: Settings):
     """Session distributed client for the analysis computations. Requested
     lazily (request.getfixturevalue) so disabled-analysis runs never pay
@@ -186,6 +197,15 @@ def combo_roots(
     # Stash the realized roots for pytest_sessionfinish (hooks cannot request
     # fixtures; the tmp-default root only exists once this fixture has run).
     request.config._combo_roots_realized = roots  # type: ignore[attr-defined]
+
+    # Write the run manifest as soon as the root is realized, so even a run
+    # that dies mid-way leaves a record of what ran.
+    roots.host.mkdir(parents=True, exist_ok=True)
+    manifest = RunManifest(
+        run_id=request.config._combo_run_id,  # type: ignore[attr-defined]
+        suite=request.config._combo_suite,  # type: ignore[attr-defined]
+    )
+    manifest.to_yaml(roots.host / "run.yaml")
     return roots
 
 

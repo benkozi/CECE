@@ -76,6 +76,7 @@ failures point there; pytest keeps the last few runs under e.g.
 
 ```
 <output-root>/
+  run.yaml                 # run manifest: session ULID + the resolved suite config
   descriptive_stats.csv    # all combos' statistics, concatenated
   map-consd/
     map-consd.yaml         # generated driver config
@@ -84,7 +85,12 @@ failures point there; pytest keeps the last few runs under e.g.
     *.nc                   # driver NetCDF output
 ```
 
-Stats CSV columns: identity (`combo`, `file`, `variable`), the file's
+Every run gets a runtime-generated ULID (`run_id`) — logged at session
+start, written to `run.yaml`, and stamped into every stats row so CSVs from
+different runs stay distinguishable. It is never set via configuration;
+unknown keys in suite or driver config files are rejected at load time.
+
+Stats CSV columns: `run_id`, identity (`combo`, `file`, `variable`), the file's
 timestamp from its NetCDF time coordinate as `time` (ISO-8601) plus part
 columns `year`/`month`/`day`/`hour`/`minute`/`second` for easy time
 summaries (null if the file has no time coordinate), and the nan-aware

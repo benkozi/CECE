@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import ConfigDict, Field
 
+from models.base import StrictModel
 from models.cece_config import Category, Mapalgo, Operation, Taxmode, Tintalgo, VdistMethod
 
 
-class Sweep(BaseModel):
+class Sweep(StrictModel):
     """Enum values to sweep. Enums left unset are not swept and stay at their
     base-config values; the combination space is the cartesian product of the
     listed values."""
@@ -21,7 +22,7 @@ class Sweep(BaseModel):
     mapalgo: list[Mapalgo] | None = Field(None, min_length=1)
 
 
-class Assertions(BaseModel):
+class Assertions(StrictModel):
     """What each combination's output is expected to look like. Configures
     expectations only — never run behavior (fail-fast stays pytest's -x)."""
 
@@ -36,7 +37,7 @@ class Assertions(BaseModel):
     )
 
 
-class Analysis(BaseModel):
+class Analysis(StrictModel):
     """Post-run analysis steps. Like Assertions, configures what to compute,
     never run behavior."""
 
@@ -46,7 +47,7 @@ class Analysis(BaseModel):
     )
 
 
-class SuiteConfig(BaseModel):
+class SuiteConfig(StrictModel):
     config_path: Path = Field(description="Base CECE driver config this suite's combinations are diffs of")
     analysis: Analysis = Field(
         default_factory=Analysis,
@@ -86,3 +87,18 @@ class SuiteConfig(BaseModel):
             )
         suite.config_path = resolved
         return suite
+
+
+class RunManifest(StrictModel):
+    """Output-only record of one test run, written to the output root as
+    run.yaml. The run_id is generated at runtime (never read from
+    configuration); the suite is recorded as resolved — what actually ran."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: str  # session ULID; its timestamp encodes the run start
+    suite: SuiteConfig
+
+    def to_yaml(self, path: Path) -> None:
+        with open(path, "w") as f:
+            yaml.dump(self.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)

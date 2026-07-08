@@ -33,7 +33,10 @@ def test_nc_filenames(driver_run: DriverRunResult, suite_assertions: Assertions)
 
 
 def test_descriptive_stats(
-    request: pytest.FixtureRequest, driver_run: DriverRunResult, suite_analysis: Analysis
+    request: pytest.FixtureRequest,
+    driver_run: DriverRunResult,
+    suite_analysis: Analysis,
+    run_id: str,
 ) -> None:
     """Descriptive statistics for every NetCDF the combo produced, written to
     the combo's stats CSV. No value assertions yet — baselines come later."""
@@ -46,7 +49,9 @@ def test_descriptive_stats(
 
     nc_files = sorted(driver_run.combo_dir.glob("*.nc"))
     stats = [
-        entry for nc_file in nc_files for entry in compute_file_stats(nc_file, combo=driver_run.combo.name)
+        entry
+        for nc_file in nc_files
+        for entry in compute_file_stats(nc_file, combo=driver_run.combo.name, run_id=run_id)
     ]
     csv_path = driver_run.combo_dir / f"{driver_run.combo.name}-stats.csv"
     frame = write_combo_stats_csv(stats, csv_path)

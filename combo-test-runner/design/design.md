@@ -145,6 +145,8 @@ Layout under the output root is the same either way:
 
 ```
 <output-root>/                 # default: pytest tmp dir; else /work-relative
+  run.yaml                     # RunManifest: session ULID + resolved suite config
+  descriptive_stats.csv        # all combos' statistics, concatenated at session end
   map-consd/                   # one directory per combination
     map-consd.yaml             # generated driver config
     map-consd.out              # captured driver stdout+stderr (".log" is
@@ -271,8 +273,9 @@ combo-test-runner/
   design/design.md
   src/
     models/
+      base.py             # StrictModel: extra="forbid" base for all config models
       cece_config.py      # existing pydantic model of the driver config
-      suite_config.py     # SuiteConfig / Sweep models + YAML loader
+      suite_config.py     # SuiteConfig / Sweep / RunManifest models + YAML loader
     analysis.py           # descriptive stats (dask distributed), CSV writing
     assertions.py         # post-run assertions (NetCDF file count, filenames)
     combos.py             # sweep → combinations, combo naming, config generation
@@ -291,8 +294,8 @@ combo-test-runner/
 ```
 
 Dependencies: `pytest`, `pytest-mock`, `pydantic>=2`, `pydantic-settings`,
-`pyyaml`, and the analysis stack (`pandas`, `xarray`, `netcdf4`,
-`dask[distributed]`). Nothing
+`python-ulid`, `pyyaml`, and the analysis stack (`pandas`, `xarray`,
+`netcdf4`, `dask[distributed]`). Nothing
 imported from the CECE repo outside `combo-test-runner/`.
 
 ## README (user documentation)
@@ -346,6 +349,13 @@ there.
 - The sweep is YAML-configured from day one; the initial suite covers only
   `mapalgo ∈ {bilinear, consd, passthrough}` (3 runs), not the 864-combo full
   product.
+- Every YAML-backed config model (the full `CeceConfig` and `SuiteConfig`
+  hierarchies, plus `RunManifest`) inherits `models/base.py:StrictModel`
+  (`extra="forbid"`): unknown keys at any nesting level fail at load time
+  instead of being silently dropped. Each run is identified by a runtime
+  ULID — logged at session start, stamped into every stats row (`run_id`),
+  and recorded with the resolved suite in `<output-root>/run.yaml`; it is
+  never read from configuration.
 - Data-carrying objects (`ComboRoots`, `GeneratedCombo`, `DriverRunResult`)
   are frozen pydantic models, consistent with the config models — not
   dataclasses. The exception is the enumeration machinery in `combos.py`

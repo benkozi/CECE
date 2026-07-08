@@ -2,9 +2,11 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
-from models.suite_config import SuiteConfig
+from models.cece_config import CeceConfig
+from models.suite_config import RunManifest, SuiteConfig
 
 
 def test_config_path_resolves_relative_to_suite_file(suite_path: Path) -> None:
@@ -58,3 +60,35 @@ def test_invalid_sweep_value_fails_at_load(tmp_path: Path, cece_config_path: Pat
     )
     with pytest.raises(ValidationError):
         SuiteConfig.from_yaml(suite_file)
+
+
+def test_unknown_suite_key_rejected(tmp_path: Path, cece_config_path: Path) -> None:
+    # ulid is runtime-only and must never come from configuration; unknown
+    # keys generally fail loudly rather than being silently dropped.
+    suite_file = tmp_path / "ulid-suite.yaml"
+    suite_file.write_text(
+        f"config_path: {cece_config_path}\nulid: 01JZZ\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n"
+    )
+    with pytest.raises(ValidationError, match="ulid"):
+        SuiteConfig.from_yaml(suite_file)
+
+
+def test_unknown_nested_cece_config_key_rejected(tmp_path: Path, cece_config_path: Path) -> None:
+    content = yaml.safe_load(cece_config_path.read_text())
+    content["driver"]["bogus_knob"] = 1
+    config_file = tmp_path / "bogus-config.yaml"
+    config_file.write_text(yaml.dump(content))
+    with pytest.raises(ValidationError, match="bogus_knob"):
+        CeceConfig.from_yaml(config_file)
+
+
+def test_run_manifest_round_trips_through_yaml(tmp_path: Path, suite_path: Path) -> None:
+    suite = SuiteConfig.from_yaml(suite_path)
+    manifest = RunManifest(run_id="01JZZZZZZZZZZZZZZZZZZZZZZZ", suite=suite)
+    manifest_path = tmp_path / "run.yaml"
+    manifest.to_yaml(manifest_path)
+
+    reloaded = RunManifest.model_validate(yaml.safe_load(manifest_path.read_text()))
+    assert reloaded.run_id == manifest.run_id
+    assert reloaded.suite.config_path == suite.config_path
+    assert reloaded.suite.sweep == suite.sweep

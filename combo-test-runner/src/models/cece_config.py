@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from models.base import StrictModel
 
 # ── YAML loader that follows YAML 1.2 boolean rules (true/false only) ────────
 # PyYAML (YAML 1.1) also maps yes/no/on/off to booleans, which collides with
@@ -81,7 +83,7 @@ class VdistMethod(StrEnum):
 # ── Sub-models ────────────────────────────────────────────────────────────────
 
 
-class Grid(BaseModel):
+class Grid(StrictModel):
     nx: int = Field(description="Number of longitude grid cells")
     ny: int = Field(description="Number of latitude grid cells")
     lon_min: float = Field(description="Western boundary of the domain (degrees east)")
@@ -90,14 +92,14 @@ class Grid(BaseModel):
     lat_max: float = Field(description="Northern boundary of the domain (degrees north)")
 
 
-class Driver(BaseModel):
+class Driver(StrictModel):
     start_time: str = Field(description="Simulation start time (ISO-8601)")
     end_time: str = Field(description="Simulation end time (ISO-8601)")
     timestep_seconds: int = Field(description="Model timestep in seconds")
     grid: Grid = Field(description="Spatial grid definition")
 
 
-class SpeciesEntry(BaseModel):
+class SpeciesEntry(StrictModel):
     field: str = Field(description="Name of the source field in the export state")
     operation: Operation = Field(description="How this entry combines with prior entries for the same species")
     scale: float | None = Field(None, description="Multiplicative scale factor applied to the field")
@@ -145,12 +147,12 @@ class SpeciesEntry(BaseModel):
     )
 
 
-class StreamVariable(BaseModel):
+class StreamVariable(StrictModel):
     file: str = Field(description="Variable name in the source NetCDF file")
     model: str = Field(description="Corresponding field name in the export state")
 
 
-class Stream(BaseModel):
+class Stream(StrictModel):
     name: str = Field(description="Unique identifier for this data stream")
     file: Path = Field(description="Path to the source NetCDF file (glob patterns supported)")
     yearFirst: int = Field(description="First year of data available in the file")
@@ -166,11 +168,11 @@ class Stream(BaseModel):
     variables: list[StreamVariable] = Field(description="Mapping from file variable names to export-state field names")
 
 
-class CeceData(BaseModel):
+class CeceData(StrictModel):
     streams: list[Stream] = Field(description="Ordered list of external data streams ingested by the stacking engine")
 
 
-class PhysicsScheme(BaseModel):
+class PhysicsScheme(StrictModel):
     name: str = Field(description="Registered name of the physics scheme")
     language: str | None = Field(
         None,
@@ -191,7 +193,7 @@ class PhysicsScheme(BaseModel):
     )
 
 
-class Diagnostics(BaseModel):
+class Diagnostics(StrictModel):
     output_interval_seconds: int = Field(description="How frequently diagnostic output is written, in seconds")
     variables: list[str] = Field(default=[], description="Export-state fields to include in diagnostic output")
     enabled: bool | None = Field(
@@ -200,7 +202,7 @@ class Diagnostics(BaseModel):
     )
 
 
-class Output(BaseModel):
+class Output(StrictModel):
     enabled: bool = Field(description="Whether NetCDF output is written")
     directory: str = Field(description="Directory where output files are written")
     filename_pattern: str = Field(description="Filename template; supports {YYYY}, {MM}, {DD}, {HH}, {mm}, {ss} tokens")
@@ -211,7 +213,7 @@ class Output(BaseModel):
 # ── Top-level ─────────────────────────────────────────────────────────────────
 
 
-class CeceConfig(BaseModel):
+class CeceConfig(StrictModel):
     driver: Driver = Field(description="Simulation time and spatial grid settings")
     meteorology: dict[str, str] | None = Field(
         None,
