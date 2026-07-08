@@ -14,7 +14,7 @@ from settings import Settings
 
 
 def test_maccity_pipeline_runs_all_combos_mocked(
-    mocker: MockerFixture, tmp_path: Path, suite_path: Path
+    mocker: MockerFixture, tmp_path: Path, suite_path: Path, maccity_expected_filenames: set[str]
 ) -> None:
     check_output = mocker.patch(
         "runner.subprocess.check_output",
@@ -54,9 +54,10 @@ def test_maccity_pipeline_runs_all_combos_mocked(
         )
         assert out_path.read_bytes() == b"INFO: CECE Finalize completed successfully\n"
 
-        # Fabricate the file a *correct* driver would produce (first write at
+        # Fabricate the files a *correct* driver would produce (first write at
         # hour 1), then run the suite's assertions in derived mode.
-        (combo_dir / "cece_20100101_010000.nc").touch()
+        for name in maccity_expected_filenames:
+            (combo_dir / name).touch()
         assert_nc_file_count(combo_dir, config, suite.assertions.expected_nc_file_count)
         assert suite.assertions.validate_filenames
         assert_nc_filenames(combo_dir, config)

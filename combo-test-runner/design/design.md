@@ -109,7 +109,7 @@ Combinations are diffs applied to a **base config** — a known-good driver
 config selected by the suite's `config_path` (the initial
 `src/tests/config/cece/simple-maccity.yaml`, modeled on
 `examples/cece_config_ex1.yaml`: single species `co`, single `MACCITY` stream
-reading `/work/data/MACCity_4x5.nc`, coarse global grid, one-hour run). Base
+reading `/work/data/MACCity_4x5.nc`, coarse global grid, three-hour run). Base
 configs live inside `combo-test-runner/`, preserving zero runtime dependency
 on files elsewhere in the repo. For each combination the generator:
 
