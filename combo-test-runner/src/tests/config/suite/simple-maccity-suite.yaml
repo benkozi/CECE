@@ -11,5 +11,7 @@ assertions:
   # Known driver bug: output is stamped at hour 0 instead of hour 1, so the
   # test_nc_filenames tests are EXPECTED TO FAIL until the driver is fixed.
   validate_filenames: true
+analysis:
+  compute_descriptive_stats: true  # default; false skips test_descriptive_stats
 sweep:
   mapalgo: [bilinear, consd, passthrough]

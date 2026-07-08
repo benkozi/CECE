@@ -1,0 +1,106 @@
+"""Descriptive statistics for NetCDF output.
+
+Modeled on the stats portions of cece-data-viewer/app/analysis.py: nan-aware
+per-variable reductions built as dask graphs and gathered into a single
+dask.compute call (executed on the active distributed client).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import dask
+import dask.array as dsa
+import pandas as pd
+import xarray as xr
+from pydantic import BaseModel, ConfigDict
+
+from logs import get_logger
+
+logger = get_logger("analysis")
+
+_STATS_PER_VARIABLE = 7  # count, sum, mean, std, min, max, median
+
+
+class VariableStats(BaseModel):
+    """Descriptive statistics for one data variable of one NetCDF file, all
+    values flattened (a lev dimension, when present, is flattened too)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    combo: str
+    file: str  # NetCDF filename, not path
+    variable: str
+    count: int
+    sum: float
+    mean: float
+    std: float
+    min: float
+    max: float
+    median: float
+
+
+def compute_file_stats(nc_path: Path, combo: str) -> list[VariableStats]:
+    """Nan-aware descriptive stats for every data variable in one NetCDF file."""
+    with xr.open_dataset(nc_path, chunks="auto", engine="netcdf4") as ds:
+        deferred: list[object] = []
+        names: list[str] = []
+        for name in ds.data_vars:
+            flat = dsa.asarray(ds[str(name)].data).ravel().astype(float)
+            deferred.extend(
+                [
+                    dsa.sum(~dsa.isnan(flat)),
+                    dsa.nansum(flat),
+                    dsa.nanmean(flat),
+                    dsa.nanstd(flat),
+                    dsa.nanmin(flat),
+                    dsa.nanmax(flat),
+                    dsa.nanmedian(flat, axis=0),
+                ]
+            )
+            names.append(str(name))
+        computed = dask.compute(*deferred)
+
+    stats = []
+    for index, name in enumerate(names):
+        count, total, mean, std, minimum, maximum, median = computed[
+            index * _STATS_PER_VARIABLE : (index + 1) * _STATS_PER_VARIABLE
+        ]
+        stats.append(
+            VariableStats(
+                combo=combo,
+                file=nc_path.name,
+                variable=name,
+                count=int(count),
+                sum=float(total),
+                mean=float(mean),
+                std=float(std),
+                min=float(minimum),
+                max=float(maximum),
+                median=float(median),
+            )
+        )
+        logger.info(
+            "computed stats for %s:%s (count=%s mean=%.6g)", nc_path.name, name, int(count), float(mean)
+        )
+    return stats
+
+
+def write_combo_stats_csv(stats: list[VariableStats], csv_path: Path) -> pd.DataFrame:
+    """Write one combination's stats (all its NetCDF files) to a single CSV."""
+    frame = pd.DataFrame(
+        [entry.model_dump() for entry in stats], columns=list(VariableStats.model_fields)
+    )
+    frame.to_csv(csv_path, index=False)
+    logger.info("wrote %s stats row(s) to %s", len(frame), csv_path)
+    return frame
+
+
+def concatenate_stats_csvs(csv_paths: list[Path], out_path: Path) -> pd.DataFrame:
+    """Concatenate per-combo stats CSVs into the suite-level CSV."""
+    combined = pd.concat([pd.read_csv(path) for path in csv_paths], ignore_index=True)
+    combined.to_csv(out_path, index=False)
+    logger.info(
+        "concatenated %s csv file(s) (%s rows) to %s", len(csv_paths), len(combined), out_path
+    )
+    return combined

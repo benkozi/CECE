@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # combo-test-runner/src/settings.py -> CECE repo root is two levels up from src/
@@ -17,6 +18,8 @@ class Settings(BaseSettings):
     driver_path: str = "./build/cece_standalone_driver"
     run_timeout_s: int = 300
     log_level: str = "INFO"
+    # None -> LocalCluster sizes itself to all available cores.
+    dask_nworkers: int | None = Field(None, gt=0)
     # When set, prepended to relative config paths (kept whole, so nested and
     # ../ paths work); absolute provided paths are always used as-is.
     config_search_path: Path | None = None  # applies to the suite's config_path

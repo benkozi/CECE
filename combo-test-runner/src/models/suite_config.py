@@ -36,8 +36,22 @@ class Assertions(BaseModel):
     )
 
 
+class Analysis(BaseModel):
+    """Post-run analysis steps. Like Assertions, configures what to compute,
+    never run behavior."""
+
+    compute_descriptive_stats: bool = Field(
+        True,
+        description="Compute per-NetCDF descriptive statistics and write per-combo + suite-level CSVs; false skips",
+    )
+
+
 class SuiteConfig(BaseModel):
     config_path: Path = Field(description="Base CECE driver config this suite's combinations are diffs of")
+    analysis: Analysis = Field(
+        default_factory=Analysis,
+        description="Post-run analysis configuration; defaults apply when absent",
+    )
     assertions: Assertions = Field(
         default_factory=Assertions,
         description="Post-run assertion expectations; defaults apply when absent",

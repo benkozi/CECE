@@ -1,0 +1,90 @@
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+import xarray as xr
+
+from analysis import VariableStats, compute_file_stats, concatenate_stats_csvs, write_combo_stats_csv
+
+
+@pytest.fixture()
+def driver_like_nc(tmp_path: Path) -> tuple[Path, np.ndarray]:
+    """A temporary NetCDF matching driver output: a co variable on a small
+    time × lat × lon grid, with a NaN to exercise nan-aware stats."""
+    rng = np.random.default_rng(42)
+    data = rng.random((2, 4, 5))
+    data[0, 0, 0] = np.nan
+    dataset = xr.Dataset(
+        {"co": (("time", "lat", "lon"), data)},
+        coords={
+            "time": pd.date_range("2010-01-01T01:00:00", periods=2, freq="h"),
+            "lat": np.linspace(-90.0, 90.0, 4),
+            "lon": np.linspace(-180.0, 180.0, 5),
+        },
+    )
+    path = tmp_path / "cece_20100101_010000.nc"
+    dataset.to_netcdf(path, engine="netcdf4")
+    return path, data
+
+
+def _stats_rows() -> list[VariableStats]:
+    return [
+        VariableStats(
+            combo="map-consd",
+            file=f"cece_2010010{day}_010000.nc",
+            variable="co",
+            count=40,
+            sum=20.0,
+            mean=0.5,
+            std=0.1,
+            min=0.0,
+            max=1.0,
+            median=0.5,
+        )
+        for day in (1, 2)
+    ]
+
+
+def test_compute_file_stats_matches_numpy(dask_client, driver_like_nc: tuple[Path, np.ndarray]) -> None:
+    path, data = driver_like_nc
+    (stats,) = compute_file_stats(path, combo="map-consd")
+
+    assert (stats.combo, stats.file, stats.variable) == ("map-consd", path.name, "co")
+    assert stats.count == int(np.sum(~np.isnan(data)))
+    assert stats.sum == pytest.approx(np.nansum(data))
+    assert stats.mean == pytest.approx(np.nanmean(data))
+    assert stats.std == pytest.approx(np.nanstd(data))
+    assert stats.min == pytest.approx(np.nanmin(data))
+    assert stats.max == pytest.approx(np.nanmax(data))
+    assert stats.median == pytest.approx(np.nanmedian(data))
+
+
+def test_write_combo_stats_csv_one_row_per_file_variable(tmp_path: Path) -> None:
+    csv_path = tmp_path / "map-consd-stats.csv"
+    frame = write_combo_stats_csv(_stats_rows(), csv_path)
+
+    assert csv_path.is_file()
+    assert len(frame) == 2
+    assert list(frame.columns) == list(VariableStats.model_fields)
+    assert set(frame["file"]) == {"cece_20100101_010000.nc", "cece_20100102_010000.nc"}
+
+
+def test_write_combo_stats_csv_empty_keeps_columns(tmp_path: Path) -> None:
+    frame = write_combo_stats_csv([], tmp_path / "empty-stats.csv")
+    assert len(frame) == 0
+    assert list(frame.columns) == list(VariableStats.model_fields)
+
+
+def test_concatenate_stats_csvs(tmp_path: Path) -> None:
+    first, second = _stats_rows()
+    path_a = tmp_path / "map-consd-stats.csv"
+    path_b = tmp_path / "map-bilinear-stats.csv"
+    write_combo_stats_csv([first], path_a)
+    write_combo_stats_csv([second.model_copy(update={"combo": "map-bilinear"})], path_b)
+
+    combined = concatenate_stats_csvs([path_b, path_a], tmp_path / "descriptive_stats.csv")
+
+    assert (tmp_path / "descriptive_stats.csv").is_file()
+    assert len(combined) == 2
+    assert set(combined["combo"]) == {"map-consd", "map-bilinear"}

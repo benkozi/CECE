@@ -273,7 +273,8 @@ combo-test-runner/
     models/
       cece_config.py      # existing pydantic model of the driver config
       suite_config.py     # SuiteConfig / Sweep models + YAML loader
-    assertions.py         # post-run assertions (NetCDF file count, ...)
+    analysis.py           # descriptive stats (dask distributed), CSV writing
+    assertions.py         # post-run assertions (NetCDF file count, filenames)
     combos.py             # sweep → combinations, combo naming, config generation
     logs.py               # namespace logger, level from CECE_LOG_LEVEL
     resolution.py         # pure path-resolution rules (suite path, output roots)
@@ -290,7 +291,8 @@ combo-test-runner/
 ```
 
 Dependencies: `pytest`, `pytest-mock`, `pydantic>=2`, `pydantic-settings`,
-`pyyaml`. Nothing
+`pyyaml`, and the analysis stack (`pandas`, `xarray`, `netcdf4`,
+`dask[distributed]`). Nothing
 imported from the CECE repo outside `combo-test-runner/`.
 
 ## README (user documentation)

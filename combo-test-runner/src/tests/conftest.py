@@ -6,10 +6,11 @@ from pathlib import Path, PurePosixPath
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from analysis import concatenate_stats_csvs
 from combos import Combo, build_config, enumerate_combos
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
-from models.suite_config import Assertions, SuiteConfig
+from models.suite_config import Analysis, Assertions, SuiteConfig
 from resolution import resolve_output_roots, resolve_suite_path
 from runner import DriverRunResult, run_driver
 from settings import Settings
@@ -108,6 +109,20 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     config._combos = enumerate_combos(suite.sweep)  # type: ignore[attr-defined]
 
 
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Concatenate every per-combo stats CSV that exists into the suite-level
+    descriptive_stats.csv at the output root."""
+    config = session.config
+    suite: SuiteConfig | None = getattr(config, "_combo_suite", None)
+    roots: ComboRoots | None = getattr(config, "_combo_roots_realized", None)
+    if suite is None or roots is None or not suite.analysis.compute_descriptive_stats:
+        return
+    combo_csvs = sorted(roots.host.glob("*/*-stats.csv"))
+    if not combo_csvs:
+        return
+    concatenate_stats_csvs(combo_csvs, roots.host / "descriptive_stats.csv")
+
+
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "driver_run" in metafunc.fixturenames:
         combos = metafunc.config._combos  # type: ignore[attr-defined]
@@ -122,6 +137,29 @@ def settings(request: pytest.FixtureRequest) -> Settings:
 @pytest.fixture(scope="session")
 def suite_assertions(request: pytest.FixtureRequest) -> Assertions:
     return request.config._combo_suite.assertions  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="session")
+def suite_analysis(request: pytest.FixtureRequest) -> Analysis:
+    return request.config._combo_suite.analysis  # type: ignore[attr-defined]
+
+
+@pytest.fixture(scope="session")
+def dask_client(settings: Settings):
+    """Session distributed client for the analysis computations. Requested
+    lazily (request.getfixturevalue) so disabled-analysis runs never pay
+    cluster startup. dask_nworkers unset -> all available cores."""
+    from dask.distributed import Client, LocalCluster
+
+    cluster_kwargs: dict[str, object] = {"dashboard_address": None}
+    if settings.dask_nworkers is not None:
+        cluster_kwargs["n_workers"] = settings.dask_nworkers
+    cluster = LocalCluster(**cluster_kwargs)  # type: ignore[arg-type]
+    client = Client(cluster)
+    logger.info("started dask client with %s worker(s)", len(cluster.workers))
+    yield client
+    client.close()
+    cluster.close()
 
 
 @pytest.fixture(scope="session")
@@ -145,6 +183,9 @@ def combo_roots(
             container=_CONTAINER_TMP_ROOT,
             needs_mount=True,
         )
+    # Stash the realized roots for pytest_sessionfinish (hooks cannot request
+    # fixtures; the tmp-default root only exists once this fixture has run).
+    request.config._combo_roots_realized = roots  # type: ignore[attr-defined]
     return roots
 
 

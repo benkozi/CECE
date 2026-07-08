@@ -37,12 +37,16 @@ appears in the terminal as the suite runs; without `-s`, passing tests stay
 quiet and failing tests include the output in their report under
 "Captured stdout call".
 
-Each combination produces one test per assertion — `test_driver_execution`
-(driver exits 0), `test_nc_file_count` (expected NetCDF output count), and
-`test_nc_filenames` (filenames match `filename_pattern` at the expected
-write times) — with the driver running once per combination. If the driver
-run fails, its `test_driver_execution` fails and that combination's
-assertion tests are skipped with a `driver run failed: ...` reason.
+Each combination produces one test per assertion/analysis step —
+`test_driver_execution` (driver exits 0), `test_nc_file_count` (expected
+NetCDF output count), `test_nc_filenames` (filenames match
+`filename_pattern` at the expected write times), and
+`test_descriptive_stats` (per-NetCDF statistics via distributed dask,
+written to `<combo>-stats.csv`; all combos concatenated into
+`descriptive_stats.csv` at the output root when the session ends) — with the
+driver running once per combination. If the driver run fails, its
+`test_driver_execution` fails and that combination's assertion tests are
+skipped with a `driver run failed: ...` reason.
 
 **Known driver bug — expected failures**: the driver currently stamps output
 at hour 0 instead of hour 1, so the three `test_nc_filenames` tests fail by
@@ -72,10 +76,12 @@ failures point there; pytest keeps the last few runs under e.g.
 
 ```
 <output-root>/
+  descriptive_stats.csv    # all combos' statistics, concatenated
   map-consd/
-    map-consd.yaml   # generated driver config
-    map-consd.out    # captured driver stdout+stderr
-    *.nc             # driver NetCDF output
+    map-consd.yaml         # generated driver config
+    map-consd.out          # captured driver stdout+stderr
+    map-consd-stats.csv    # per-NetCDF descriptive statistics
+    *.nc                   # driver NetCDF output
 ```
 
 ## Environment variables
@@ -87,5 +93,6 @@ failures point there; pytest keeps the last few runs under e.g.
 | `CECE_DRIVER_PATH`              | driver path inside the container               | `./build/cece_standalone_driver` |
 | `CECE_RUN_TIMEOUT_S`            | caps the suite `timeout_s` when smaller        | `300`                            |
 | `CECE_LOG_LEVEL`                | runner log level (`DEBUG`, `INFO`, ...)        | `INFO`                           |
+| `CECE_DASK_NWORKERS`            | dask workers for the stats cluster (int > 0)   | unset → all available cores      |
 | `CECE_CONFIG_SEARCH_PATH`       | prepended to relative `config_path` values     | unset                            |
 | `CECE_SUITE_CONFIG_SEARCH_PATH` | prepended to relative `--suite-config` values  | unset                            |
