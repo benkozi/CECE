@@ -1,0 +1,5 @@
+- increasing complexity of the runner means it should have its own tests
+- we'll also not want to run the full integration testing when the number of suites increases and one suite will not cover all combinations
+- add a src/tests/combo-test-runner directory containing pytests of the runner's functionality
+- it should mock calls to the driver (this includes not executing docker run, so essentially mocking the process call) but run everything expected from the maccity suite
+- use pytest-mock (mockerfixture) for all mocking
