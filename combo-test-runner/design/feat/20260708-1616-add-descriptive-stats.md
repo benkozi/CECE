@@ -7,3 +7,4 @@
 - i'd recommend using pandas to create the output csv files
 - use distributed dask compute for the statistics calculations
 - for the combo-test-runner test you can write a temporary netcdf file matching output from a driver run
+- use pydantic models as opposed to dataclasses
