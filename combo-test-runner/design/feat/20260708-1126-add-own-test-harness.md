@@ -22,8 +22,10 @@ working driver build.
 ```
 combo-test-runner/src/tests/
   combo_test_runner/          # harness tests: the runner testing itself
+    conftest.py               # fixtures: paths to the checked-in maccity configs
     test_combos.py            # enumeration, naming, build_config
     test_suite_config.py      # loading, config_path/search-path resolution
+    test_resolution.py        # output-root and suite-path resolution rules
     test_runner.py            # command construction, run_driver w/ mocked process
     test_assertions.py        # derivation + file-count assertion
     test_maccity_pipeline.py  # the full maccity suite flow, process call mocked
@@ -31,6 +33,12 @@ combo-test-runner/src/tests/
   conftest.py                 # existing integration conftest
   test_driver_combos.py       # existing integration tests (real docker)
 ```
+
+With two `conftest.py` files in the tree, **no test module may `import
+conftest`** — the name is ambiguous (whichever conftest pytest registered
+first wins). Anything a test needs to import lives in a real `src/` module:
+`DriverRunResult` moved from the integration conftest into `runner.py` for
+exactly this reason.
 
 The directory is named `combo_test_runner` (underscores, not the project's
 hyphenated name) so it can become an importable package later without a

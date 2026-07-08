@@ -22,11 +22,14 @@ uv sync
 ## Running
 
 ```sh
-uv run pytest                      # full suite; continues past failures (default)
+uv run pytest                      # everything: integration + runner harness tests
 uv run pytest -vs                  # show each driver's output as it runs
 uv run pytest -x                   # fail fast: stop at the first failure
 uv run pytest -k map-consd         # run a subset by combo name
 uv run pytest --combo-clean-root   # delete an existing output root first
+
+uv run pytest src/tests/combo_test_runner      # runner harness only: fast, no docker
+uv run pytest src/tests/test_driver_combos.py  # integration only (real docker)
 ```
 
 Driver output is printed after every driver call: with `-vs` (or `-s`) it

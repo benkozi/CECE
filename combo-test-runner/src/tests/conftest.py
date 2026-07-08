@@ -4,13 +4,14 @@ import time
 from pathlib import Path, PurePosixPath
 
 import pytest
-from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import BaseModel, ConfigDict
 
 from combos import Combo, build_config, enumerate_combos
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
 from models.suite_config import Assertions, SuiteConfig
-from runner import run_driver
+from resolution import resolve_output_roots, resolve_suite_path
+from runner import DriverRunResult, run_driver
 from settings import Settings
 
 logger = get_logger("conftest")
@@ -19,7 +20,6 @@ logger = get_logger("conftest")
 _TESTS_ROOT = Path(__file__).resolve().parent
 _DEFAULT_SUITE = _TESTS_ROOT / "config" / "suite" / "simple-maccity-suite.yaml"
 
-_CONTAINER_WORK = PurePosixPath("/work")
 # Container-side mount point for the default (pytest tmp) output root, which
 # lives outside the /work mount.
 _CONTAINER_TMP_ROOT = PurePosixPath("/combo_runs")
@@ -47,22 +47,6 @@ class GeneratedCombo(BaseModel):
     config: CeceConfig
 
 
-class DriverRunResult(BaseModel):
-    """Outcome of one driver invocation. The driver-run fixture never raises;
-    execution failure is reported explicitly by test_driver_execution and
-    downstream assertion tests skip."""
-
-    model_config = ConfigDict(frozen=True)
-
-    # InstanceOf: Combo is enumeration machinery (callables, enum members),
-    # validated by isinstance rather than deep pydantic validation.
-    combo: InstanceOf[Combo]
-    combo_dir: Path
-    out_path: Path
-    config: CeceConfig
-    error: InstanceOf[Exception] | None
-
-
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("combo", "combinatorial driver test runner")
     group.addoption(
@@ -88,36 +72,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def _resolve_output_roots(option: str, cece_root: Path) -> tuple[Path, PurePosixPath]:
-    """Map an explicit --combo-output-root to (host path, container path)."""
-    given = PurePosixPath(option)
-    if given.is_absolute():
-        if not given.is_relative_to(_CONTAINER_WORK):
-            raise pytest.UsageError(
-                f"--combo-output-root must be relative or under {_CONTAINER_WORK}, got {option!r}"
-            )
-        relative = given.relative_to(_CONTAINER_WORK)
-    else:
-        relative = given
-    return cece_root / relative, _CONTAINER_WORK / relative
-
-
-def _resolve_suite_path(option: str, settings: Settings) -> Path:
-    """A set search path is prepended to relative --suite-config values, kept
-    whole (nested and ../ paths work); absolute values are used as-is."""
-    given = Path(option)
-    if given.is_absolute():
-        return given
-    if settings.suite_config_search_path is not None:
-        return settings.suite_config_search_path / given
-    return given
-
-
 def pytest_sessionstart(session: pytest.Session) -> None:
     config = session.config
     settings = Settings()
     configure_logging(settings.log_level)
-    suite_path = _resolve_suite_path(config.getoption("--suite-config"), settings)
+    suite_path = resolve_suite_path(config.getoption("--suite-config"), settings)
     try:
         suite = SuiteConfig.from_yaml(suite_path, config_search_path=settings.config_search_path)
     except FileNotFoundError as exc:
@@ -130,7 +89,10 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     if option is None:
         roots = None
     else:
-        host_root, container_root = _resolve_output_roots(option, settings.root)
+        try:
+            host_root, container_root = resolve_output_roots(option, settings.root)
+        except ValueError as exc:
+            raise pytest.UsageError(str(exc)) from exc
         if host_root.exists():
             if config.getoption("--combo-clean-root"):
                 shutil.rmtree(host_root)

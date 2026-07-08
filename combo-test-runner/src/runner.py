@@ -5,7 +5,27 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path, PurePosixPath
 
+from pydantic import BaseModel, ConfigDict, InstanceOf
+
+from combos import Combo
+from models.cece_config import CeceConfig
 from settings import Settings
+
+
+class DriverRunResult(BaseModel):
+    """Outcome of one driver invocation. The driver-run fixture never raises;
+    execution failure is reported explicitly by test_driver_execution and
+    downstream assertion tests skip."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # InstanceOf: Combo is enumeration machinery (callables, enum members),
+    # validated by isinstance rather than deep pydantic validation.
+    combo: InstanceOf[Combo]
+    combo_dir: Path
+    out_path: Path
+    config: CeceConfig
+    error: InstanceOf[Exception] | None
 
 
 def build_command(

@@ -1,8 +1,8 @@
 import pytest
-from conftest import DriverRunResult
 
 from assertions import assert_nc_file_count
 from models.suite_config import Assertions
+from runner import DriverRunResult
 
 
 def test_driver_execution(driver_run: DriverRunResult) -> None:

@@ -264,7 +264,7 @@ its own `pyproject.toml` at `combo-test-runner/`:
 
 ```
 combo-test-runner/
-  pyproject.toml          # uv project: pytest, pydantic>=2, pydantic-settings, pyyaml
+  pyproject.toml          # uv project: pytest, pytest-mock, pydantic>=2, pydantic-settings, pyyaml
   README.md               # user-facing setup + run instructions
   design/design.md
   src/
@@ -274,17 +274,21 @@ combo-test-runner/
     assertions.py         # post-run assertions (NetCDF file count, ...)
     combos.py             # sweep → combinations, combo naming, config generation
     logs.py               # namespace logger, level from CECE_LOG_LEVEL
-    runner.py             # docker run construction, check_output, .out writing
+    resolution.py         # pure path-resolution rules (suite path, output roots)
+    runner.py             # docker run construction, check_output, .out writing,
+                          #   DriverRunResult
     settings.py           # pydantic-settings
     tests/
       config/
         cece/simple-maccity.yaml          # base driver config
         suite/simple-maccity-suite.yaml   # initial suite (--suite-config default)
+      combo_test_runner/  # the runner's own tests: mocked process call, no docker
       conftest.py         # options, session fixture (generate yamls), param fixture
-      test_driver_combos.py
+      test_driver_combos.py               # integration tests (real docker)
 ```
 
-Dependencies: `pytest`, `pydantic>=2`, `pydantic-settings`, `pyyaml`. Nothing
+Dependencies: `pytest`, `pytest-mock`, `pydantic>=2`, `pydantic-settings`,
+`pyyaml`. Nothing
 imported from the CECE repo outside `combo-test-runner/`.
 
 ## README (user documentation)
