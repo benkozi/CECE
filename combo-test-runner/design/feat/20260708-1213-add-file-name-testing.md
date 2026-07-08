@@ -1,0 +1,6 @@
+- following from 20260708-1055-add-assertions-for-file-counts.md, add an assertion for the file names
+- the file name should match the expected file name (). for simple-maccity this will be one faile as calcuated with output at hour 1
+- note that there is a bug in the driver, so we should expect the filenames to be wrong (they currently start at hour 0)
+- file pattern defined as filename_pattern in the config yaml
+- assertions should include validate_filenames: true/false with true being the default.
+  - if false, then the test should be marked as skipped
