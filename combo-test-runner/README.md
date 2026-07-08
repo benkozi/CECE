@@ -38,10 +38,16 @@ quiet and failing tests include the output in their report under
 "Captured stdout call".
 
 Each combination produces one test per assertion — `test_driver_execution`
-(driver exits 0) and `test_nc_file_count` (expected NetCDF output count) —
-with the driver running once per combination. If the driver run fails, its
-`test_driver_execution` fails and that combination's assertion tests are
-skipped with a `driver run failed: ...` reason.
+(driver exits 0), `test_nc_file_count` (expected NetCDF output count), and
+`test_nc_filenames` (filenames match `filename_pattern` at the expected
+write times) — with the driver running once per combination. If the driver
+run fails, its `test_driver_execution` fails and that combination's
+assertion tests are skipped with a `driver run failed: ...` reason.
+
+**Known driver bug — expected failures**: the driver currently stamps output
+at hour 0 instead of hour 1, so the three `test_nc_filenames` tests fail by
+design until the driver is fixed. Set `validate_filenames: false` in the
+suite's `assertions` block to skip them if you need a green run.
 
 Options:
 

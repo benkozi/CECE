@@ -30,6 +30,10 @@ class Assertions(BaseModel):
         ge=0,
         description="Exact NetCDF file count per combo; None derives it from the combo config; 0 means none expected",
     )
+    validate_filenames: bool = Field(
+        True,
+        description="Assert NetCDF filenames match filename_pattern at the expected write times; false skips the test",
+    )
 
 
 class SuiteConfig(BaseModel):

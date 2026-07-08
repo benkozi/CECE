@@ -32,6 +32,7 @@ config_path: ../cece/simple-maccity.yaml   # base driver config (suite-relative)
 timeout_s: 10                              # per combination; capped by CECE_RUN_TIMEOUT_S
 assertions:
   expected_nc_file_count: null             # null = derive from the combo config
+  validate_filenames: true                 # false skips the filename tests
 sweep:
   mapalgo: [bilinear, consd, passthrough]
 ```

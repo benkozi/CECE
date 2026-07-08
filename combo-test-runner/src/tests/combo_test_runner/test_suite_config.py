@@ -48,6 +48,7 @@ def test_assertions_default_when_section_absent(tmp_path: Path, cece_config_path
     )
     suite = SuiteConfig.from_yaml(suite_file)
     assert suite.assertions.expected_nc_file_count is None
+    assert suite.assertions.validate_filenames is True
 
 
 def test_invalid_sweep_value_fails_at_load(tmp_path: Path, cece_config_path: Path) -> None:

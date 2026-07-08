@@ -5,7 +5,7 @@ from pathlib import Path, PurePosixPath
 
 from pytest_mock import MockerFixture
 
-from assertions import assert_nc_file_count
+from assertions import assert_nc_file_count, assert_nc_filenames
 from combos import build_config, enumerate_combos
 from models.cece_config import CeceConfig
 from models.suite_config import SuiteConfig
@@ -54,10 +54,12 @@ def test_maccity_pipeline_runs_all_combos_mocked(
         )
         assert out_path.read_bytes() == b"INFO: CECE Finalize completed successfully\n"
 
-        # Fabricate the file the (mocked) driver would have produced, then
-        # run the suite's assertion in derived mode.
-        (combo_dir / "cece_20100101_000000.nc").touch()
+        # Fabricate the file a *correct* driver would produce (first write at
+        # hour 1), then run the suite's assertions in derived mode.
+        (combo_dir / "cece_20100101_010000.nc").touch()
         assert_nc_file_count(combo_dir, config, suite.assertions.expected_nc_file_count)
+        assert suite.assertions.validate_filenames
+        assert_nc_filenames(combo_dir, config)
 
     assert check_output.call_count == 3
     for call in check_output.call_args_list:
