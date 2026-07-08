@@ -1,0 +1,9 @@
+- using /Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-data-viewer/app/analysis.py as a guide, add an analysis option to the suite config
+- analysis step should be compute_descriptive_stats: true/false. default is true
+- the descriptive statistics should be calculated for each output netcdf and written to the combination's output folder
+- combine output netcdf statistics into a single csv file for each combination. not one separate csv file for each netcdf
+- at the end of the analysis, all csv files should be concatenated and written to the root output folder
+- it's okay to implement the analysis as a test as eventually we'll have baselines to compare against
+- i'd recommend using pandas to create the output csv files
+- use distributed dask compute for the statistics calculations
+- for the combo-test-runner test you can write a temporary netcdf file matching output from a driver run
