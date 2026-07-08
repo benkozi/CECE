@@ -250,6 +250,7 @@ beyond the test runner.
 | `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
 | `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | 300 — caps the suite's `timeout_s` when smaller |
 | `log_level`      | `CECE_LOG_LEVEL`      | `INFO`               |
+| `dask_nworkers`  | `CECE_DASK_NWORKERS`  | unset → all available; else int > 0 |
 | `config_search_path`       | `CECE_CONFIG_SEARCH_PATH`       | unset |
 | `suite_config_search_path` | `CECE_SUITE_CONFIG_SEARCH_PATH` | unset |
 
