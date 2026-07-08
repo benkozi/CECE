@@ -48,6 +48,13 @@ class Analysis(StrictModel):
 
 
 class SuiteConfig(StrictModel):
+    name: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+        description=(
+            "Unique suite name (lowercase slug); by convention suite 'X' lives in X-suite.yaml, "
+            "but this field is authoritative"
+        ),
+    )
     config_path: Path = Field(description="Base CECE driver config this suite's combinations are diffs of")
     analysis: Analysis = Field(
         default_factory=Analysis,

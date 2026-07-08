@@ -4,6 +4,7 @@
 # Each sweep key names an enum dimension from src/models/cece_config.py; the
 # combination space is the cartesian product of the listed values. Enums
 # absent from `sweep` are not swept and stay at their base-config values.
+name: simple-maccity
 config_path: ../cece/simple-maccity.yaml
 timeout_s: 10  # per combination; capped by CECE_RUN_TIMEOUT_S when that is smaller
 assertions:

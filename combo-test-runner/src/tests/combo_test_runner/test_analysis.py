@@ -5,7 +5,13 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from analysis import VariableStats, compute_file_stats, concatenate_stats_csvs, write_combo_stats_csv
+from analysis import (
+    RunContext,
+    VariableStats,
+    compute_file_stats,
+    concatenate_stats_csvs,
+    write_combo_stats_csv,
+)
 
 
 @pytest.fixture()
@@ -29,12 +35,14 @@ def driver_like_nc(tmp_path: Path) -> tuple[Path, np.ndarray]:
 
 
 _RUN_ID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"  # fixed 26-char ULID-shaped id for row fixtures
+_RUN = RunContext(run_id=_RUN_ID, suite="simple-maccity")
 
 
 def _stats_rows() -> list[VariableStats]:
     return [
         VariableStats(
             run_id=_RUN_ID,
+            suite="simple-maccity",
             combo="map-consd",
             file=f"cece_2010010{day}_010000.nc",
             time=f"2010-01-0{day}T01:00:00",
@@ -61,10 +69,11 @@ def test_compute_file_stats_matches_numpy(dask_client, driver_like_nc: tuple[Pat
     from ulid import ULID
 
     path, data = driver_like_nc
-    run_id = str(ULID())
-    (stats,) = compute_file_stats(path, combo="map-consd", run_id=run_id)
+    run = RunContext(run_id=str(ULID()), suite="simple-maccity")
+    (stats,) = compute_file_stats(path, combo="map-consd", run=run)
 
-    assert stats.run_id == run_id and len(stats.run_id) == 26
+    assert stats.run_id == run.run_id and len(stats.run_id) == 26
+    assert stats.suite == "simple-maccity"
     assert (stats.combo, stats.file, stats.variable) == ("map-consd", path.name, "co")
     # Timestamp columns come from the file's time coordinate (first value).
     assert stats.time == "2010-01-01T01:00:00"
@@ -84,7 +93,7 @@ def test_compute_file_stats_null_time_without_time_coordinate(dask_client, tmp_p
     path = tmp_path / "timeless.nc"
     dataset.to_netcdf(path, engine="netcdf4")
 
-    (stats,) = compute_file_stats(path, combo="map-consd", run_id=_RUN_ID)
+    (stats,) = compute_file_stats(path, combo="map-consd", run=_RUN)
 
     assert stats.time is None
     assert (stats.year, stats.month, stats.day) == (None, None, None)
@@ -121,3 +130,4 @@ def test_concatenate_stats_csvs(tmp_path: Path) -> None:
     assert len(combined) == 2
     assert set(combined["combo"]) == {"map-consd", "map-bilinear"}
     assert set(combined["run_id"]) == {_RUN_ID}  # run id survives both CSV layers
+    assert set(combined["suite"]) == {"simple-maccity"}  # suite name too

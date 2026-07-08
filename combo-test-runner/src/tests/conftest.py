@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from analysis import concatenate_stats_csvs
+from analysis import RunContext, concatenate_stats_csvs
 from combos import Combo, build_config, enumerate_combos
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
@@ -86,7 +86,7 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
     # One ULID per test run, generated at runtime only — never configuration.
     run_id = str(ULID())
-    logger.info("starting run %s (suite=%s)", run_id, suite_path)
+    logger.info("starting run %s (suite=%s, path=%s)", run_id, suite.name, suite_path)
     config._combo_run_id = run_id  # type: ignore[attr-defined]
 
     # An explicit output root is resolved and guarded here, before anything
@@ -151,8 +151,11 @@ def suite_analysis(request: pytest.FixtureRequest) -> Analysis:
 
 
 @pytest.fixture(scope="session")
-def run_id(request: pytest.FixtureRequest) -> str:
-    return request.config._combo_run_id  # type: ignore[attr-defined]
+def run_context(request: pytest.FixtureRequest) -> RunContext:
+    return RunContext(
+        run_id=request.config._combo_run_id,  # type: ignore[attr-defined]
+        suite=request.config._combo_suite.name,  # type: ignore[attr-defined]
+    )
 
 
 @pytest.fixture(scope="session")

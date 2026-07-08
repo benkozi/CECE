@@ -28,6 +28,7 @@ values. The combination space is the cartesian product of the listed values.
 
 ```yaml
 # simple-maccity-suite.yaml — initial suite
+name: simple-maccity                       # unique suite name (lowercase slug)
 config_path: ../cece/simple-maccity.yaml   # base driver config (suite-relative)
 timeout_s: 10                              # per combination; capped by CECE_RUN_TIMEOUT_S
 assertions:
@@ -46,7 +47,8 @@ class Sweep(BaseModel):
     tintalgo: list[Tintalgo] | None = None
     mapalgo: list[Mapalgo] | None = None
 
-class SuiteConfig(BaseModel):
+class SuiteConfig(StrictModel):  # via models/base.py; unknown keys rejected
+    name: str           # unique suite name; convention: X lives in X-suite.yaml
     config_path: Path   # base CECE driver config; relative → suite-file dir
     timeout_s: int      # per-combination driver timeout (seconds)
     sweep: Sweep

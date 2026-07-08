@@ -55,8 +55,10 @@ suite's `assertions` block to skip them if you need a green run.
 
 Options:
 
-- `--suite-config=PATH` — suite YAML defining the base driver config
-  (`config_path`), the per-combination timeout (`timeout_s`), and the sweep
+- `--suite-config=PATH` — suite YAML defining the suite's unique `name`
+  (lowercase slug; by convention suite `X` lives in `X-suite.yaml`), the base
+  driver config (`config_path`), the per-combination timeout (`timeout_s`),
+  and the sweep
   (default: `src/tests/config/suite/simple-maccity-suite.yaml`). Use the
   `--suite-config=PATH` form (with `=`), not a space.
 - `--combo-output-root=PATH` — root artifact directory; relative paths
@@ -90,7 +92,8 @@ start, written to `run.yaml`, and stamped into every stats row so CSVs from
 different runs stay distinguishable. It is never set via configuration;
 unknown keys in suite or driver config files are rejected at load time.
 
-Stats CSV columns: `run_id`, identity (`combo`, `file`, `variable`), the file's
+Stats CSV columns: `run_id`, `suite` (the suite's unique `name` from its
+yaml, e.g. `simple-maccity`), identity (`combo`, `file`, `variable`), the file's
 timestamp from its NetCDF time coordinate as `time` (ISO-8601) plus part
 columns `year`/`month`/`day`/`hour`/`minute`/`second` for easy time
 summaries (null if the file has no time coordinate), and the nan-aware

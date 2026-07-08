@@ -25,6 +25,16 @@ logger = get_logger("analysis")
 _STATS_PER_VARIABLE = 7  # count, sum, mean, std, min, max, median
 
 
+class RunContext(BaseModel):
+    """Run-level identity stamped into every stats row. Extend here (not the
+    compute_file_stats signature) when future identity columns arrive."""
+
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str  # session ULID
+    suite: str  # unique suite name (SuiteConfig.name)
+
+
 class VariableStats(BaseModel):
     """Descriptive statistics for one data variable of one NetCDF file, all
     values flattened (a lev dimension, when present, is flattened too).
@@ -37,6 +47,7 @@ class VariableStats(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     run_id: str  # session ULID; differentiates runs when CSVs accumulate
+    suite: str  # which suite produced this row
     combo: str
     file: str  # NetCDF filename, not path
     time: str | None  # ISO-8601
@@ -80,7 +91,7 @@ def _time_fields(when: datetime | None) -> dict[str, Any]:
     }
 
 
-def compute_file_stats(nc_path: Path, combo: str, run_id: str) -> list[VariableStats]:
+def compute_file_stats(nc_path: Path, combo: str, run: RunContext) -> list[VariableStats]:
     """Nan-aware descriptive stats for every data variable in one NetCDF file."""
     with xr.open_dataset(nc_path, chunks="auto", engine="netcdf4") as ds:
         time_fields = _time_fields(_file_time(ds))
@@ -109,7 +120,8 @@ def compute_file_stats(nc_path: Path, combo: str, run_id: str) -> list[VariableS
         ]
         stats.append(
             VariableStats(
-                run_id=run_id,
+                run_id=run.run_id,
+                suite=run.suite,
                 combo=combo,
                 file=nc_path.name,
                 **time_fields,
