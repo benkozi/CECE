@@ -1,0 +1,10 @@
+- need to add assertions to every test.
+- eventually, there will be multiple assertions.
+- first assertion is netcdf file count. let's call it expected_nc_file_count
+- there will be two modes:
+  - first mode is None: using start_time, end_time, time_step_seconds, and frequency_steps, determine the number of expected output files  
+  - allow specifying file count exactly: if 0, no netcdf files expected.
+- this is also a good time to add a logger.
+  - logger should log a timestep in seconds
+  - logger should log what the test is testing like: testing expected_nc_file_count={}, found {} files (info level)
+  - add an environment setting to control the log level (i.e., DEBUG v INFO)
