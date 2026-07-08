@@ -6,8 +6,11 @@ Start the evaluation step promised in the main design: after each driver run,
 assert on what the run actually produced instead of trusting exit code 0
 alone. The first assertion is **NetCDF output file count**
 (`expected_nc_file_count`); the structure it lands in must accommodate the
-further assertions that will follow. Alongside it, introduce a proper logger
-for the runner with an environment-controlled level.
+further assertions that will follow. **Each assertion is its own test** —
+the driver runs once per combination in a shared fixture, and every
+(combination × assertion) pair reports pass/fail independently. Alongside
+it, introduce a proper logger for the runner with an environment-controlled
+level.
 
 ## Current behavior
 
@@ -44,8 +47,68 @@ class SuiteConfig(BaseModel):
     sweep: Sweep
 ```
 
-**Every test runs the assertion step** — there is no opt-out flag; the
-"derive" default makes it meaningful without configuration.
+The `assertions` section configures *what to expect*, never *how to run* —
+there is deliberately **no `fail_fast` field**. Because each assertion is a
+separate test (below), "run all assertions" is simply pytest's default
+behavior, and fail-fast remains pytest's existing `-x` / `--maxfail`, per
+the long-standing design decision. There is no opt-out flag either; the
+"derive" default makes the count assertion meaningful without configuration.
+
+### Test structure: one test per assertion
+
+The single `test_driver_combo` unwraps into one test per assertion, each
+parameterized by combo:
+
+- `test_driver_execution[<combo>]` — the driver ran to completion with exit
+  code 0 (the assertion previously implied by the test body).
+- `test_nc_file_count[<combo>]` — this feature's file-count assertion.
+- (future) `test_nc_timestamps[<combo>]` — expected to fail against the
+  known driver stamp bug; as a separate test it can carry an `xfail` marker
+  without poisoning the other assertions for that combo.
+
+The **driver runs once per combination**, not once per test: execution moves
+into a combo-parameterized, session-scoped fixture. Pytest instantiates a
+parameterized session fixture once per param value and groups the dependent
+tests, so each combo's container still launches exactly once.
+
+**Fail-fast granularity (accepted trade-off)**: `-x` is global — the first
+failed assertion anywhere stops the session, including other combos. There
+is no per-combo "stop asserting, keep testing other combos" mode. Accepted:
+fail-fast will in general not be used.
+
+### Driver-run fixture: result capture, explicit failure detection, logging
+
+Driver execution can fail outright — timeout, nonzero exit, docker error —
+before any assertion can run. That must be detected *explicitly*, not
+surface as incidental setup errors on downstream tests. So the fixture
+**never raises**; it captures the outcome:
+
+```python
+@dataclass(frozen=True)
+class DriverRunResult:
+    combo: Combo
+    out_path: Path          # captured driver output (.out)
+    combo_dir: Path         # host-side combo directory
+    config: CeceConfig      # the generated config the driver ran
+    error: Exception | None # None on success; CalledProcessError /
+                            # TimeoutExpired / OSError otherwise
+```
+
+- `test_driver_execution` fails iff `result.error is not None` — execution
+  failure is always reported by exactly one clearly named test.
+- Assertion tests (`test_nc_file_count`, …) **skip with an explicit reason**
+  (`driver run failed: <error>`) when `result.error` is set: the failure is
+  already reported once, and a skip marks the assertion as *not evaluated*
+  rather than failed or silently green.
+
+The fixture logs around the run (using the logger below):
+
+- INFO before launch: combo name, container yaml path, effective timeout —
+  e.g. `running combo map-consd (timeout=10s)`.
+- INFO on completion: outcome and wall-clock duration —
+  `combo map-consd completed in 6.2s` /
+  `combo map-consd FAILED after 10.0s: TimeoutExpired`.
+  Failures are also logged at ERROR so they stand out at any log level.
 
 ### `expected_nc_file_count` modes
 
@@ -73,8 +136,9 @@ class SuiteConfig(BaseModel):
 output directory (no recursion — everything the driver writes for a combo
 lands flat in its directory).
 
-The assertion runs after a successful driver call; a timed-out or nonzero
-run already fails the test before assertions and asserts nothing new.
+The assertion is evaluated only for a successful driver run; when execution
+failed, the assertion test skips explicitly (see the fixture section above)
+and the failure is reported by `test_driver_execution`.
 
 ### Assertion module
 
@@ -119,13 +183,27 @@ and found counts.
 
 ## Acceptance criteria
 
-- Plain `uv run pytest`: all combos pass, each test log showing
+- Plain `uv run pytest`: 6 tests (`test_driver_execution` +
+  `test_nc_file_count`, × 3 combos), all passing, with exactly one container
+  launch per combo; each count test's log shows
   `testing expected_nc_file_count=1, found 1 files` (derived mode).
-- A suite with `expected_nc_file_count: 0` fails against a driver run that
-  produces files, with a clear assertion message (and passes when nothing is
-  produced, e.g. output disabled).
-- `CECE_LOG_LEVEL=DEBUG` raises verbosity; default INFO stays concise.
-- Timeout/nonzero-exit behavior is unchanged.
+- A suite with `expected_nc_file_count: 0` fails `test_nc_file_count`
+  against a driver run that produces files, with a clear assertion message
+  (and passes when nothing is produced, e.g. output disabled).
+- When a driver run fails (e.g. forced timeout), `test_driver_execution`
+  fails for that combo and `test_nc_file_count` **skips** with a
+  `driver run failed: ...` reason — never errors, never passes silently.
+- Fixture logging shows launch and completion lines (with durations) per
+  combo; `CECE_LOG_LEVEL=DEBUG` raises verbosity; default INFO stays concise.
+
+## Ripple effects
+
+- Main `design.md`: the "Pytest integration" section's "one test,
+  parameterized by combo" becomes "one test per assertion, parameterized by
+  combo, sharing a per-combo driver-run fixture"; the assertions block joins
+  the suite-configuration section.
+- README: mention the new test ids and the skip-on-execution-failure
+  behavior.
 
 ## Resolved
 
