@@ -73,12 +73,30 @@ selector. `enumerate_combos` gains the base config as an argument
 `DIMENSIONS`' fixed six-entry table is replaced by dimensions **derived from
 the sweep**: one dimension per (target, field, values), where target is a
 named stream or a species entry. Apply functions locate the target in the
-config by name/index instead of `streams[0]` / first-entry. Enumeration
-order (and thus name order) is canonical and deterministic: species groups
-first (dict order, entry order, then `op, cat, vd`), then stream groups
-(sweep order, then `tax, tint, map`) — matching today's relative field
-order. Vdist companion fields still accompany a swept `vdist_method`, on
-the targeted entry.
+config by name/index instead of `streams[0]` / first-entry. Vdist companion
+fields still accompany a swept `vdist_method`, on the targeted entry.
+
+### Normalization: declaration order never matters
+
+Combo ids are content hashes, so the canonical string must not depend on
+how the suite yaml happens to be ordered. The sweep is **normalized before
+enumeration**:
+
+- **Targets are sorted**, not taken in declaration order: species groups
+  first (species names lexicographic, entry index ascending), then stream
+  groups (stream names lexicographic). Fields within a target keep the
+  fixed canonical order (`op, cat, vd` / `tax, tint, map`).
+- **Value lists are sorted** (by enum value). This cannot change any
+  combo's id — a combination's name contains only its own values — but it
+  makes enumeration order, test execution order, and `combos.csv` row order
+  declaration-independent too.
+- Net effect: two semantically identical sweeps, however reordered in yaml,
+  produce byte-identical combo ids, names, and `combos.csv` contents.
+
+**Duplicates are validation errors, not dedupes**: a repeated value in a
+sweep list (`mapalgo: [consd, consd]`), like a repeated stream name or
+species entry collision, would enumerate two combinations with the same id
+and directory — rejected loudly at load/validation time instead.
 
 ### Combination naming: target-qualified segments (pytest ids only)
 
@@ -89,60 +107,78 @@ Name segments gain the attachment target:
                                    co.op-add   (co-1.op-add for entry 1)
 ```
 
-Initial suite ids become `MACCITY.map-bilinear`, `MACCITY.map-consd`,
-`MACCITY.map-passthrough`; multi-dimension combos join segments with `_` as
-today. The name is **deterministic** (canonical order) and remains the
-pytest parameter id — human-readable, `-k`-selectable (substring filters
-like `-k map-consd` keep working) — but it is no longer used for
-directories or filenames (below).
+Multi-dimension combos join segments with **`__`** into the canonical
+combination string, e.g. `MACCITY.map-consd__co.op-add`. A double underscore
+is shell-safe and `-k`-safe (no quoting needed) and visually distinct from
+the `.` and `-` used within segments; the theoretical ambiguity of a target
+name containing `__` is cosmetic only, since nothing parses the canonical
+string back — `combos.csv` carries the structure in columns. The string is
+**deterministic** (canonical order) and serves as the pytest parameter id —
+human-readable, `-k`-selectable (substring filters like `-k map-consd` keep
+working) — but it is not used for directories or filenames (below).
 
-### Combination ids: ULID directories + mapping CSV
+### Combination ids: content hash directories + mapping CSV
 
 Qualified names grow linearly with sweep dimensions and will exceed
 filesystem name limits on realistic sweeps, so **storage stops carrying
 semantics**:
 
-- Each enumerated combination gets a **combo ULID** (`Combo.combo_id`,
-  generated at enumeration). Directories and artifact filenames use it
-  exclusively:
+- Each combination's id is a **deterministic content hash** of its canonical
+  combination string:
+
+  ```python
+  combo_id = hashlib.sha256(name.encode()).hexdigest()[:16]
+  ```
+
+  16 hex chars (64 bits) — stdlib, fixed-length, filesystem-safe, and
+  collision-safe far beyond any realistic combination count. Being
+  content-derived, the id is **stable across runs**: the same combination
+  hashes to the same id every time, making `combo_id` the natural cross-run
+  join key for the future baseline work. (Base64 was considered for
+  reversibility, but it is an encoding, not a hash — output grows with the
+  name, recreating the length problem. The hash is not reversible;
+  `combos.csv` below is the dereference map.)
+
+- Directories and artifact filenames use the id exclusively:
 
   ```
   <output-root>/
     run.yaml
     combos.csv                       # the dereferencing map (below)
     descriptive_stats.csv
-    01KX2.../                        # one directory per combination
-      01KX2....yaml                  # generated driver config
-      01KX2....out                   # captured driver stdout+stderr
-      01KX2...-stats.csv             # per-NetCDF statistics
+    3f9a1c2b7d4e8a01/                # one directory per combination
+      3f9a1c2b7d4e8a01.yaml          # generated driver config
+      3f9a1c2b7d4e8a01.out           # captured driver stdout+stderr
+      3f9a1c2b7d4e8a01-stats.csv     # per-NetCDF statistics
       *.nc
   ```
 
-- **`combos.csv`** at the output root maps directories back to what was
-  tested — written at session start alongside `run.yaml`, before any
-  container runs. Long format, one row per swept dimension per combination:
+- **`combos.csv`** at the output root maps ids back to what was tested —
+  written at session start alongside `run.yaml`, before any container runs.
+  Long format, one row per swept dimension per combination:
 
   | run_id | combo_id | name | target | field | value |
   |--------|----------|------|--------|-------|-------|
-  | 01KX…  | 01KX…    | MACCITY.map-consd | MACCITY | mapalgo | consd |
+  | 01KX…  | 3f9a1c2b7d4e8a01 | MACCITY.map-consd | MACCITY | mapalgo | consd |
 
-  Filtering on `combo_id` dereferences a directory; the `name` column links
-  to pytest ids and reports.
+  Filtering on `combo_id` dereferences a directory; the `name` column holds
+  the full canonical string linking to pytest ids and reports.
 
 - **Stats rows gain `combo_id`**; the existing `combo` column keeps the
-  human-readable name. Cross-run joins (the future baseline work) must key
-  on the deterministic `name` / dimension columns — **never on `combo_id`**,
-  which is freshly generated each run. (A deterministic hash id was
-  considered; ULID + the stable name provides the same capability with less
-  machinery.)
+  human-readable name. Both are stable across runs — join on whichever is
+  convenient.
 
 ## Ripples (standing process rules)
 
 - **Harness tests**: `test_combos` reworked around the nested sweep
   (attachment to a *named* stream — including a second stream in a
   fabricated config to prove non-first attachment works; canonical ordering;
-  qualified names; per-combo ULIDs unique and 26-char; validation failures
-  for unknown stream name / species key / oversized entry list);
+  qualified names; combo ids deterministic (same sweep enumerates to
+  identical ids twice) and 16 lowercase hex chars; **normalization** — a
+  reordered but semantically identical sweep (shuffled stream blocks,
+  shuffled value lists) yields identical ids, names, and enumeration order;
+  validation failures for unknown stream name / species key / oversized
+  entry list / duplicate values in a sweep list);
   `test_suite_config` gains nested-sweep parsing plus rejection of the old
   flat format; a `combos.csv` writer test (row per dimension, dereference by
   `combo_id`); `test_analysis` gains the `combo_id` column; pipeline
@@ -170,14 +206,17 @@ semantics**:
 - The nested initial suite loads; pytest ids are `MACCITY.map-*`; each
   generated yaml carries the swept value on the **MACCITY stream located by
   name**.
-- Combo directories and artifact filenames are combo ULIDs;
+- Combo directories and artifact filenames are 16-hex-char content-hash
+  ids; two runs of the same suite produce identical combo ids;
   `<output-root>/combos.csv` exists before any container runs and
-  dereferences every directory to its swept dimensions and name; stats rows
-  carry both `combo_id` and the readable `combo` name.
+  dereferences every directory to its swept dimensions and canonical name;
+  stats rows carry both `combo_id` and the readable `combo` name.
 - A sweep naming an unknown stream, an unknown species, or more entry
   blocks than the base config has entries fails at session start with an
-  error naming the offending selector; an old flat-format suite fails
-  validation.
+  error naming the offending selector; duplicate values in a sweep list are
+  rejected; an old flat-format suite fails validation.
+- Reordering stream blocks or value lists in the suite yaml changes no
+  combo id, name, or `combos.csv` content.
 - Harness passes without docker (including a fabricated two-stream config
   proving attachment targets the named, non-first stream); integration
   keeps its expected shape (filename tests red per the known driver bug).
