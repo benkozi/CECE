@@ -80,7 +80,7 @@ first (dict order, entry order, then `op, cat, vd`), then stream groups
 order. Vdist companion fields still accompany a swept `vdist_method`, on
 the targeted entry.
 
-### Combination naming: target-qualified segments
+### Combination naming: target-qualified segments (pytest ids only)
 
 Name segments gain the attachment target:
 
@@ -91,22 +91,69 @@ Name segments gain the attachment target:
 
 Initial suite ids become `MACCITY.map-bilinear`, `MACCITY.map-consd`,
 `MACCITY.map-passthrough`; multi-dimension combos join segments with `_` as
-today. This changes existing test ids, combo directory names, and the
-`combo` values in stats CSVs — accepted now while accumulated artifacts are
-cheap; substring `-k` filters like `-k map-consd` keep working unchanged.
+today. The name is **deterministic** (canonical order) and remains the
+pytest parameter id — human-readable, `-k`-selectable (substring filters
+like `-k map-consd` keep working) — but it is no longer used for
+directories or filenames (below).
+
+### Combination ids: ULID directories + mapping CSV
+
+Qualified names grow linearly with sweep dimensions and will exceed
+filesystem name limits on realistic sweeps, so **storage stops carrying
+semantics**:
+
+- Each enumerated combination gets a **combo ULID** (`Combo.combo_id`,
+  generated at enumeration). Directories and artifact filenames use it
+  exclusively:
+
+  ```
+  <output-root>/
+    run.yaml
+    combos.csv                       # the dereferencing map (below)
+    descriptive_stats.csv
+    01KX2.../                        # one directory per combination
+      01KX2....yaml                  # generated driver config
+      01KX2....out                   # captured driver stdout+stderr
+      01KX2...-stats.csv             # per-NetCDF statistics
+      *.nc
+  ```
+
+- **`combos.csv`** at the output root maps directories back to what was
+  tested — written at session start alongside `run.yaml`, before any
+  container runs. Long format, one row per swept dimension per combination:
+
+  | run_id | combo_id | name | target | field | value |
+  |--------|----------|------|--------|-------|-------|
+  | 01KX…  | 01KX…    | MACCITY.map-consd | MACCITY | mapalgo | consd |
+
+  Filtering on `combo_id` dereferences a directory; the `name` column links
+  to pytest ids and reports.
+
+- **Stats rows gain `combo_id`**; the existing `combo` column keeps the
+  human-readable name. Cross-run joins (the future baseline work) must key
+  on the deterministic `name` / dimension columns — **never on `combo_id`**,
+  which is freshly generated each run. (A deterministic hash id was
+  considered; ULID + the stable name provides the same capability with less
+  machinery.)
 
 ## Ripples (standing process rules)
 
 - **Harness tests**: `test_combos` reworked around the nested sweep
   (attachment to a *named* stream — including a second stream in a
   fabricated config to prove non-first attachment works; canonical ordering;
-  qualified names; validation failures for unknown stream name / species key
-  / oversized entry list); `test_suite_config` gains nested-sweep parsing
-  plus rejection of the old flat format; pipeline expected ids update.
+  qualified names; per-combo ULIDs unique and 26-char; validation failures
+  for unknown stream name / species key / oversized entry list);
+  `test_suite_config` gains nested-sweep parsing plus rejection of the old
+  flat format; a `combos.csv` writer test (row per dimension, dereference by
+  `combo_id`); `test_analysis` gains the `combo_id` column; pipeline
+  expected ids and ULID-named artifact paths update.
 - **`design.md`**: suite-configuration example, the combination-space
-  "injected at" table (becomes attachment-based), naming section.
-- **`README.md`**: suite yaml description; the `-k map-consd` example still
-  holds (substring match) — note ids are now target-qualified.
+  "injected at" table (becomes attachment-based), naming section, directory
+  layout (ULID directories, `combos.csv`).
+- **`README.md`**: suite yaml description; results layout (ULID directories,
+  `combos.csv` as the dereferencing map); stats CSV column list gains
+  `combo_id`; the `-k map-consd` example still holds (substring match) —
+  note ids are now target-qualified.
 - Suite file updated to the nested shape; pydantic models, never
   dataclasses.
 
@@ -120,13 +167,17 @@ cheap; substring `-k` filters like `-k map-consd` keep working unchanged.
 
 ## Acceptance criteria
 
-- The nested initial suite loads; ids are `MACCITY.map-*`; each generated
-  yaml carries the swept value on the **MACCITY stream located by name**.
+- The nested initial suite loads; pytest ids are `MACCITY.map-*`; each
+  generated yaml carries the swept value on the **MACCITY stream located by
+  name**.
+- Combo directories and artifact filenames are combo ULIDs;
+  `<output-root>/combos.csv` exists before any container runs and
+  dereferences every directory to its swept dimensions and name; stats rows
+  carry both `combo_id` and the readable `combo` name.
 - A sweep naming an unknown stream, an unknown species, or more entry
   blocks than the base config has entries fails at session start with an
   error naming the offending selector; an old flat-format suite fails
   validation.
 - Harness passes without docker (including a fabricated two-stream config
   proving attachment targets the named, non-first stream); integration
-  keeps its expected shape (filename tests red per the known driver bug),
-  with `combo` values in stats CSVs showing the qualified names.
+  keeps its expected shape (filename tests red per the known driver bug).
