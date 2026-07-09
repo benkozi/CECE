@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from models.base import StrictModel
 from models.cece_config import Category, Mapalgo, Operation, Taxmode, Tintalgo, VdistMethod
@@ -85,6 +85,14 @@ class Analysis(StrictModel):
     )
 
 
+class Plotting(StrictModel):
+    """Spatial-plot rendering at session end. The shared color scale derives
+    from the descriptive statistics, so plotting requires the stats step."""
+
+    enabled: bool = Field(True, description="Render spatial plots per NetCDF into <combo>/plots/")
+    gif_enabled: bool = Field(True, description="Assemble the per-variable plots into an animated GIF")
+
+
 class SuiteConfig(StrictModel):
     name: str = Field(
         pattern=r"^[a-z0-9][a-z0-9-]*$",
@@ -98,6 +106,20 @@ class SuiteConfig(StrictModel):
         default_factory=Analysis,
         description="Post-run analysis configuration; defaults apply when absent",
     )
+    plotting: Plotting = Field(
+        default_factory=Plotting,
+        description="Session-end spatial plotting; defaults apply when absent",
+    )
+
+    @model_validator(mode="after")
+    def _plotting_requires_stats(self) -> SuiteConfig:
+        if self.plotting.enabled and not self.analysis.compute_descriptive_stats:
+            raise ValueError(
+                "plotting.enabled requires analysis.compute_descriptive_stats: the shared "
+                "color scale derives from the descriptive statistics (disable plotting to "
+                "run stats-less)"
+            )
+        return self
     assertions: Assertions = Field(
         default_factory=Assertions,
         description="Post-run assertion expectations; defaults apply when absent",

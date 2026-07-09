@@ -86,6 +86,7 @@ failures point there; pytest keeps the last few runs under e.g.
     9004a4e23c1dd90a.yaml        # generated driver config
     9004a4e23c1dd90a.out         # captured driver stdout+stderr
     9004a4e23c1dd90a-stats.csv   # per-NetCDF descriptive statistics
+    plots/                       # spatial plot per NetCDF + per-variable GIF
     *.nc                         # driver NetCDF output
 ```
 
@@ -99,6 +100,13 @@ Every run gets a runtime-generated ULID (`run_id`) — logged at session
 start, written to `run.yaml`, and stamped into every stats row so CSVs from
 different runs stay distinguishable. It is never set via configuration;
 unknown keys in suite or driver config files are rejected at load time.
+
+Spatial plots render at session end (suite `plotting.enabled`, default on;
+`gif_enabled` controls the per-variable GIF). All plots of a variable share
+one **exact suite-wide min/max color scale** derived from the descriptive
+statistics — so plotting requires `compute_descriptive_stats`. First-time
+boundary rendering downloads Natural Earth coastline/border data; offline,
+plots degrade to data-only maps with a warning.
 
 Stats CSV columns: `run_id`, `suite` (the suite's unique `name` from its
 yaml, e.g. `simple-maccity`), identity (`combo_id`, `combo`, `file`,

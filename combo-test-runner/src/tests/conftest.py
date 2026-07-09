@@ -11,6 +11,7 @@ from combos import Combo, build_config, enumerate_combos, write_combos_csv
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
 from models.suite_config import Analysis, Assertions, RunManifest, SuiteConfig
+from plotting import render_all_plots
 from ulid import ULID
 from resolution import resolve_output_roots, resolve_suite_path
 from runner import DriverRunResult, run_driver
@@ -125,7 +126,8 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Concatenate every per-combo stats CSV that exists into the suite-level
-    descriptive_stats.csv at the output root."""
+    descriptive_stats.csv at the output root, then render spatial plots (the
+    shared color scale derives from those stats)."""
     config = session.config
     suite: SuiteConfig | None = getattr(config, "_combo_suite", None)
     roots: ComboRoots | None = getattr(config, "_combo_roots_realized", None)
@@ -134,7 +136,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     combo_csvs = sorted(roots.host.glob("*/*-stats.csv"))
     if not combo_csvs:
         return
-    concatenate_stats_csvs(combo_csvs, roots.host / "descriptive_stats.csv")
+    stats = concatenate_stats_csvs(combo_csvs, roots.host / "descriptive_stats.csv")
+    if suite.plotting.enabled and not stats.empty:
+        render_all_plots(roots.host, stats, gif_enabled=suite.plotting.gif_enabled)
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:

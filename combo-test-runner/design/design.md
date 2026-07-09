@@ -34,6 +34,9 @@ timeout_s: 10                              # per combination; capped by CECE_RUN
 assertions:
   expected_nc_file_count: null             # null = derive from the combo config
   validate_filenames: true                 # false skips the filename tests
+plotting:
+  enabled: true                            # session-end spatial plots per NetCDF
+  gif_enabled: true                        # per-variable animated GIF
 sweep:
   cece_data:
     streams:
@@ -173,6 +176,9 @@ Layout under the output root is the same either way:
     9004a4e23c1dd90a.out       # captured driver stdout+stderr (".log" is
                                #   reserved for a future real driver log file)
     9004a4e23c1dd90a-stats.csv # per-NetCDF descriptive statistics
+    plots/                     # session-end spatial plots + per-variable GIF
+      co__cece_..._010000.png  #   (suite-wide exact min/max color scale,
+      co.gif                   #    derived from the descriptive stats)
     *.nc                       # driver NetCDF output (output.directory in
                                #   the yaml points here)
 ```
@@ -302,6 +308,7 @@ combo-test-runner/
     assertions.py         # post-run assertions (NetCDF file count, filenames)
     combos.py             # sweep → combinations, combo naming, config generation
     logs.py               # namespace logger, level from CECE_LOG_LEVEL
+    plotting.py           # session-end spatial plots + GIFs (cartopy/matplotlib)
     resolution.py         # pure path-resolution rules (suite path, output roots)
     runner.py             # docker run construction, check_output, .out writing,
                           #   DriverRunResult
@@ -316,8 +323,9 @@ combo-test-runner/
 ```
 
 Dependencies: `pytest`, `pytest-mock`, `pydantic>=2`, `pydantic-settings`,
-`python-ulid`, `pyyaml`, and the analysis stack (`pandas`, `xarray`,
-`netcdf4`, `dask[distributed]`). Nothing
+`python-ulid`, `pyyaml`, the analysis stack (`pandas`, `xarray`, `netcdf4`,
+`dask[distributed]`), and the plotting stack (`matplotlib`, `cartopy`,
+`pillow`). Nothing
 imported from the CECE repo outside `combo-test-runner/`.
 
 ## README (user documentation)
