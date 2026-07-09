@@ -48,7 +48,8 @@ class VariableStats(BaseModel):
 
     run_id: str  # session ULID; differentiates runs when CSVs accumulate
     suite: str  # which suite produced this row
-    combo: str
+    combo_id: str  # content hash of the combination; stable across runs
+    combo: str  # human-readable canonical combination string
     file: str  # NetCDF filename, not path
     time: str | None  # ISO-8601
     year: int | None
@@ -91,7 +92,7 @@ def _time_fields(when: datetime | None) -> dict[str, Any]:
     }
 
 
-def compute_file_stats(nc_path: Path, combo: str, run: RunContext) -> list[VariableStats]:
+def compute_file_stats(nc_path: Path, combo: str, combo_id: str, run: RunContext) -> list[VariableStats]:
     """Nan-aware descriptive stats for every data variable in one NetCDF file."""
     with xr.open_dataset(nc_path, chunks="auto", engine="netcdf4") as ds:
         time_fields = _time_fields(_file_time(ds))
@@ -122,6 +123,7 @@ def compute_file_stats(nc_path: Path, combo: str, run: RunContext) -> list[Varia
             VariableStats(
                 run_id=run.run_id,
                 suite=run.suite,
+                combo_id=combo_id,
                 combo=combo,
                 file=nc_path.name,
                 **time_fields,

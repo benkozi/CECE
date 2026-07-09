@@ -51,9 +51,14 @@ def test_descriptive_stats(
     stats = [
         entry
         for nc_file in nc_files
-        for entry in compute_file_stats(nc_file, combo=driver_run.combo.name, run=run_context)
+        for entry in compute_file_stats(
+            nc_file,
+            combo=driver_run.combo.name,
+            combo_id=driver_run.combo.combo_id,
+            run=run_context,
+        )
     ]
-    csv_path = driver_run.combo_dir / f"{driver_run.combo.name}-stats.csv"
+    csv_path = driver_run.combo_dir / f"{driver_run.combo.combo_id}-stats.csv"
     frame = write_combo_stats_csv(stats, csv_path)
 
     assert csv_path.is_file()

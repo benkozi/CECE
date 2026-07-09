@@ -1,9 +1,10 @@
 # Test-suite configuration (see design/design.md).
 # config_path names the base CECE driver config; relative paths resolve
 # against this file's directory (or CECE_CONFIG_SEARCH_PATH when set).
-# Each sweep key names an enum dimension from src/models/cece_config.py; the
-# combination space is the cartesian product of the listed values. Enums
-# absent from `sweep` are not swept and stay at their base-config values.
+# The sweep mirrors the driver-config structure: dimensions attach to named
+# streams (or positional species entries); the combination space is the
+# cartesian product of all attached value lists. Fields absent from the
+# sweep stay at their base-config values.
 name: simple-maccity
 config_path: ../cece/simple-maccity.yaml
 timeout_s: 10  # per combination; capped by CECE_RUN_TIMEOUT_S when that is smaller
@@ -15,4 +16,7 @@ assertions:
 analysis:
   compute_descriptive_stats: true  # default; false skips test_descriptive_stats
 sweep:
-  mapalgo: [bilinear, consd, passthrough]
+  cece_data:
+    streams:
+      - name: MACCITY  # selector: which base-config stream; siblings are the swept dimensions
+        mapalgo: [bilinear, consd, passthrough]

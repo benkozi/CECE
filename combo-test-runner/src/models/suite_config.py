@@ -3,23 +3,61 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from models.base import StrictModel
 from models.cece_config import Category, Mapalgo, Operation, Taxmode, Tintalgo, VdistMethod
 
 
-class Sweep(StrictModel):
-    """Enum values to sweep. Enums left unset are not swept and stay at their
-    base-config values; the combination space is the cartesian product of the
-    listed values."""
+def _unique_values(values: list | None) -> list | None:
+    """Duplicate sweep values would enumerate two combinations with the same
+    id and directory — rejected loudly rather than deduped."""
+    if values is not None and len(values) != len(set(values)):
+        raise ValueError("duplicate values in sweep list")
+    return values
+
+
+class StreamSweep(StrictModel):
+    """Swept dimensions attached to one stream, selected by name."""
+
+    name: str = Field(description="Stream in the base config this sweep attaches to")
+    taxmode: list[Taxmode] | None = Field(None, min_length=1)
+    tintalgo: list[Tintalgo] | None = Field(None, min_length=1)
+    mapalgo: list[Mapalgo] | None = Field(None, min_length=1)
+
+    _unique = field_validator("taxmode", "tintalgo", "mapalgo")(_unique_values)
+
+
+class CeceDataSweep(StrictModel):
+    streams: list[StreamSweep] = Field(min_length=1)
+
+    @field_validator("streams")
+    @classmethod
+    def _unique_stream_names(cls, streams: list[StreamSweep]) -> list[StreamSweep]:
+        names = [stream.name for stream in streams]
+        if len(names) != len(set(names)):
+            raise ValueError("duplicate stream names in sweep")
+        return streams
+
+
+class SpeciesEntrySweep(StrictModel):
+    """Swept dimensions attached to one species entry, selected by list
+    position (sweep list index i -> species.<name>[i]); {} skips an entry."""
 
     operation: list[Operation] | None = Field(None, min_length=1)
     category: list[Category] | None = Field(None, min_length=1)
     vdist_method: list[VdistMethod] | None = Field(None, min_length=1)
-    taxmode: list[Taxmode] | None = Field(None, min_length=1)
-    tintalgo: list[Tintalgo] | None = Field(None, min_length=1)
-    mapalgo: list[Mapalgo] | None = Field(None, min_length=1)
+
+    _unique = field_validator("operation", "category", "vdist_method")(_unique_values)
+
+
+class Sweep(StrictModel):
+    """Sweeps mirror the driver-config structure and attach to named streams
+    or positional species entries. The combination space is the cartesian
+    product of every attached value list."""
+
+    cece_data: CeceDataSweep | None = None
+    species: dict[str, list[SpeciesEntrySweep]] | None = None
 
 
 class Assertions(StrictModel):

@@ -1,12 +1,12 @@
-"""The full maccity-suite flow — enumeration, config generation, driver
-invocation, assertions — with the process call mocked. No docker."""
+"""The full maccity-suite flow — enumeration, mapping CSV, config generation,
+driver invocation, assertions — with the process call mocked. No docker."""
 
 from pathlib import Path, PurePosixPath
 
 from pytest_mock import MockerFixture
 
 from assertions import assert_nc_file_count, assert_nc_filenames
-from combos import build_config, enumerate_combos
+from combos import build_config, enumerate_combos, write_combos_csv
 from models.cece_config import CeceConfig
 from models.suite_config import SuiteConfig
 from runner import run_driver
@@ -22,32 +22,41 @@ def test_maccity_pipeline_runs_all_combos_mocked(
     )
     settings = Settings(root=tmp_path)
     suite = SuiteConfig.from_yaml(suite_path)
-    combos = enumerate_combos(suite.sweep)
-    assert [combo.name for combo in combos] == ["map-bilinear", "map-consd", "map-passthrough"]
+    base_config = CeceConfig.from_yaml(suite.config_path)
+    combos = enumerate_combos(suite.sweep, base_config)
+    assert [combo.name for combo in combos] == [
+        "MACCITY.map-bilinear",
+        "MACCITY.map-consd",
+        "MACCITY.map-passthrough",
+    ]
+
+    mapping = write_combos_csv(combos, run_id="01JZZZZZZZZZZZZZZZZZZZZZZZ", csv_path=tmp_path / "combos.csv")
+    assert set(mapping["combo_id"]) == {combo.combo_id for combo in combos}
 
     container_root = PurePosixPath("/combo_runs")
     effective_timeout = min(suite.timeout_s, settings.run_timeout_s)
 
     for combo in combos:
-        combo_dir = tmp_path / combo.name
+        # Storage is by content-hash id; combos.csv maps it back to the name.
+        combo_dir = tmp_path / combo.combo_id
         combo_dir.mkdir()
-        container_dir = container_root / combo.name
+        container_dir = container_root / combo.combo_id
 
         config = build_config(combo, output_directory=str(container_dir), config_path=suite.config_path)
-        yaml_path = combo_dir / f"{combo.name}.yaml"
+        yaml_path = combo_dir / f"{combo.combo_id}.yaml"
         config.to_yaml(yaml_path)
 
         # The generated yaml round-trips through the model and carries the
-        # combo's swept value and output directory.
+        # combo's swept value (on the MACCITY stream) and output directory.
         reloaded = CeceConfig.from_yaml(yaml_path)
-        assert reloaded.cece_data.streams[0].mapalgo.value == combo.name.removeprefix("map-")
+        assert reloaded.cece_data.streams[0].mapalgo.value == combo.name.removeprefix("MACCITY.map-")
         assert reloaded.output is not None
         assert reloaded.output.directory == str(container_dir)
 
-        out_path = combo_dir / f"{combo.name}.out"
+        out_path = combo_dir / f"{combo.combo_id}.out"
         run_driver(
             settings,
-            container_yaml=container_dir / f"{combo.name}.yaml",
+            container_yaml=container_dir / f"{combo.combo_id}.yaml",
             out_path=out_path,
             timeout_s=effective_timeout,
             output_mount=(tmp_path, container_root),

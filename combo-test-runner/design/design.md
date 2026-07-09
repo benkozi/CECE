@@ -35,17 +35,23 @@ assertions:
   expected_nc_file_count: null             # null = derive from the combo config
   validate_filenames: true                 # false skips the filename tests
 sweep:
-  mapalgo: [bilinear, consd, passthrough]
+  cece_data:
+    streams:
+      - name: MACCITY                          # selector: which base-config stream
+        mapalgo: [bilinear, consd, passthrough]
 ```
 
 ```python
-class Sweep(BaseModel):
-    operation: list[Operation] | None = None
-    category: list[Category] | None = None
-    vdist_method: list[VdistMethod] | None = None
-    taxmode: list[Taxmode] | None = None
-    tintalgo: list[Tintalgo] | None = None
-    mapalgo: list[Mapalgo] | None = None
+class StreamSweep(StrictModel):        # attaches to a stream by name
+    name: str
+    taxmode / tintalgo / mapalgo: list[...] | None
+
+class SpeciesEntrySweep(StrictModel):  # attaches by list position: index i -> species.<name>[i]
+    operation / category / vdist_method: list[...] | None
+
+class Sweep(StrictModel):              # mirrors the driver-config structure
+    cece_data: CeceDataSweep | None    # .streams: list[StreamSweep]
+    species: dict[str, list[SpeciesEntrySweep]] | None
 
 class SuiteConfig(StrictModel):  # via models/base.py; unknown keys rejected
     name: str           # unique suite name; convention: X lives in X-suite.yaml
@@ -53,6 +59,12 @@ class SuiteConfig(StrictModel):  # via models/base.py; unknown keys rejected
     timeout_s: int      # per-combination driver timeout (seconds)
     sweep: Sweep
 ```
+
+Duplicate sweep values, duplicate stream names, and unknown keys are all
+rejected at load; sweep selectors (stream names, species keys, entry counts)
+are validated against the loaded base config at session start, before any
+container runs. See
+`design/feat/20260709-1131-attach-sweeps-to-streams.md`.
 
 A suite file fully describes a run: which base scenario (`config_path`),
 the per-combination timeout, and which sweep. Full `config_path` resolution
@@ -72,16 +84,16 @@ checked in with the initial sweep).
 
 ## Combination space
 
-Where each enum dimension is injected into the driver config:
+Each swept dimension attaches to an explicit target; the sweep says where:
 
-| Enum          | Values | Injected at                                  |
-|---------------|--------|----------------------------------------------|
-| `Operation`   | 2      | `species.<name>[0].operation`                 |
-| `Category`    | 6      | `species.<name>[0].category`                  |
-| `VdistMethod` | 3      | `species.<name>[0].vdist_method`              |
-| `Taxmode`     | 2      | `cece_data.streams[0].taxmode`                |
-| `Tintalgo`    | 2      | `cece_data.streams[0].tintalgo`               |
-| `Mapalgo`     | 6      | `cece_data.streams[0].mapalgo`                |
+| Enum          | Values | Attaches to                                    |
+|---------------|--------|------------------------------------------------|
+| `Operation`   | 2      | a species entry (`species.<name>[<entry>]`)    |
+| `Category`    | 6      | a species entry                                |
+| `VdistMethod` | 3      | a species entry                                |
+| `Taxmode`     | 2      | a stream, selected by `name`                   |
+| `Tintalgo`    | 2      | a stream, selected by `name`                   |
+| `Mapalgo`     | 6      | a stream, selected by `name`                   |
 
 Some enum values require companion fields to form a valid config; the generator
 supplies them:
@@ -91,19 +103,25 @@ supplies them:
 - `VdistMethod.pressure` → set `vdist_p_start` / `vdist_p_end` (e.g. 100000.0 /
   90000.0 Pa).
 
-### Combination naming
+### Combination naming and ids
 
-Each combination gets a deterministic, filesystem-safe unique name built from
-the **swept dimensions only**, in a fixed canonical order
-(`op`, `cat`, `vd`, `tax`, `tint`, `map`):
+Each combination gets a deterministic canonical name built from the **swept
+dimensions only**, as target-qualified segments joined by `__`. The sweep is
+normalized first (targets and value lists sorted; species targets before
+stream targets; fields in fixed order `op, cat, vd` / `tax, tint, map`), so
+declaration order in the suite yaml never affects names or ids:
 
-- Initial suite: `map-bilinear`, `map-consd`, `map-passthrough`
-- A hypothetical two-dimension sweep: `op-add_map-consd`, …
+- Initial suite: `MACCITY.map-bilinear`, `MACCITY.map-consd`, …
+- A two-dimension sweep: `co.op-add__MACCITY.map-consd`, …
 
-This name is used as the pytest parameter id, the per-combo directory name, and
-the YAML filename — so `pytest -k <expr>` selects slices of the suite for free.
-Unswept dimensions are omitted from the name; they are constant across the run
-and recorded in the generated YAML itself.
+The name is the pytest parameter id — so `pytest -k <expr>` selects slices
+of the suite for free — but names grow with sweep dimensions, so **storage
+uses a content-hash combo id instead**:
+`sha256(name)[:16]` names the combo directory and its artifact files, and
+`<output-root>/combos.csv` (one row per swept dimension) dereferences ids
+back to names and values. Being content-derived, ids are stable across runs
+and valid as cross-run join keys. Unswept fields are omitted from the name;
+they are constant across the run and recorded in the generated YAML itself.
 
 ## Base configuration
 
@@ -148,11 +166,13 @@ Layout under the output root is the same either way:
 ```
 <output-root>/                 # default: pytest tmp dir; else /work-relative
   run.yaml                     # RunManifest: session ULID + resolved suite config
+  combos.csv                   # combo id -> name/dimensions dereference map
   descriptive_stats.csv        # all combos' statistics, concatenated at session end
-  map-consd/                   # one directory per combination
-    map-consd.yaml             # generated driver config
-    map-consd.out              # captured driver stdout+stderr (".log" is
+  9004a4e23c1dd90a/            # one directory per combination (content-hash id)
+    9004a4e23c1dd90a.yaml      # generated driver config
+    9004a4e23c1dd90a.out       # captured driver stdout+stderr (".log" is
                                #   reserved for a future real driver log file)
+    9004a4e23c1dd90a-stats.csv # per-NetCDF descriptive statistics
     *.nc                       # driver NetCDF output (output.directory in
                                #   the yaml points here)
 ```

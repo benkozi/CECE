@@ -7,7 +7,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from analysis import RunContext, concatenate_stats_csvs
-from combos import Combo, build_config, enumerate_combos
+from combos import Combo, build_config, enumerate_combos, write_combos_csv
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
 from models.suite_config import Analysis, Assertions, RunManifest, SuiteConfig
@@ -109,10 +109,18 @@ def pytest_sessionstart(session: pytest.Session) -> None:
                 )
         roots = ComboRoots(host=host_root, container=container_root, needs_mount=False)
 
+    # Selector validation happens here, against the loaded base config,
+    # before any container runs.
+    base_config = CeceConfig.from_yaml(suite.config_path)
+    try:
+        combos = enumerate_combos(suite.sweep, base_config)
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+
     config._combo_settings = settings  # type: ignore[attr-defined]
     config._combo_suite = suite  # type: ignore[attr-defined]
     config._combo_roots = roots  # type: ignore[attr-defined]
-    config._combos = enumerate_combos(suite.sweep)  # type: ignore[attr-defined]
+    config._combos = combos  # type: ignore[attr-defined]
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -201,14 +209,20 @@ def combo_roots(
     # fixtures; the tmp-default root only exists once this fixture has run).
     request.config._combo_roots_realized = roots  # type: ignore[attr-defined]
 
-    # Write the run manifest as soon as the root is realized, so even a run
-    # that dies mid-way leaves a record of what ran.
+    # Write the run manifest and the combo dereference map as soon as the
+    # root is realized, so even a run that dies mid-way leaves a record of
+    # what ran and what each combo directory means.
     roots.host.mkdir(parents=True, exist_ok=True)
     manifest = RunManifest(
         run_id=request.config._combo_run_id,  # type: ignore[attr-defined]
         suite=request.config._combo_suite,  # type: ignore[attr-defined]
     )
     manifest.to_yaml(roots.host / "run.yaml")
+    write_combos_csv(
+        request.config._combos,  # type: ignore[attr-defined]
+        run_id=request.config._combo_run_id,  # type: ignore[attr-defined]
+        csv_path=roots.host / "combos.csv",
+    )
     return roots
 
 
@@ -219,14 +233,16 @@ def generated_combos(request: pytest.FixtureRequest, combo_roots: ComboRoots) ->
     suite = request.config._combo_suite  # type: ignore[attr-defined]
     generated: dict[str, GeneratedCombo] = {}
     for combo in request.config._combos:  # type: ignore[attr-defined]
-        combo_dir = combo_roots.host / combo.name
+        # Storage carries no semantics: directories and filenames are the
+        # combo's content-hash id; combos.csv dereferences them.
+        combo_dir = combo_roots.host / combo.combo_id
         combo_dir.mkdir(parents=True)
-        container_dir = combo_roots.container / combo.name
+        container_dir = combo_roots.container / combo.combo_id
         config = build_config(combo, output_directory=str(container_dir), config_path=suite.config_path)
-        config.to_yaml(combo_dir / f"{combo.name}.yaml")
-        generated[combo.name] = GeneratedCombo(
+        config.to_yaml(combo_dir / f"{combo.combo_id}.yaml")
+        generated[combo.combo_id] = GeneratedCombo(
             host_dir=combo_dir,
-            container_yaml=container_dir / f"{combo.name}.yaml",
+            container_yaml=container_dir / f"{combo.combo_id}.yaml",
             config=config,
         )
     return generated
@@ -243,8 +259,8 @@ def driver_run(
     """Run the driver once per combination (session-scoped, combo-parameterized)
     and capture the outcome without raising."""
     combo: Combo = request.param
-    generated = generated_combos[combo.name]
-    out_path = generated.host_dir / f"{combo.name}.out"
+    generated = generated_combos[combo.combo_id]
+    out_path = generated.host_dir / f"{combo.combo_id}.out"
 
     logger.info("running combo %s (timeout=%ss)", combo.name, run_timeout_s)
     start = time.monotonic()

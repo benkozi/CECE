@@ -36,6 +36,7 @@ def driver_like_nc(tmp_path: Path) -> tuple[Path, np.ndarray]:
 
 _RUN_ID = "01JZZZZZZZZZZZZZZZZZZZZZZZ"  # fixed 26-char ULID-shaped id for row fixtures
 _RUN = RunContext(run_id=_RUN_ID, suite="simple-maccity")
+_COMBO_ID = "3f9a1c2b7d4e8a01"  # fixed hash-shaped combo id for row fixtures
 
 
 def _stats_rows() -> list[VariableStats]:
@@ -43,7 +44,8 @@ def _stats_rows() -> list[VariableStats]:
         VariableStats(
             run_id=_RUN_ID,
             suite="simple-maccity",
-            combo="map-consd",
+            combo_id=_COMBO_ID,
+            combo="MACCITY.map-consd",
             file=f"cece_2010010{day}_010000.nc",
             time=f"2010-01-0{day}T01:00:00",
             year=2010,
@@ -70,11 +72,12 @@ def test_compute_file_stats_matches_numpy(dask_client, driver_like_nc: tuple[Pat
 
     path, data = driver_like_nc
     run = RunContext(run_id=str(ULID()), suite="simple-maccity")
-    (stats,) = compute_file_stats(path, combo="map-consd", run=run)
+    (stats,) = compute_file_stats(path, combo="MACCITY.map-consd", combo_id=_COMBO_ID, run=run)
 
     assert stats.run_id == run.run_id and len(stats.run_id) == 26
     assert stats.suite == "simple-maccity"
-    assert (stats.combo, stats.file, stats.variable) == ("map-consd", path.name, "co")
+    assert stats.combo_id == _COMBO_ID
+    assert (stats.combo, stats.file, stats.variable) == ("MACCITY.map-consd", path.name, "co")
     # Timestamp columns come from the file's time coordinate (first value).
     assert stats.time == "2010-01-01T01:00:00"
     assert (stats.year, stats.month, stats.day) == (2010, 1, 1)
@@ -93,7 +96,7 @@ def test_compute_file_stats_null_time_without_time_coordinate(dask_client, tmp_p
     path = tmp_path / "timeless.nc"
     dataset.to_netcdf(path, engine="netcdf4")
 
-    (stats,) = compute_file_stats(path, combo="map-consd", run=_RUN)
+    (stats,) = compute_file_stats(path, combo="MACCITY.map-consd", combo_id=_COMBO_ID, run=_RUN)
 
     assert stats.time is None
     assert (stats.year, stats.month, stats.day) == (None, None, None)
@@ -109,6 +112,7 @@ def test_write_combo_stats_csv_one_row_per_file_variable(tmp_path: Path) -> None
     assert len(frame) == 2
     assert list(frame.columns) == list(VariableStats.model_fields)
     assert set(frame["file"]) == {"cece_20100101_010000.nc", "cece_20100102_010000.nc"}
+    assert set(frame["combo_id"]) == {_COMBO_ID}
 
 
 def test_write_combo_stats_csv_empty_keeps_columns(tmp_path: Path) -> None:
@@ -122,12 +126,12 @@ def test_concatenate_stats_csvs(tmp_path: Path) -> None:
     path_a = tmp_path / "map-consd-stats.csv"
     path_b = tmp_path / "map-bilinear-stats.csv"
     write_combo_stats_csv([first], path_a)
-    write_combo_stats_csv([second.model_copy(update={"combo": "map-bilinear"})], path_b)
+    write_combo_stats_csv([second.model_copy(update={"combo": "MACCITY.map-bilinear"})], path_b)
 
     combined = concatenate_stats_csvs([path_b, path_a], tmp_path / "descriptive_stats.csv")
 
     assert (tmp_path / "descriptive_stats.csv").is_file()
     assert len(combined) == 2
-    assert set(combined["combo"]) == {"map-consd", "map-bilinear"}
+    assert set(combined["combo"]) == {"MACCITY.map-consd", "MACCITY.map-bilinear"}
     assert set(combined["run_id"]) == {_RUN_ID}  # run id survives both CSV layers
     assert set(combined["suite"]) == {"simple-maccity"}  # suite name too

@@ -58,7 +58,8 @@ Options:
 - `--suite-config=PATH` — suite YAML defining the suite's unique `name`
   (lowercase slug; by convention suite `X` lives in `X-suite.yaml`), the base
   driver config (`config_path`), the per-combination timeout (`timeout_s`),
-  and the sweep
+  and the sweep — which mirrors the driver-config structure, attaching swept
+  values to named streams (or positional species entries)
   (default: `src/tests/config/suite/simple-maccity-suite.yaml`). Use the
   `--suite-config=PATH` form (with `=`), not a space.
 - `--combo-output-root=PATH` — root artifact directory; relative paths
@@ -78,14 +79,21 @@ failures point there; pytest keeps the last few runs under e.g.
 
 ```
 <output-root>/
-  run.yaml                 # run manifest: session ULID + the resolved suite config
-  descriptive_stats.csv    # all combos' statistics, concatenated
-  map-consd/
-    map-consd.yaml         # generated driver config
-    map-consd.out          # captured driver stdout+stderr
-    map-consd-stats.csv    # per-NetCDF descriptive statistics
-    *.nc                   # driver NetCDF output
+  run.yaml                       # run manifest: session ULID + the resolved suite config
+  combos.csv                     # maps combo directory ids to the tested combinations
+  descriptive_stats.csv          # all combos' statistics, concatenated
+  9004a4e23c1dd90a/              # one directory per combination (content-hash id)
+    9004a4e23c1dd90a.yaml        # generated driver config
+    9004a4e23c1dd90a.out         # captured driver stdout+stderr
+    9004a4e23c1dd90a-stats.csv   # per-NetCDF descriptive statistics
+    *.nc                         # driver NetCDF output
 ```
+
+Test ids stay human-readable (`MACCITY.map-consd`, target-qualified);
+directories use a deterministic 16-char content hash of the combination so
+names never outgrow filesystem limits. `combos.csv` dereferences ids back to
+the swept dimensions; the same combination hashes to the same id in every
+run, so ids are safe cross-run join keys.
 
 Every run gets a runtime-generated ULID (`run_id`) — logged at session
 start, written to `run.yaml`, and stamped into every stats row so CSVs from
@@ -93,7 +101,8 @@ different runs stay distinguishable. It is never set via configuration;
 unknown keys in suite or driver config files are rejected at load time.
 
 Stats CSV columns: `run_id`, `suite` (the suite's unique `name` from its
-yaml, e.g. `simple-maccity`), identity (`combo`, `file`, `variable`), the file's
+yaml, e.g. `simple-maccity`), identity (`combo_id`, `combo`, `file`,
+`variable`), the file's
 timestamp from its NetCDF time coordinate as `time` (ISO-8601) plus part
 columns `year`/`month`/`day`/`hour`/`minute`/`second` for easy time
 summaries (null if the file has no time coordinate), and the nan-aware

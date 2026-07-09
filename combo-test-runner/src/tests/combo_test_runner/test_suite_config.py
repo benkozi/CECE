@@ -31,7 +31,7 @@ def test_config_search_path_prepends_whole_path(tmp_path: Path, suite_path: Path
 def test_absolute_config_path_ignores_search_path(tmp_path: Path, cece_config_path: Path) -> None:
     suite_file = tmp_path / "abs-suite.yaml"
     suite_file.write_text(
-        f"name: inline-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n"
+        f"name: inline-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n"
     )
     suite = SuiteConfig.from_yaml(suite_file, config_search_path=tmp_path)
     assert suite.config_path == cece_config_path
@@ -39,7 +39,7 @@ def test_absolute_config_path_ignores_search_path(tmp_path: Path, cece_config_pa
 
 def test_missing_config_path_raises(tmp_path: Path) -> None:
     suite_file = tmp_path / "broken-suite.yaml"
-    suite_file.write_text("name: broken-suite\nconfig_path: nope.yaml\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n")
+    suite_file.write_text("name: broken-suite\nconfig_path: nope.yaml\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n")
     with pytest.raises(FileNotFoundError, match="nope.yaml"):
         SuiteConfig.from_yaml(suite_file)
 
@@ -47,7 +47,7 @@ def test_missing_config_path_raises(tmp_path: Path) -> None:
 def test_assertions_default_when_section_absent(tmp_path: Path, cece_config_path: Path) -> None:
     suite_file = tmp_path / "no-assertions-suite.yaml"
     suite_file.write_text(
-        f"name: inline-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n"
+        f"name: inline-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n"
     )
     suite = SuiteConfig.from_yaml(suite_file)
     assert suite.assertions.expected_nc_file_count is None
@@ -57,7 +57,7 @@ def test_assertions_default_when_section_absent(tmp_path: Path, cece_config_path
 def test_invalid_sweep_value_fails_at_load(tmp_path: Path, cece_config_path: Path) -> None:
     suite_file = tmp_path / "typo-suite.yaml"
     suite_file.write_text(
-        f"name: inline-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  mapalgo: [bilinnear]\n"
+        f"name: inline-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [bilinnear]\n"
     )
     with pytest.raises(ValidationError):
         SuiteConfig.from_yaml(suite_file)
@@ -65,7 +65,7 @@ def test_invalid_sweep_value_fails_at_load(tmp_path: Path, cece_config_path: Pat
 
 def test_missing_suite_name_rejected(tmp_path: Path, cece_config_path: Path) -> None:
     suite_file = tmp_path / "nameless-suite.yaml"
-    suite_file.write_text(f"config_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n")
+    suite_file.write_text(f"config_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n")
     with pytest.raises(ValidationError, match="name"):
         SuiteConfig.from_yaml(suite_file)
 
@@ -73,9 +73,31 @@ def test_missing_suite_name_rejected(tmp_path: Path, cece_config_path: Path) -> 
 def test_malformed_suite_name_rejected(tmp_path: Path, cece_config_path: Path) -> None:
     suite_file = tmp_path / "badname-suite.yaml"
     suite_file.write_text(
-        f"name: Simple Maccity!\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n"
+        f"name: Simple Maccity!\nconfig_path: {cece_config_path}\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n"
     )
     with pytest.raises(ValidationError, match="name"):
+        SuiteConfig.from_yaml(suite_file)
+
+
+def test_old_flat_sweep_format_rejected(tmp_path: Path, cece_config_path: Path) -> None:
+    # Pre-attachment flat sweeps (enum lists directly under sweep:) are a
+    # removed schema; StrictModel rejects the unknown keys loudly.
+    suite_file = tmp_path / "flat-suite.yaml"
+    suite_file.write_text(
+        f"name: flat-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\n"
+        "sweep:\n  mapalgo: [bilinear, consd]\n"
+    )
+    with pytest.raises(ValidationError, match="mapalgo"):
+        SuiteConfig.from_yaml(suite_file)
+
+
+def test_duplicate_sweep_values_rejected(tmp_path: Path, cece_config_path: Path) -> None:
+    suite_file = tmp_path / "dup-suite.yaml"
+    suite_file.write_text(
+        f"name: dup-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\n"
+        "sweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd, consd]\n"
+    )
+    with pytest.raises(ValidationError, match="duplicate values"):
         SuiteConfig.from_yaml(suite_file)
 
 
@@ -84,7 +106,7 @@ def test_unknown_suite_key_rejected(tmp_path: Path, cece_config_path: Path) -> N
     # keys generally fail loudly rather than being silently dropped.
     suite_file = tmp_path / "ulid-suite.yaml"
     suite_file.write_text(
-        f"name: inline-suite\nconfig_path: {cece_config_path}\nulid: 01JZZ\ntimeout_s: 5\nsweep:\n  mapalgo: [consd]\n"
+        f"name: inline-suite\nconfig_path: {cece_config_path}\nulid: 01JZZ\ntimeout_s: 5\nsweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n"
     )
     with pytest.raises(ValidationError, match="ulid"):
         SuiteConfig.from_yaml(suite_file)
