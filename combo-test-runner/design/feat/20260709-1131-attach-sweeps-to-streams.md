@@ -1,34 +1,132 @@
-# always do
+# Feature: sweeps attach to streams (structure-mirroring sweep config)
 
-- include updating design.md as part of the implementation
-- update combo-test-runner tests in addition to any changes to test_driver_combos.py
-- update README.md with any necessary documentation changes in case of an api adjustment
-- use pydantic models as opposed to dataclasses
+## Goal
 
-# requirements
+Today's `sweep` is a flat list of enum dimensions, each hardwired to an
+implicit injection point (`streams[0]`, the first species entry). Real
+configs have **multiple streams and species entries**, so a sweep must say
+*what it attaches to*. The sweep config is restructured to **mirror the
+driver-config structure**: a swept `mapalgo` lives inside a stream block
+that names the stream it applies to, and the same pattern covers species
+entries (the other current injection point) and future configuration
+groups.
 
-- sweeps need to be attached to streams or other potential configuration groups
-- for example, `mapalgo` is nested:
-```
-cece_data:
-  streams:
-  - name: MACCITY
-    file: /work/data/MACCity_4x5.nc
-    yearFirst: 2000
-    yearLast: 2010
-    yearAlign: 2020
-    taxmode: cycle
-    tintalgo: linear
-    mapalgo: consd
-    variables:
-    - file: MACCity
-      model: co
-```
-- maybe sweep should mirror the config structure a bit more tightly:
-```
+## Design
+
+### Suite yaml shape
+
+```yaml
 sweep:
   cece_data:
     streams:
-      - name: MACCITY
-      - mapalgo: [bilinear, consd, passthrough]
+      - name: MACCITY                              # selector: which stream
+        mapalgo: [bilinear, consd, passthrough]    # swept dimensions
+  species:            # optional; mirrors species.<name>[<entry>]
+    co:
+      - operation: [add, replace]                  # first entry of co
 ```
+
+(The raw note's sketch showed `name` and `mapalgo` as two separate list
+items; this design normalizes that to one block per stream — `name` is the
+selector, sibling keys are the swept dimensions.)
+
+### Models (suite_config.py, all `StrictModel`)
+
+```python
+class StreamSweep(StrictModel):
+    name: str                                   # must match a base-config stream
+    taxmode:  list[Taxmode]  | None = None      # min_length=1 each
+    tintalgo: list[Tintalgo] | None = None
+    mapalgo:  list[Mapalgo]  | None = None
+
+class CeceDataSweep(StrictModel):
+    streams: list[StreamSweep]                  # min_length=1, unique names
+
+class SpeciesEntrySweep(StrictModel):
+    operation:    list[Operation]   | None = None
+    category:     list[Category]    | None = None
+    vdist_method: list[VdistMethod] | None = None
+
+class Sweep(StrictModel):
+    cece_data: CeceDataSweep | None = None
+    species: dict[str, list[SpeciesEntrySweep]] | None = None
+```
+
+The flat `Sweep` fields are **removed** — a breaking suite-schema change,
+rejected loudly by `StrictModel` if an old-format suite is loaded. Species
+sweeps use **list position as the entry selector** (sweep list index i →
+`species.<name>[i]`), since entries have no names; an empty `{}` block
+skips an entry.
+
+### Selector validation against the base config
+
+At session start (before any container runs), the sweep's selectors are
+validated against the loaded base config: every `StreamSweep.name` must
+match exactly one stream, sweep stream names must be unique, every swept
+species key must exist, and a species sweep list must not be longer than
+that species' entry list. Violations raise a clear error naming the
+selector. `enumerate_combos` gains the base config as an argument
+(`enumerate_combos(sweep, base_config)`) to do this.
+
+### Combination machinery (combos.py rework)
+
+`DIMENSIONS`' fixed six-entry table is replaced by dimensions **derived from
+the sweep**: one dimension per (target, field, values), where target is a
+named stream or a species entry. Apply functions locate the target in the
+config by name/index instead of `streams[0]` / first-entry. Enumeration
+order (and thus name order) is canonical and deterministic: species groups
+first (dict order, entry order, then `op, cat, vd`), then stream groups
+(sweep order, then `tax, tint, map`) — matching today's relative field
+order. Vdist companion fields still accompany a swept `vdist_method`, on
+the targeted entry.
+
+### Combination naming: target-qualified segments
+
+Name segments gain the attachment target:
+
+```
+<target>.<tag>-<value>       e.g.  MACCITY.map-consd
+                                   co.op-add   (co-1.op-add for entry 1)
+```
+
+Initial suite ids become `MACCITY.map-bilinear`, `MACCITY.map-consd`,
+`MACCITY.map-passthrough`; multi-dimension combos join segments with `_` as
+today. This changes existing test ids, combo directory names, and the
+`combo` values in stats CSVs — accepted now while accumulated artifacts are
+cheap; substring `-k` filters like `-k map-consd` keep working unchanged.
+
+## Ripples (standing process rules)
+
+- **Harness tests**: `test_combos` reworked around the nested sweep
+  (attachment to a *named* stream — including a second stream in a
+  fabricated config to prove non-first attachment works; canonical ordering;
+  qualified names; validation failures for unknown stream name / species key
+  / oversized entry list); `test_suite_config` gains nested-sweep parsing
+  plus rejection of the old flat format; pipeline expected ids update.
+- **`design.md`**: suite-configuration example, the combination-space
+  "injected at" table (becomes attachment-based), naming section.
+- **`README.md`**: suite yaml description; the `-k map-consd` example still
+  holds (substring match) — note ids are now target-qualified.
+- Suite file updated to the nested shape; pydantic models, never
+  dataclasses.
+
+## Non-goals
+
+- No sweeping of non-enum fields (scales, paths) — enum dimensions only,
+  same as today.
+- No cross-target constraints (e.g. "sweep these two streams in lockstep");
+  the space is still a full cartesian product.
+- No new enum dimensions; same six, relocated.
+
+## Acceptance criteria
+
+- The nested initial suite loads; ids are `MACCITY.map-*`; each generated
+  yaml carries the swept value on the **MACCITY stream located by name**.
+- A sweep naming an unknown stream, an unknown species, or more entry
+  blocks than the base config has entries fails at session start with an
+  error naming the offending selector; an old flat-format suite fails
+  validation.
+- Harness passes without docker (including a fabricated two-stream config
+  proving attachment targets the named, non-first stream); integration
+  keeps its expected shape (filename tests red per the known driver bug),
+  with `combo` values in stats CSVs showing the qualified names.
