@@ -39,3 +39,7 @@ output:
   frequency_steps: 1
   fields:
   - co
+  field_attributes:
+    co:
+      units: kg m-2 s-1
+      long_name: carbon_monoxide_emission_flux

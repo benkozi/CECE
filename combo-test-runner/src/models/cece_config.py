@@ -208,6 +208,10 @@ class Output(StrictModel):
     filename_pattern: str = Field(description="Filename template; supports {YYYY}, {MM}, {DD}, {HH}, {mm}, {ss} tokens")
     frequency_steps: int = Field(description="Number of timesteps between output writes")
     fields: list[str] = Field(description="Export-state fields written to each output file")
+    field_attributes: dict[str, dict[str, str]] | None = Field(
+        None,
+        description="Per-field NetCDF attributes (field -> attribute -> value); unconfigured fields get none",
+    )
 
 
 # ── Top-level ─────────────────────────────────────────────────────────────────

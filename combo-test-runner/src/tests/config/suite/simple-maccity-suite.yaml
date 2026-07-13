@@ -13,9 +13,7 @@ assertions:
   validate_filenames: true
   species:
     co:
-      # Known driver bug: units come out malformed ('mol mol-1'), so the
-      # test_species_units tests are EXPECTED TO FAIL until the driver is
-      # fixed. null = expect no units; "__ignore__" = don't check (default).
+      # null = expect no units attribute; "__ignore__" = don't check (default).
       units: kg m-2 s-1
 analysis:
   compute_descriptive_stats: true  # default; false skips test_descriptive_stats

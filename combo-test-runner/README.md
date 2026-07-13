@@ -32,6 +32,17 @@ uv run pytest src/tests/combo_test_runner      # runner harness only: fast, no d
 uv run pytest src/tests/test_driver_combos.py  # integration only (real docker)
 ```
 
+To rebuild the driver and run the CECE C++ tests in the container (this
+suite is separate — run it with `uv run pytest` as above), from any
+directory:
+
+```sh
+<repo-root>/util/build-and-test-container.py            # build + C++ tests
+<repo-root>/util/build-and-test-container.py --clean    # wipe build dirs first
+<repo-root>/util/build-and-test-container.py --test-filter Configured  # gtest subset
+# --no-build / --no-test skip a phase; --mount and --image override defaults
+```
+
 Driver output is printed after every driver call: with `-vs` (or `-s`) it
 appears in the terminal as the suite runs; without `-s`, passing tests stay
 quiet and failing tests include the output in their report under

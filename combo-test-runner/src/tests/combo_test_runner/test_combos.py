@@ -78,6 +78,25 @@ def test_empty_sweep_yields_no_combos(base_config: CeceConfig) -> None:
     assert enumerate_combos(Sweep(), base_config) == []
 
 
+def test_field_attributes_round_trip_through_generated_configs(
+    base_config: CeceConfig, cece_config_path: Path
+) -> None:
+    # The checked-in base config declares output units for co; generated combo
+    # configs must carry them through to the driver (StrictModel accepts the key).
+    assert base_config.output is not None
+    assert base_config.output.field_attributes == {
+        "co": {"units": "kg m-2 s-1", "long_name": "carbon_monoxide_emission_flux"}
+    }
+    (combo,) = enumerate_combos(_single_consd_sweep(), base_config)
+    generated = build_config(combo, output_directory=".", config_path=cece_config_path)
+    assert generated.output is not None
+    assert generated.output.field_attributes == base_config.output.field_attributes
+
+
+def _single_consd_sweep() -> Sweep:
+    return Sweep(cece_data=CeceDataSweep(streams=[StreamSweep(name="MACCITY", mapalgo=[Mapalgo.consd])]))
+
+
 def test_build_config_applies_to_named_non_first_stream(two_stream_config_path: Path) -> None:
     base = CeceConfig.from_yaml(two_stream_config_path)
     sweep = Sweep(cece_data=CeceDataSweep(streams=[StreamSweep(name="AUXDATA", mapalgo=[Mapalgo.nn])]))

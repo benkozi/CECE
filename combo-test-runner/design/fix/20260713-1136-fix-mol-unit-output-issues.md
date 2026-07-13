@@ -128,6 +128,8 @@ environment, nothing more. A new **Python** script (argparse +
   `cmake-build-debug/` directories before anything else.
 - `--no-build` / `--no-test`: independently disable a phase; both phases
   run by default.
+- `--test-filter STRING`: run a single C++ test or subset — the test binary
+  receives `--gtest_filter=*STRING*` (substring match; zero matches exit 0).
 - **Container lifecycle**: each containerized step is its own
   `docker run --rm` against `cece/cece-dev` with
   `-v <derived-host-root>:<mount> -w <mount>` and the standard env
@@ -137,10 +139,11 @@ environment, nothing more. A new **Python** script (argparse +
   needed (always after `--clean`), then build `cece_standalone_driver` and
   the C++ test executables.
 - **Test phase**: the C++ tests (the writer-attributes test and ctest
-  peers) run **in the container**, where the toolchain and netcdf-c live;
-  the combo-test-runner suite then runs **on the host**
-  (`uv run pytest` in `combo-test-runner/`) because it orchestrates its own
-  per-combo containers — docker-in-docker is avoided by design.
+  peers) run **in the container**, where the toolchain and netcdf-c live.
+  **The combo-test-runner suite is deliberately out of the script's scope**
+  — it is run separately on the host (`uv run pytest` in
+  `combo-test-runner/`), where it orchestrates its own per-combo
+  containers. The script is the C++ build/test loop, nothing more.
 - `check_call` semantics give the script its exit contract for free: the
   first failing step aborts with a nonzero exit — the one-command
   verification loop for driver fixes like this one (`README.md` gains it).
@@ -153,13 +156,12 @@ it runs with any `python3`, no uv environment needed.)
 - **Pre-fix red demonstrated**: the new C++ test
   `DefaultConfigEmitsNoFabricatedAttributes` fails against the unfixed
   writer (finds `mol mol-1`), establishing the TDD baseline.
-- Post-fix, `./util/build-and-test-container.py` is green end to end
-  (invoked from an arbitrary cwd, proving the `__file__`-derived root
-  works): both C++
-  writer-attribute tests pass in the container, **and** the
-  combo-test-runner suite passes on the host — output NetCDFs carry
-  `units: kg m-2 s-1` on `co` and `test_species_units` passes for all three
-  combos.
+- Post-fix, `./util/build-and-test-container.py` is green (invoked from an
+  arbitrary cwd, proving the `__file__`-derived root works): both C++
+  writer-attribute tests pass in the container. **Separately**,
+  `uv run pytest` in `combo-test-runner/` passes on the host — output
+  NetCDFs carry `units: kg m-2 s-1` on `co` and `test_species_units` passes
+  for all three combos.
 - `--clean` removes and rebuilds from scratch successfully; `--no-build`
   and `--no-test` each skip exactly their phase; `setup.sh` is unchanged.
 - A driver config without `field_attributes` produces output with **no**
