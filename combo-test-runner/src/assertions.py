@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import xarray as xr
+
 from logs import get_logger
 from models.cece_config import CeceConfig
 
@@ -79,3 +81,26 @@ def assert_nc_filenames(combo_dir: Path, config: CeceConfig) -> None:
     assert found == expected, (
         f"NetCDF filenames in {combo_dir} do not match: missing {missing}, unexpected {unexpected}"
     )
+
+
+def assert_species_units(combo_dir: Path, species: str, expected: str | None) -> None:
+    """Assert the species' variable carries the expected units attribute in
+    every NetCDF of the combo directory.
+
+    expected=None asserts the attribute is absent (an empty string counts as
+    present and fails). A missing variable fails: units cannot be verified
+    on nothing. The "__ignore__" sentinel is handled by the caller (skip).
+    """
+    failures: list[str] = []
+    for nc_path in sorted(combo_dir.glob("*.nc")):
+        with xr.open_dataset(nc_path, engine="netcdf4") as ds:
+            if species not in ds.data_vars:
+                failures.append(f"{nc_path.name}: variable {species!r} not present")
+                continue
+            found = ds[species].attrs.get("units")
+        logger.info(
+            "testing species %r units expected=%r, found=%r (%s)", species, expected, found, nc_path.name
+        )
+        if found != expected:
+            failures.append(f"{nc_path.name}: expected {expected!r}, found {found!r}")
+    assert not failures, f"units mismatch for species {species!r} in {combo_dir}: " + "; ".join(failures)

@@ -40,18 +40,20 @@ quiet and failing tests include the output in their report under
 Each combination produces one test per assertion/analysis step —
 `test_driver_execution` (driver exits 0), `test_nc_file_count` (expected
 NetCDF output count), `test_nc_filenames` (filenames match
-`filename_pattern` at the expected write times), and
-`test_descriptive_stats` (per-NetCDF statistics via distributed dask,
-written to `<combo>-stats.csv`; all combos concatenated into
+`filename_pattern` at the expected write times), `test_species_units`
+(per-species `units` attribute, one test per combo × configured species;
+`null` expects no units, `"__ignore__"` — the default — skips the check),
+and `test_descriptive_stats` (per-NetCDF statistics via distributed dask,
+written to `<combo_id>-stats.csv`; all combos concatenated into
 `descriptive_stats.csv` at the output root when the session ends) — with the
 driver running once per combination. If the driver run fails, its
 `test_driver_execution` fails and that combination's assertion tests are
 skipped with a `driver run failed: ...` reason.
 
-**Known driver bug — expected failures**: the driver currently stamps output
-at hour 0 instead of hour 1, so the three `test_nc_filenames` tests fail by
-design until the driver is fixed. Set `validate_filenames: false` in the
-suite's `assertions` block to skip them if you need a green run.
+**Known driver bug — expected failures**: the driver currently emits
+malformed units for `co` (`mol mol-1`), so the `test_species_units` tests
+fail by design until the driver is fixed. Set `units: "__ignore__"` for the
+species (or drop the `species` block) if you need a green run.
 
 Options:
 

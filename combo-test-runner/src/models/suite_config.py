@@ -9,6 +9,11 @@ from models.base import StrictModel
 from models.cece_config import Category, Mapalgo, Operation, Taxmode, Tintalgo, VdistMethod
 
 
+# General string-assertion sentinel: "don't check". A plain null cannot serve
+# because null already means "assert the value is absent".
+IGNORE_VALUE = "__ignore__"
+
+
 def _unique_values(values: list | None) -> list | None:
     """Duplicate sweep values would enumerate two combinations with the same
     id and directory — rejected loudly rather than deduped."""
@@ -60,6 +65,16 @@ class Sweep(StrictModel):
     species: dict[str, list[SpeciesEntrySweep]] | None = None
 
 
+class SpeciesAssertions(StrictModel):
+    """Per-species expectations about the NetCDF output. String fields use
+    IGNORE_VALUE ("__ignore__") to skip the check; null asserts absence."""
+
+    units: str | None = Field(
+        IGNORE_VALUE,
+        description="Expected units attribute of the species' variable; null = no units attribute expected",
+    )
+
+
 class Assertions(StrictModel):
     """What each combination's output is expected to look like. Configures
     expectations only — never run behavior (fail-fast stays pytest's -x)."""
@@ -72,6 +87,10 @@ class Assertions(StrictModel):
     validate_filenames: bool = Field(
         True,
         description="Assert NetCDF filenames match filename_pattern at the expected write times; false skips the test",
+    )
+    species: dict[str, SpeciesAssertions] | None = Field(
+        None,
+        description="Per-species output expectations, keyed by species name; absent species are not checked",
     )
 
 

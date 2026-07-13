@@ -2,13 +2,24 @@ from pathlib import Path
 
 import pytest
 
+import numpy as np
+import xarray as xr
+
 from assertions import (
     assert_nc_file_count,
     assert_nc_filenames,
+    assert_species_units,
     derive_expected_nc_file_count,
     expected_nc_filenames,
 )
 from models.cece_config import CeceConfig
+
+
+def _write_species_nc(path: Path, variable: str = "co", units: str | None = None) -> None:
+    dataset = xr.Dataset({variable: (("lat", "lon"), np.ones((2, 3)))})
+    if units is not None:
+        dataset[variable].attrs["units"] = units
+    dataset.to_netcdf(path, engine="netcdf4")
 
 
 @pytest.fixture()
@@ -67,6 +78,39 @@ def test_count_is_non_recursive(tmp_path: Path, maccity_config: CeceConfig) -> N
     nested.mkdir()
     (nested / "ignored.nc").touch()
     assert_nc_file_count(tmp_path, maccity_config, expected=1)
+
+
+def test_species_units_exact_match_passes(tmp_path: Path) -> None:
+    _write_species_nc(tmp_path / "a.nc", units="kg m-2 s-1")
+    _write_species_nc(tmp_path / "b.nc", units="kg m-2 s-1")
+    assert_species_units(tmp_path, "co", expected="kg m-2 s-1")
+
+
+def test_species_units_mismatch_fails_naming_files(tmp_path: Path) -> None:
+    _write_species_nc(tmp_path / "a.nc", units="kg m-2 s-1")
+    _write_species_nc(tmp_path / "b.nc", units="mol mol-1")  # the driver-bug shape
+    with pytest.raises(AssertionError) as excinfo:
+        assert_species_units(tmp_path, "co", expected="kg m-2 s-1")
+    message = str(excinfo.value)
+    assert "b.nc: expected 'kg m-2 s-1', found 'mol mol-1'" in message
+    assert "a.nc" not in message  # the matching file is not reported
+
+
+def test_species_units_none_expects_absent_attribute(tmp_path: Path) -> None:
+    _write_species_nc(tmp_path / "a.nc", units=None)
+    assert_species_units(tmp_path, "co", expected=None)
+
+
+def test_species_units_none_fails_on_present_attribute(tmp_path: Path) -> None:
+    _write_species_nc(tmp_path / "a.nc", units="")  # empty string counts as present
+    with pytest.raises(AssertionError, match="expected None, found ''"):
+        assert_species_units(tmp_path, "co", expected=None)
+
+
+def test_species_units_missing_variable_fails(tmp_path: Path) -> None:
+    _write_species_nc(tmp_path / "a.nc", variable="nox", units="kg m-2 s-1")
+    with pytest.raises(AssertionError, match="variable 'co' not present"):
+        assert_species_units(tmp_path, "co", expected="kg m-2 s-1")
 
 
 def test_expected_filenames_maccity(

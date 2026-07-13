@@ -10,9 +10,13 @@ config_path: ../cece/simple-maccity.yaml
 timeout_s: 10  # per combination; capped by CECE_RUN_TIMEOUT_S when that is smaller
 assertions:
   expected_nc_file_count: null  # null = derive from the combo config
-  # Known driver bug: output is stamped at hour 0 instead of hour 1, so the
-  # test_nc_filenames tests are EXPECTED TO FAIL until the driver is fixed.
   validate_filenames: true
+  species:
+    co:
+      # Known driver bug: units come out malformed ('mol mol-1'), so the
+      # test_species_units tests are EXPECTED TO FAIL until the driver is
+      # fixed. null = expect no units; "__ignore__" = don't check (default).
+      units: kg m-2 s-1
 analysis:
   compute_descriptive_stats: true  # default; false skips test_descriptive_stats
 plotting:

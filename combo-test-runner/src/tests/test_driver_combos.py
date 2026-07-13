@@ -1,8 +1,8 @@
 import pytest
 
 from analysis import RunContext, compute_file_stats, write_combo_stats_csv
-from assertions import assert_nc_file_count, assert_nc_filenames
-from models.suite_config import Analysis, Assertions
+from assertions import assert_nc_file_count, assert_nc_filenames, assert_species_units
+from models.suite_config import IGNORE_VALUE, Analysis, Assertions
 from runner import DriverRunResult
 
 
@@ -30,6 +30,20 @@ def test_nc_filenames(driver_run: DriverRunResult, suite_assertions: Assertions)
     if not suite_assertions.validate_filenames:
         pytest.skip("filename validation disabled by suite config")
     assert_nc_filenames(driver_run.combo_dir, driver_run.config)
+
+
+def test_species_units(
+    driver_run: DriverRunResult, species_name: str, suite_assertions: Assertions
+) -> None:
+    """The species' variable carries the expected units attribute in every
+    NetCDF the combo produced."""
+    if driver_run.error is not None:
+        pytest.skip(f"driver run failed: {driver_run.error}")
+    assert suite_assertions.species is not None
+    expected = suite_assertions.species[species_name].units
+    if expected == IGNORE_VALUE:
+        pytest.skip("units check ignored by suite config")
+    assert_species_units(driver_run.combo_dir, species_name, expected)
 
 
 def test_descriptive_stats(

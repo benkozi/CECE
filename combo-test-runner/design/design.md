@@ -34,6 +34,9 @@ timeout_s: 10                              # per combination; capped by CECE_RUN
 assertions:
   expected_nc_file_count: null             # null = derive from the combo config
   validate_filenames: true                 # false skips the filename tests
+  species:                                 # per-species output expectations
+    co:
+      units: kg m-2 s-1                    # null = expect no units attribute
 plotting:
   enabled: true                            # session-end spatial plots per NetCDF
   gif_enabled: true                        # per-variable animated GIF
@@ -379,6 +382,11 @@ there.
 - The sweep is YAML-configured from day one; the initial suite covers only
   `mapalgo ∈ {bilinear, consd, passthrough}` (3 runs), not the 864-combo full
   product.
+- **String-valued assertion fields use the `"__ignore__"` sentinel**
+  (`suite_config.IGNORE_VALUE`) to mean "don't check", and it is their
+  default. A plain `null` cannot serve — it already means "assert the value
+  is absent". Every future string assertion follows this three-way
+  convention: sentinel = skip, null = assert absent, string = assert equal.
 - Every YAML-backed config model (the full `CeceConfig` and `SuiteConfig`
   hierarchies, plus `RunManifest`) inherits `models/base.py:StrictModel`
   (`extra="forbid"`): unknown keys at any nesting level fail at load time

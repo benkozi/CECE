@@ -145,6 +145,9 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "driver_run" in metafunc.fixturenames:
         combos = metafunc.config._combos  # type: ignore[attr-defined]
         metafunc.parametrize("driver_run", combos, ids=[combo.name for combo in combos], indirect=True)
+    if "species_name" in metafunc.fixturenames:
+        species = metafunc.config._combo_suite.assertions.species or {}  # type: ignore[attr-defined]
+        metafunc.parametrize("species_name", sorted(species))
 
 
 @pytest.fixture(scope="session")
