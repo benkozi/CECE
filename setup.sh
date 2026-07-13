@@ -27,9 +27,7 @@ if docker image inspect "$IMAGE" &> /dev/null; then
 else
     if [ -f "Dockerfile" ]; then
         echo "Docker image $IMAGE not found. Building it from Dockerfile..."
-        docker buildx build --platform linux/arm64 \
-          --push \
-          -t "$IMAGE" .
+        docker buildx build -t "$IMAGE" .
     else
         echo "Error: Dockerfile not found at root directory to build $IMAGE."
         exit 1
