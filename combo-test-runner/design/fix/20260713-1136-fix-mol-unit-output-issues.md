@@ -84,14 +84,26 @@ only; it is extended:
 - **C++ regression test additions**: configure one integer and one double
   attribute; read back with `nc_inq_atttype` + the typed getters and assert
   **both the NetCDF type and the value** (the type assertion is the point).
-- **Runner-side ripple**: the pydantic mirror widens to
-  `field_attributes: dict[str, dict[str, str | int | float]] | None`
-  (today's `str`-only model rejects numeric yaml scalars outright).
+- **Runner-side ripple**: the pydantic mirror widens via a **named, reusable
+  type alias** in `models/base.py` (next to `StrictModel`, the shared model
+  infrastructure):
+
+  ```python
+  # models/base.py
+  NcAttrType = str | int | float   # a NetCDF attribute value as configured/read
+  ```
+
+  `Output.field_attributes` becomes
+  `dict[str, dict[str, NcAttrType]] | None` (today's `str`-only model
+  rejects numeric yaml scalars outright). The alias is the single place the
+  attribute value-type is defined — future users (e.g. typed
+  `test_species_attributes` expectations, stats/plot attribute handling)
+  reuse it rather than restating the union.
   Noted consequence for the separate attribute-assertion feature
   (`test_species_attributes`): found attributes are compared **stringified**,
   so numeric attributes compare via their string form (e.g. `-999`,
-  `1.5`) — formatting-sensitive; typed assertion comparison is future work
-  there, not here.
+  `1.5`) — formatting-sensitive; typed assertion comparison (reusing
+  `NcAttrType`) is future work there, not here.
 
 ### Units value for the checked-in config
 
