@@ -41,9 +41,10 @@ output:
 ```
 
 - `CeceOutputConfig` (include/cece/cece_config.hpp) gains
-  `std::map<std::string, std::map<std::string, AttributeValue>>
+  `std::map<std::string, std::map<std::string, std::string>>
   field_attributes;` parsed in `src/core/cece_config_parser.cpp` from the
-  `output.field_attributes` node (see typed values below).
+  `output.field_attributes` node (string storage is sufficient — AMIO
+  types attributes by content; see typed values below).
 - The writer's manifest loop emits the configured attributes for each field.
   **When a field has no configured attributes, it gets none** — absence over
   fabrication; a wrong default is precisely the bug being fixed, and the
@@ -62,28 +63,74 @@ output:
 attributes to strings: NetCDF attributes are typed, and a configured
 `missing_value: -999` or `scale_factor: 1.5` must land as a numeric
 attribute, not the text `"-999"`. The first cut stored and emitted strings
-only; it is extended:
+only. An earlier draft of this revision proposed a CECE-side
+`std::variant` value type with yaml-tag type inference and typed manifest
+emission — superseded by the investigation below, which found AMIO already
+does the typing.
 
-- **Value type**:
-  `using AttributeValue = std::variant<long long, double, std::string>;` —
-  `field_attributes` values carry it end to end.
-- **YAML type inference in the parser** (yaml-cpp scalars are untyped):
-  a **quoted** scalar (node tag `!`) is always a string; a plain scalar is
-  tried as integer, then double, then falls back to string. Users who want
-  the *string* `"1.5"` quote it — documented alongside the config example.
-- **Manifest emission**: string values are emitted quoted (as today);
-  integer values unquoted; doubles unquoted with round-trip formatting
-  (`%.17g`-style, so `1.5` stays `1.5` and precision survives), letting the
-  manifest's YAML types carry the intent to AMIO.
-- **Investigation point at implementation**: whether AMIO's manifest
-  handling (via helm `conf`) preserves scalar types through to typed NetCDF
-  attributes (`NC_INT`/`NC_INT64`, `NC_DOUBLE`) or stringifies them. The
-  earlier "no conf/amio changes needed" finding was proven for strings only;
-  if AMIO stringifies numerics, the fix extends into AMIO and this doc gets
-  revised.
+- **Investigation resolved** (AMIO source read + empirical driver run):
+  1. **AMIO already emits typed attributes, for every attribute name**, by
+     **sniffing the string content** (`parse_attr_value` →
+     `AttrValue{text, number, is_numeric, is_integer}`): an integral
+     literal becomes `NC_INT64`, a real becomes `NC_DOUBLE`, `_FillValue`
+     is retyped to the variable's own type per CF, everything else is
+     text. Verified end to end: a configured `scale_factor: 1.5` arrives
+     in the NetCDF as a genuine double **with today's string-only CECE
+     implementation** — the manifest's quoting is irrelevant, so the
+     CECE-side `AttributeValue` variant and yaml-tag inference above are
+     **unnecessary for typing** and can be dropped from this design.
+  2. **Quoting cannot force text**: `AttrValue` keeps no quote
+     information, so a string attribute whose content looks numeric (e.g.
+     `version: "2.0"`) would be written as `NC_DOUBLE`. Honoring quoting
+     would require helm `conf`/AMIO changes.
+  3. **The real gap is a key whitelist**: helm `conf` cannot iterate
+     sub-map keys, so AMIO reads only a hardcoded list of known CF/UGRID
+     attribute names (`units`, `long_name`, `standard_name`, `_FillValue`,
+     `coordinates`, `cell_methods`, `cf_role`, `mesh`, `location`,
+     `topology_dimension`, `scale_factor`, `add_offset`, `valid_min`,
+     `valid_max`, `valid_range` — `var_attributes.cpp`). Anything else —
+     including, ironically, CF's `missing_value` — is **silently
+     dropped** (verified empirically). The original note's conf↔amio
+     intuition was right after all, for this reason: supporting arbitrary
+     attribute names means either key iteration in `conf` or an explicit
+     attribute-name listing in the manifest schema.
+
+  **Revised scope for the typed-attributes work**: no CECE-side type
+  plumbing; instead (a) document the sniffing semantics (numeric-looking
+  values become typed numerics), (b) add the C++ type-asserting regression
+  tests below against whitelisted keys, (c) add `missing_value` support
+  (below), and (d) **a committed follow-up feature** (its own design note,
+  not this fix) properly repairs type inference: quote-aware typing so a
+  quoted scalar stays text, and lifting the key whitelist (`conf` key
+  iteration or an explicit attribute-name listing in the manifest schema).
+
+### `missing_value` support (first `extern/helm` change)
+
+The whitelist gap bites hardest on `missing_value` — a standard CF
+attribute that today is **silently dropped**. Minimal, additive support:
+
+- **Whitelist**: add `"missing_value"` to `known_var_keys` in
+  `extern/helm/libs/amio/src/drivers/common/var_attributes.cpp`. This is
+  the first change inside `extern/helm` for this workstream — deliberately
+  a one-token addition, not the full key-iteration rework.
+- **Typing**: CF expects `missing_value`, like `_FillValue`, to carry the
+  **variable's own type**. AMIO's netCDF driver special-cases only
+  `_FillValue` for that retyping; the special case is widened to cover
+  `missing_value` as well (same `switch` in
+  `netcdf_driver.cpp:nc_write_attributes`; the NCZarr fallback driver
+  shares the pattern and is updated for consistency).
+- **C++ test change (red → green, per the repo's TDD pattern)**: a new
+  case in `tests/test_standalone_writer_attributes.cpp` configures
+  `missing_value: -999` on `co` and asserts the attribute is **present**,
+  carries the **variable's type** (`NC_DOUBLE` — fields are written as
+  F64), and equals `-999.0`. Written and run before the AMIO change, it is
+  RED (the attribute is dropped — today's verified behavior); the
+  whitelist + retyping change turns it green.
 - **C++ regression test additions**: configure one integer and one double
-  attribute; read back with `nc_inq_atttype` + the typed getters and assert
-  **both the NetCDF type and the value** (the type assertion is the point).
+  attribute **using whitelisted keys** (e.g. `valid_min: -999`,
+  `scale_factor: 1.5`); read back with `nc_inq_atttype` + the typed getters
+  and assert **both the NetCDF type and the value** (the type assertion is
+  the point — value equality alone would not catch stringification).
 - **Runner-side ripple**: the pydantic mirror widens via a **named, reusable
   type alias** in `models/base.py` (next to `StrictModel`, the shared model
   infrastructure):
@@ -224,9 +271,14 @@ with a timestamped format, everything at INFO for now.)
 - `--clean` removes and rebuilds from scratch successfully; `--no-build`
   and `--no-test` each skip exactly their phase; `setup.sh` is unchanged.
 - **Typed attributes (once implemented)**: a configured integer and double
-  attribute arrive in the NetCDF with numeric types (`nc_inq_atttype`
-  confirms) and exact values; quoted yaml scalars stay strings; the runner
-  model accepts numeric attribute values.
+  attribute (whitelisted keys) arrive in the NetCDF with numeric types
+  (`nc_inq_atttype` confirms) and exact values; the runner model accepts
+  numeric attribute values via `NcAttrType`. (Quoting cannot force text —
+  known AMIO limitation; fixed in the committed type-inference follow-up
+  along with the whitelist rework.)
+- **`missing_value` (once implemented)**: the new C++ test is demonstrated
+  RED before the `extern/helm` change (attribute dropped) and green after —
+  present, variable-typed, exact value.
 - A driver config without `field_attributes` produces output with **no**
   units/long_name attributes on data fields (verifiable with the assertion's
   `units: null` mode).
