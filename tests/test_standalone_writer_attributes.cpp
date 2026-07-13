@@ -104,6 +104,25 @@ TEST_F(StandaloneWriterAttributesTest, DefaultConfigEmitsNoFabricatedAttributes)
 
     const auto long_name = ReadTextAttribute(nc_path, "co", "long_name");
     EXPECT_FALSE(long_name.has_value()) << "unconfigured field carries fabricated long_name: '" << *long_name << "'";
+
+    // coordinates is structural, not fabricated: present with its default,
+    // matching the written field shape [time, lev, lat, lon].
+    const auto coordinates = ReadTextAttribute(nc_path, "co", "coordinates");
+    ASSERT_TRUE(coordinates.has_value());
+    EXPECT_EQ(*coordinates, "time lev lat lon");
+}
+
+// A user-supplied coordinates attribute overrides the "lat lon" default.
+TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) {
+    cece::CeceOutputConfig config = BaseConfig();
+    config.field_attributes["co"]["coordinates"] = "lon lat time";
+
+    const fs::path nc_path = WriteOneStep(config);
+    ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";
+
+    const auto coordinates = ReadTextAttribute(nc_path, "co", "coordinates");
+    ASSERT_TRUE(coordinates.has_value());
+    EXPECT_EQ(*coordinates, "lon lat time");
 }
 
 // Regression lock for output.field_attributes: configured attributes arrive

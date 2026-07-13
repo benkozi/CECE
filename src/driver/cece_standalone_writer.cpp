@@ -268,16 +268,24 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 }
                 // Only configured attributes are emitted (output.field_attributes);
                 // a field without configuration gets none — never fabricated
-                // units/long_name — plus the structural coordinates attribute.
+                // units/long_name. The structural coordinates attribute defaults
+                // to the written field shape [time, lev, lat, lon] and is
+                // overridable via field_attributes.
                 m_file << "  " << name << ":\n"
                        << "    attributes:\n";
+                bool has_coordinates = false;
                 auto attrs_it = config_.field_attributes.find(name);
                 if (attrs_it != config_.field_attributes.end()) {
                     for (const auto& [attr_name, attr_value] : attrs_it->second) {
                         m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
+                        if (attr_name == "coordinates") {
+                            has_coordinates = true;
+                        }
                     }
                 }
-                m_file << "      coordinates: \"lon lat\"\n";
+                if (!has_coordinates) {
+                    m_file << "      coordinates: \"time lev lat lon\"\n";
+                }
             }
             m_file.close();
         }

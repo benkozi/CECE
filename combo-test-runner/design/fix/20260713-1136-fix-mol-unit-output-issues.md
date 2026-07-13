@@ -44,11 +44,16 @@ output:
   `std::map<std::string, std::map<std::string, std::string>>
   field_attributes;` parsed in `src/core/cece_config_parser.cpp` from the
   `output.field_attributes` node.
-- The writer's manifest loop emits the configured attributes for each field
-  (plus the structural `coordinates: "lon lat"` it already writes). **When a
-  field has no configured attributes, it gets none** — absence over
+- The writer's manifest loop emits the configured attributes for each field.
+  **When a field has no configured attributes, it gets none** — absence over
   fabrication; a wrong default is precisely the bug being fixed, and the
   units assertion's `null` semantics can verify absence.
+- **Exception: `coordinates`.** It is structural (CF auxiliary-coordinate
+  listing), so every field gets `coordinates: "time lev lat lon"` by default
+  — matching the written field shape `[time, lev, lat, lon]` — but a
+  user-supplied `coordinates` key in the field's `field_attributes` block
+  **overrides** the default (it is just another attribute; the writer skips
+  the default when the user provided one).
 - The hardcoded `units`/`long_name` lines are deleted.
 
 ### Units value for the checked-in config
