@@ -185,8 +185,9 @@ def test_assert_filenames_passes_with_expected_files(
 def test_assert_filenames_fails_on_hour_zero_stamps(
     tmp_path: Path, maccity_config: CeceConfig, maccity_n_timesteps: int
 ) -> None:
-    # The known driver bug scenario: stamps shifted to start at hour 0, so the
-    # run's final hour is missing and hour 0 is unexpected.
+    # The shape of the (since fixed) hour-0 driver stamp bug: stamps shifted
+    # to start at hour 0, so the run's final hour is missing and hour 0 is
+    # unexpected — the assertion must catch any recurrence.
     for hour in range(maccity_n_timesteps):
         (tmp_path / f"cece_20100101_{hour:02d}0000.nc").touch()
     with pytest.raises(AssertionError) as excinfo:

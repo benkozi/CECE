@@ -6,18 +6,19 @@ A standalone pytest-based test suite that exercises `cece_standalone_driver`
 across combinations of the enum-valued configuration options defined in
 `combo-test-runner/src/models/cece_config.py`. The combinations to sweep are
 declared in a YAML **suite configuration** validated by pydantic. Each
-combination is rendered to a driver YAML config, executed in an isolated
-Docker container with its stdout/stderr captured to a per-combo `.out` file,
-and passes if the driver exits 0. A later phase adds assertions that inspect
-the captured output and NetCDF output.
+combination is rendered to a driver YAML config and executed in an isolated
+Docker container with its stdout/stderr captured to a per-combo `.out` file;
+unwrapped per-combo tests then assert on the outcome (driver exit code,
+NetCDF file count and names, per-species variable attributes), and an
+analysis step computes descriptive statistics and spatial plots.
 
-## Non-goals (v1)
+## Non-goals
 
 - No standalone CLI — pytest's command line is the only entry point.
 - No dependency on existing CECE Python infrastructure; the runner lives in its
   own `uv`-managed environment under `combo-test-runner/`.
-- No validation of NetCDF output contents or captured driver output. v1's
-  pass criterion is driver exit code 0.
+- No baseline comparison of statistics yet — the stats CSVs are the artifacts
+  a future evaluation step will diff against baselines.
 
 ## Suite configuration
 

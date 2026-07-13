@@ -112,7 +112,7 @@ TEST_F(StandaloneWriterAttributesTest, DefaultConfigEmitsNoFabricatedAttributes)
     EXPECT_EQ(*coordinates, "time lev lat lon");
 }
 
-// A user-supplied coordinates attribute overrides the "lat lon" default.
+// A user-supplied coordinates attribute overrides the "time lev lat lon" default.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) {
     cece::CeceOutputConfig config = BaseConfig();
     config.field_attributes["co"]["coordinates"] = "lon lat time";

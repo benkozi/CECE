@@ -1,9 +1,12 @@
 # combo-test-runner
 
 Combinatorial pytest suite for `cece_standalone_driver`. Combinations of
-enum-valued driver options (defined in `suite.yaml`) are rendered to YAML
-configs and each is run in its own Docker container; a test passes if the
-driver exits 0. Design rationale lives in [design/design.md](design/design.md).
+enum-valued driver options (declared in a suite file, e.g.
+`src/tests/config/suite/simple-maccity-suite.yaml`) are rendered to YAML
+configs and each runs in its own Docker container, followed by per-combo
+assertions on the output (exit code, file counts/names, attributes) and a
+statistics/plotting analysis step. Design rationale lives in
+[design/design.md](design/design.md).
 
 ## Prerequisites
 
