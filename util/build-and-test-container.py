@@ -14,6 +14,7 @@ loop, nothing more.
 from __future__ import annotations
 
 import argparse
+import logging
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,9 @@ from pathlib import Path
 
 # util/build-and-test-container.py -> CECE repo root is one level up.
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("build-and-test-container")
 
 
 def parse_args() -> argparse.Namespace:
@@ -78,11 +82,12 @@ def clean() -> None:
     for name in ("build", "cmake-build-debug"):
         target = REPO_ROOT / name
         if target.exists():
-            print(f"[build-and-test] removing {target}")
+            logger.info("removing %s", target)
             shutil.rmtree(target)
 
 
 def build(image: str, mount: str) -> None:
+    logger.info("build phase: image=%s mount=%s", image, mount)
     configure = f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
     targets = "cece_standalone_driver test_standalone_writer_attributes"
     run_in_container(image, mount, f"{configure} && cmake --build {mount}/build -j --target {targets}")
@@ -91,6 +96,7 @@ def build(image: str, mount: str) -> None:
 def test(image: str, mount: str, test_filter: str | None) -> None:
     # C++ tests run in the container, where the toolchain and netcdf-c live.
     # The combo-test-runner suite is out of scope: run it separately on the host.
+    logger.info("test phase: filter=%s", test_filter or "<none>")
     gtest_command = f"{mount}/build/test_standalone_writer_attributes"
     if test_filter:
         gtest_command += f" --gtest_filter='*{test_filter}*'"  # zero matches exit 0
@@ -105,7 +111,7 @@ def main() -> int:
         build(args.image, args.mount)
     if not args.no_test:
         test(args.image, args.mount, args.test_filter)
-    print("[build-and-test] done")
+    logger.info("done")
     return 0
 
 

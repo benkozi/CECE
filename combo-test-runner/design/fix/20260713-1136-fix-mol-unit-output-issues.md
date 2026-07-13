@@ -148,8 +148,10 @@ environment, nothing more. A new **Python** script (argparse +
   first failing step aborts with a nonzero exit — the one-command
   verification loop for driver fixes like this one (`README.md` gains it).
 
-(Python per the requirement; stdlib-only — argparse/subprocess/shutil — so
-it runs with any `python3`, no uv environment needed.)
+(Python per the requirement; stdlib-only — argparse/subprocess/shutil/
+logging — so it runs with any `python3`, no uv environment needed. Script
+output goes through python `logging`, deliberately minimal: `basicConfig`
+with a timestamped format, everything at INFO for now.)
 
 ## Acceptance criteria
 
