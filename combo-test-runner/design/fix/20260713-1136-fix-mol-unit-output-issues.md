@@ -41,9 +41,9 @@ output:
 ```
 
 - `CeceOutputConfig` (include/cece/cece_config.hpp) gains
-  `std::map<std::string, std::map<std::string, std::string>>
+  `std::map<std::string, std::map<std::string, AttributeValue>>
   field_attributes;` parsed in `src/core/cece_config_parser.cpp` from the
-  `output.field_attributes` node.
+  `output.field_attributes` node (see typed values below).
 - The writer's manifest loop emits the configured attributes for each field.
   **When a field has no configured attributes, it gets none** — absence over
   fabrication; a wrong default is precisely the bug being fixed, and the
@@ -55,6 +55,43 @@ output:
   **overrides** the default (it is just another attribute; the writer skips
   the default when the user provided one).
 - The hardcoded `units`/`long_name` lines are deleted.
+
+### Typed attribute values: string, integer, double
+
+*(Revision — not yet implemented.)* Nothing restricts user-provided
+attributes to strings: NetCDF attributes are typed, and a configured
+`missing_value: -999` or `scale_factor: 1.5` must land as a numeric
+attribute, not the text `"-999"`. The first cut stored and emitted strings
+only; it is extended:
+
+- **Value type**:
+  `using AttributeValue = std::variant<long long, double, std::string>;` —
+  `field_attributes` values carry it end to end.
+- **YAML type inference in the parser** (yaml-cpp scalars are untyped):
+  a **quoted** scalar (node tag `!`) is always a string; a plain scalar is
+  tried as integer, then double, then falls back to string. Users who want
+  the *string* `"1.5"` quote it — documented alongside the config example.
+- **Manifest emission**: string values are emitted quoted (as today);
+  integer values unquoted; doubles unquoted with round-trip formatting
+  (`%.17g`-style, so `1.5` stays `1.5` and precision survives), letting the
+  manifest's YAML types carry the intent to AMIO.
+- **Investigation point at implementation**: whether AMIO's manifest
+  handling (via helm `conf`) preserves scalar types through to typed NetCDF
+  attributes (`NC_INT`/`NC_INT64`, `NC_DOUBLE`) or stringifies them. The
+  earlier "no conf/amio changes needed" finding was proven for strings only;
+  if AMIO stringifies numerics, the fix extends into AMIO and this doc gets
+  revised.
+- **C++ regression test additions**: configure one integer and one double
+  attribute; read back with `nc_inq_atttype` + the typed getters and assert
+  **both the NetCDF type and the value** (the type assertion is the point).
+- **Runner-side ripple**: the pydantic mirror widens to
+  `field_attributes: dict[str, dict[str, str | int | float]] | None`
+  (today's `str`-only model rejects numeric yaml scalars outright).
+  Noted consequence for the separate attribute-assertion feature
+  (`test_species_attributes`): found attributes are compared **stringified**,
+  so numeric attributes compare via their string form (e.g. `-999`,
+  `1.5`) — formatting-sensitive; typed assertion comparison is future work
+  there, not here.
 
 ### Units value for the checked-in config
 
@@ -174,6 +211,10 @@ with a timestamped format, everything at INFO for now.)
   for all three combos.
 - `--clean` removes and rebuilds from scratch successfully; `--no-build`
   and `--no-test` each skip exactly their phase; `setup.sh` is unchanged.
+- **Typed attributes (once implemented)**: a configured integer and double
+  attribute arrive in the NetCDF with numeric types (`nc_inq_atttype`
+  confirms) and exact values; quoted yaml scalars stay strings; the runner
+  model accepts numeric attribute values.
 - A driver config without `field_attributes` produces output with **no**
   units/long_name attributes on data fields (verifiable with the assertion's
   `units: null` mode).
