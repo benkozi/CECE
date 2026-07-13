@@ -65,13 +65,27 @@ class Sweep(StrictModel):
     species: dict[str, list[SpeciesEntrySweep]] | None = None
 
 
-class SpeciesAssertions(StrictModel):
-    """Per-species expectations about the NetCDF output. String fields use
-    IGNORE_VALUE ("__ignore__") to skip the check; null asserts absence."""
+class AttributesAssertion(StrictModel):
+    """Expected attribute dictionary for a species' variable. Per-value
+    semantics: a string asserts exact equality, null asserts absence, and
+    IGNORE_VALUE ("__ignore__") places no constraint on the value."""
 
-    units: str | None = Field(
-        IGNORE_VALUE,
-        description="Expected units attribute of the species' variable; null = no units attribute expected",
+    exact: bool = Field(
+        True,
+        description="True: attribute dictionaries match exactly (unmentioned found attributes fail); False: expected is a subset",
+    )
+    expected: dict[str, str | None] = Field(
+        default_factory=dict,
+        description="Attribute name -> expected value (string), null (must be absent), or '__ignore__' (any value)",
+    )
+
+
+class SpeciesAssertions(StrictModel):
+    """Per-species expectations about the NetCDF output."""
+
+    attributes: AttributesAssertion | None = Field(
+        None,
+        description="Full attribute-dictionary expectation for the species' variable; None = no attribute test",
     )
 
 

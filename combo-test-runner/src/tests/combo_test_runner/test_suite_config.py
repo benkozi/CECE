@@ -6,7 +6,7 @@ import yaml
 from pydantic import ValidationError
 
 from models.cece_config import CeceConfig
-from models.suite_config import IGNORE_VALUE, RunManifest, SpeciesAssertions, SuiteConfig
+from models.suite_config import AttributesAssertion, RunManifest, SpeciesAssertions, SuiteConfig
 
 
 def test_config_path_resolves_relative_to_suite_file(suite_path: Path) -> None:
@@ -79,31 +79,38 @@ def test_malformed_suite_name_rejected(tmp_path: Path, cece_config_path: Path) -
         SuiteConfig.from_yaml(suite_file)
 
 
-def test_species_assertions_default_is_ignore_sentinel() -> None:
-    assert SpeciesAssertions().units == IGNORE_VALUE  # omitted -> don't check
+def test_species_assertions_defaults() -> None:
+    assert SpeciesAssertions().attributes is None  # omitted -> no attribute test
+    assertion = AttributesAssertion()
+    assert assertion.exact is True
+    assert assertion.expected == {}
 
 
-def test_species_assertions_block_parses(tmp_path: Path, cece_config_path: Path) -> None:
+def test_species_attributes_block_parses(tmp_path: Path, cece_config_path: Path) -> None:
     suite_file = tmp_path / "species-suite.yaml"
     suite_file.write_text(
         f"name: species-suite\nconfig_path: {cece_config_path}\ntimeout_s: 5\n"
-        "assertions:\n  species:\n    co:\n      units: kg m-2 s-1\n    nox:\n      units: null\n"
+        "assertions:\n  species:\n    co:\n      attributes:\n        exact: false\n"
+        "        expected:\n          units: kg m-2 s-1\n          history: null\n"
         "sweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n"
     )
     suite = SuiteConfig.from_yaml(suite_file)
     assert suite.assertions.species is not None
-    assert suite.assertions.species["co"].units == "kg m-2 s-1"
-    assert suite.assertions.species["nox"].units is None
+    attributes = suite.assertions.species["co"].attributes
+    assert attributes is not None
+    assert attributes.exact is False
+    assert attributes.expected == {"units": "kg m-2 s-1", "history": None}
 
 
-def test_species_assertions_unknown_key_rejected(tmp_path: Path, cece_config_path: Path) -> None:
-    suite_file = tmp_path / "species-typo-suite.yaml"
+def test_old_units_schema_rejected(tmp_path: Path, cece_config_path: Path) -> None:
+    # The units-only first cut (species.<name>.units) is a removed schema.
+    suite_file = tmp_path / "old-units-suite.yaml"
     suite_file.write_text(
-        f"name: species-typo\nconfig_path: {cece_config_path}\ntimeout_s: 5\n"
-        "assertions:\n  species:\n    co:\n      unit: kg m-2 s-1\n"
+        f"name: old-units\nconfig_path: {cece_config_path}\ntimeout_s: 5\n"
+        "assertions:\n  species:\n    co:\n      units: kg m-2 s-1\n"
         "sweep:\n  cece_data:\n    streams:\n      - name: MACCITY\n        mapalgo: [consd]\n"
     )
-    with pytest.raises(ValidationError, match="unit"):
+    with pytest.raises(ValidationError, match="units"):
         SuiteConfig.from_yaml(suite_file)
 
 

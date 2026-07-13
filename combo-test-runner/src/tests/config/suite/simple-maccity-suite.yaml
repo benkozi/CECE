@@ -13,8 +13,14 @@ assertions:
   validate_filenames: true
   species:
     co:
-      # null = expect no units attribute; "__ignore__" = don't check (default).
-      units: kg m-2 s-1
+      attributes:
+        exact: true  # the full attribute dictionary must match; false = subset
+        expected:
+          # per value: string = exact match; null = must be absent;
+          # "__ignore__" = any value allowed
+          units: kg m-2 s-1
+          long_name: carbon_monoxide_emission_flux
+          coordinates: time lev lat lon
 analysis:
   compute_descriptive_stats: true  # default; false skips test_descriptive_stats
 plotting:

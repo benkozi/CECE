@@ -36,7 +36,12 @@ assertions:
   validate_filenames: true                 # false skips the filename tests
   species:                                 # per-species output expectations
     co:
-      units: kg m-2 s-1                    # null = expect no units attribute
+      attributes:                          # full attribute-dictionary match
+        exact: true                        # false = expected is a subset
+        expected:
+          units: kg m-2 s-1               # string = exact; null = absent;
+          long_name: carbon_monoxide_emission_flux  # "__ignore__" = any value
+          coordinates: time lev lat lon
 plotting:
   enabled: true                            # session-end spatial plots per NetCDF
   gif_enabled: true                        # per-variable animated GIF

@@ -83,24 +83,55 @@ def assert_nc_filenames(combo_dir: Path, config: CeceConfig) -> None:
     )
 
 
-def assert_species_units(combo_dir: Path, species: str, expected: str | None) -> None:
-    """Assert the species' variable carries the expected units attribute in
-    every NetCDF of the combo directory.
+IGNORE_VALUE = "__ignore__"  # mirrors suite_config.IGNORE_VALUE (no import cycle)
 
-    expected=None asserts the attribute is absent (an empty string counts as
-    present and fails). A missing variable fails: units cannot be verified
-    on nothing. The "__ignore__" sentinel is handled by the caller (skip).
+
+def _attribute_diffs(found: dict[str, str], expected: dict[str, str | None], exact: bool) -> list[str]:
+    diffs: list[str] = []
+    for key, expectation in expected.items():
+        if expectation == IGNORE_VALUE:
+            continue
+        if expectation is None:
+            if key in found:
+                diffs.append(f"{key}: expected absent, found {found[key]!r}")
+        elif key not in found:
+            diffs.append(f"{key}: missing (expected {expectation!r})")
+        elif found[key] != expectation:
+            diffs.append(f"{key}: expected {expectation!r}, found {found[key]!r}")
+    if exact:
+        for key in sorted(set(found) - set(expected)):
+            diffs.append(f"{key}: unexpected (value {found[key]!r})")
+    return diffs
+
+
+def assert_species_attributes(
+    combo_dir: Path, species: str, expected: dict[str, str | None], exact: bool
+) -> None:
+    """Assert the species' variable carries the expected attribute dictionary
+    in every NetCDF of the combo directory.
+
+    Attributes are read undecoded (decode_cf=False) so structural attributes
+    like coordinates and _FillValue stay visible — the assertion targets what
+    the driver actually wrote. exact=True requires the dictionaries to match
+    exactly; exact=False checks expected as a subset. Values compare as
+    strings; a missing variable fails.
     """
     failures: list[str] = []
     for nc_path in sorted(combo_dir.glob("*.nc")):
-        with xr.open_dataset(nc_path, engine="netcdf4") as ds:
-            if species not in ds.data_vars:
+        with xr.open_dataset(nc_path, engine="netcdf4", decode_cf=False, decode_coords=False) as ds:
+            if species not in ds.variables:
                 failures.append(f"{nc_path.name}: variable {species!r} not present")
                 continue
-            found = ds[species].attrs.get("units")
+            found = {str(key): str(value) for key, value in ds[species].attrs.items()}
         logger.info(
-            "testing species %r units expected=%r, found=%r (%s)", species, expected, found, nc_path.name
+            "testing species %r attributes (exact=%s) expected=%s, found=%s (%s)",
+            species,
+            exact,
+            expected,
+            found,
+            nc_path.name,
         )
-        if found != expected:
-            failures.append(f"{nc_path.name}: expected {expected!r}, found {found!r}")
-    assert not failures, f"units mismatch for species {species!r} in {combo_dir}: " + "; ".join(failures)
+        diffs = _attribute_diffs(found, expected, exact)
+        if diffs:
+            failures.append(f"{nc_path.name}: " + ", ".join(diffs))
+    assert not failures, f"attribute mismatch for species {species!r} in {combo_dir}: " + "; ".join(failures)

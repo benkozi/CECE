@@ -51,9 +51,11 @@ quiet and failing tests include the output in their report under
 Each combination produces one test per assertion/analysis step —
 `test_driver_execution` (driver exits 0), `test_nc_file_count` (expected
 NetCDF output count), `test_nc_filenames` (filenames match
-`filename_pattern` at the expected write times), `test_species_units`
-(per-species `units` attribute, one test per combo × configured species;
-`null` expects no units, `"__ignore__"` — the default — skips the check),
+`filename_pattern` at the expected write times), `test_species_attributes`
+(the species variable's full attribute dictionary, one test per combo ×
+configured species; `exact: true` — the default — requires the dictionaries
+to match exactly, `exact: false` checks the expectation as a subset; per
+value, `null` asserts absence and `"__ignore__"` allows any value),
 and `test_descriptive_stats` (per-NetCDF statistics via distributed dask,
 written to `<combo_id>-stats.csv`; all combos concatenated into
 `descriptive_stats.csv` at the output root when the session ends) — with the
