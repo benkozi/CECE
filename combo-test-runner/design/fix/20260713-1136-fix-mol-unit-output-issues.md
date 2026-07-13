@@ -74,31 +74,90 @@ assertion verifies the echo).
 - Driver-side tests: check `tests/` for any writer/manifest expectations
   pinned to the old hardcode and update alongside.
 
-### Build-and-test script
+### C++ regression test in CECE (red before the fix, green after)
 
-Third requirement, investigated: the suite itself launches `docker run` per
-combination, so it cannot run *inside* the container (docker-in-docker).
-The natural split, packaged as a new `setup.sh` mode:
+A new GTest executable, `tests/test_standalone_writer_attributes.cpp`
+(registered in `CMakeLists.txt` + ctest like the existing
+`test_driver_configuration`), exercising the real writer end to end:
+construct `CeceStandaloneWriter`, `Initialize`, `WriteTimeStep` with a small
+field, `Finalize`, then read the produced NetCDF back (netcdf-c API,
+available in the image) and assert on the variable's attributes. Two tests,
+sequenced deliberately:
+
+1. **`DefaultConfigEmitsNoFabricatedAttributes`** — written and run
+   **before** the fix, against the unchanged `CeceOutputConfig` (so it
+   compiles pre-fix): a field with no configured attributes must have **no
+   `units` attribute**. Pre-fix this is **RED** — the writer stamps
+   `mol mol-1` on everything. The fix turns it green.
+2. **`ConfiguredFieldAttributesReachTheOutput`** — lands *with* the fix (it
+   needs the new `field_attributes` member to compile): configure
+   `co -> {units: "kg m-2 s-1", long_name: ...}`, assert both arrive in the
+   NetCDF verbatim. This is the permanent regression lock for the feature.
+
+The demonstrated pre-fix failure of test 1 is part of the acceptance
+evidence, per the TDD requirement.
+
+### Build-and-test script: `util/build-and-test-container.py`
+
+`setup.sh` stays untouched — its job is setting up a development
+environment, nothing more. A new **Python** script (argparse +
+`subprocess.check_call` throughout) lives in a new `util/` directory:
 
 ```sh
-./setup.sh -t    # build the driver in the container, then run the suite
+./util/build-and-test-container.py               # build + test (the default)
+./util/build-and-test-container.py --clean       # remove build/ and cmake-build-debug/ first
+./util/build-and-test-container.py --no-build    # test only
+./util/build-and-test-container.py --no-test     # build only
+./util/build-and-test-container.py --mount /work # container-side mount point (default)
 ```
 
-1. **Build in container** (reusing `-c` machinery):
-   `docker run ... deckyfre/cece-dev cmake --build build --target
-   cece_standalone_driver -j` — same image, `/work` mount, and env as every
-   other invocation.
-2. **Test on host**: `cd combo-test-runner && uv run pytest` — the suite
-   then orchestrates its own per-combo containers as always.
+- **Host repo root is derived from the script's own location, never the
+  cwd**: `Path(__file__).resolve().parent.parent` (the script lives in
+  `util/`, directly under the repo root) — the same pattern the runner's
+  `settings.py` uses. The script works identically invoked from anywhere;
+  no assumption about executing from `util/` or the repo root, and no git
+  dependency.
+- `--mount` (default `/work`): the **container-side** path the host repo
+  root is mounted at; all in-container paths (`<mount>/build`, ctest
+  invocations) derive from it.
+- `--clean` (off by default): removes the `build/` **and**
+  `cmake-build-debug/` directories before anything else.
+- `--no-build` / `--no-test`: independently disable a phase; both phases
+  run by default.
+- **Container lifecycle**: each containerized step is its own
+  `docker run --rm` against `deckyfre/cece-dev` with
+  `-v <derived-host-root>:<mount> -w <mount>` and the standard env
+  (mirroring `setup.sh`'s invocation, without modifying it) — spun up and
+  removed per execution, no reuse.
+- **Build phase** (in container): CMake configure into `<mount>/build` when
+  needed (always after `--clean`), then build `cece_standalone_driver` and
+  the C++ test executables.
+- **Test phase**: the C++ tests (the writer-attributes test and ctest
+  peers) run **in the container**, where the toolchain and netcdf-c live;
+  the combo-test-runner suite then runs **on the host**
+  (`uv run pytest` in `combo-test-runner/`) because it orchestrates its own
+  per-combo containers — docker-in-docker is avoided by design.
+- `check_call` semantics give the script its exit contract for free: the
+  first failing step aborts with a nonzero exit — the one-command
+  verification loop for driver fixes like this one (`README.md` gains it).
 
-The script exits nonzero if either phase fails, making it the one-command
-verification loop for driver fixes like this one (`README.md` gains it).
+(Python per the requirement; stdlib-only — argparse/subprocess/shutil — so
+it runs with any `python3`, no uv environment needed.)
 
 ## Acceptance criteria
 
-- Rebuilt driver (`./setup.sh -t`): output NetCDFs carry
-  `units: kg m-2 s-1` on `co`; `test_species_units` passes for all three
-  combos; the full suite is green.
+- **Pre-fix red demonstrated**: the new C++ test
+  `DefaultConfigEmitsNoFabricatedAttributes` fails against the unfixed
+  writer (finds `mol mol-1`), establishing the TDD baseline.
+- Post-fix, `./util/build-and-test-container.py` is green end to end
+  (invoked from an arbitrary cwd, proving the `__file__`-derived root
+  works): both C++
+  writer-attribute tests pass in the container, **and** the
+  combo-test-runner suite passes on the host — output NetCDFs carry
+  `units: kg m-2 s-1` on `co` and `test_species_units` passes for all three
+  combos.
+- `--clean` removes and rebuilds from scratch successfully; `--no-build`
+  and `--no-test` each skip exactly their phase; `setup.sh` is unchanged.
 - A driver config without `field_attributes` produces output with **no**
   units/long_name attributes on data fields (verifiable with the assertion's
   `units: null` mode).
