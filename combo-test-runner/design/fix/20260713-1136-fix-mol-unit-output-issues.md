@@ -128,18 +128,21 @@ environment, nothing more. A new **Python** script (argparse +
   `cmake-build-debug/` directories before anything else.
 - `--no-build` / `--no-test`: independently disable a phase; both phases
   run by default.
-- `--test-filter STRING`: run a single C++ test or subset — the test binary
-  receives `--gtest_filter=*STRING*` (substring match; zero matches exit 0).
+- `--test-filter STRING`: run a single C++ test or subset via
+  `ctest -R STRING` (regex/substring match against registered test names).
+  Without a filter, **the entire registered CECE test suite runs** — all
+  `gtest_discover_tests` cases plus other `add_test` entries.
 - **Container lifecycle**: each containerized step is its own
   `docker run --rm` against `cece/cece-dev` with
   `-v <derived-host-root>:<mount> -w <mount>` and the standard env
   (mirroring `setup.sh`'s invocation, without modifying it) — spun up and
   removed per execution, no reuse.
 - **Build phase** (in container): CMake configure into `<mount>/build` when
-  needed (always after `--clean`), then build `cece_standalone_driver` and
-  the C++ test executables.
-- **Test phase**: the C++ tests (the writer-attributes test and ctest
-  peers) run **in the container**, where the toolchain and netcdf-c live.
+  needed (always after `--clean`), then build the default `all` target —
+  the driver and every test executable.
+- **Test phase**: the full CECE test suite runs via
+  `ctest --test-dir <mount>/build --output-on-failure` **in the container**,
+  where the toolchain and netcdf-c live (`-R` applies `--test-filter`).
   **The combo-test-runner suite is deliberately out of the script's scope**
   — it is run separately on the host (`uv run pytest` in
   `combo-test-runner/`), where it orchestrates its own per-combo

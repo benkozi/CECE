@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         "--test-filter",
         default=None,
         metavar="STRING",
-        help="run only matching C++ tests (--gtest_filter=*STRING*, substring match)",
+        help="run only matching CECE tests (ctest -R STRING); default: the full registered suite",
     )
     parser.add_argument(
         "--mount",
@@ -89,18 +89,20 @@ def clean() -> None:
 def build(image: str, mount: str) -> None:
     logger.info("build phase: image=%s mount=%s", image, mount)
     configure = f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
-    targets = "cece_standalone_driver test_standalone_writer_attributes"
-    run_in_container(image, mount, f"{configure} && cmake --build {mount}/build -j --target {targets}")
+    # Default "all" target: the driver plus every registered test executable.
+    run_in_container(image, mount, f"{configure} && cmake --build {mount}/build -j")
 
 
 def test(image: str, mount: str, test_filter: str | None) -> None:
-    # C++ tests run in the container, where the toolchain and netcdf-c live.
-    # The combo-test-runner suite is out of scope: run it separately on the host.
-    logger.info("test phase: filter=%s", test_filter or "<none>")
-    gtest_command = f"{mount}/build/test_standalone_writer_attributes"
+    # The full registered CECE test suite (gtest_discover_tests cases and other
+    # add_test entries) runs via ctest in the container, where the toolchain
+    # and netcdf-c live. The combo-test-runner suite is out of scope: run it
+    # separately on the host.
+    logger.info("test phase: filter=%s", test_filter or "<none: full suite>")
+    ctest_command = f"ctest --test-dir {mount}/build --output-on-failure"
     if test_filter:
-        gtest_command += f" --gtest_filter='*{test_filter}*'"  # zero matches exit 0
-    run_in_container(image, mount, gtest_command)
+        ctest_command += f" -R '{test_filter}'"
+    run_in_container(image, mount, ctest_command)
 
 
 def main() -> int:
