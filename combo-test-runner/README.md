@@ -37,9 +37,9 @@ suite is separate — run it with `uv run pytest` as above), from any
 directory:
 
 ```sh
-<repo-root>/util/build-and-test-container.py            # build + C++ tests
-<repo-root>/util/build-and-test-container.py --clean    # wipe build dirs first
-<repo-root>/util/build-and-test-container.py --test-filter Configured  # gtest subset
+<repo-root>/scripts/build-and-test-container.py            # build + C++ tests
+<repo-root>/scripts/build-and-test-container.py --clean    # wipe build dirs first
+<repo-root>/scripts/build-and-test-container.py --test-filter Configured  # gtest subset
 # --no-build / --no-test skip a phase; --mount and --image override defaults
 ```
 

@@ -97,26 +97,26 @@ sequenced deliberately:
 The demonstrated pre-fix failure of test 1 is part of the acceptance
 evidence, per the TDD requirement.
 
-### Build-and-test script: `util/build-and-test-container.py`
+### Build-and-test script: `scripts/build-and-test-container.py`
 
 `setup.sh` stays untouched — its job is setting up a development
 environment, nothing more. A new **Python** script (argparse +
-`subprocess.check_call` throughout) lives in a new `util/` directory:
+`subprocess.check_call` throughout) lives in the existing `scripts/` directory:
 
 ```sh
-./util/build-and-test-container.py               # build + test (the default)
-./util/build-and-test-container.py --clean       # remove build/ and cmake-build-debug/ first
-./util/build-and-test-container.py --no-build    # test only
-./util/build-and-test-container.py --no-test     # build only
-./util/build-and-test-container.py --mount /work # container-side mount point (default)
-./util/build-and-test-container.py --image cece/cece-dev  # container image (default)
+./scripts/build-and-test-container.py               # build + test (the default)
+./scripts/build-and-test-container.py --clean       # remove build/ and cmake-build-debug/ first
+./scripts/build-and-test-container.py --no-build    # test only
+./scripts/build-and-test-container.py --no-test     # build only
+./scripts/build-and-test-container.py --mount /work # container-side mount point (default)
+./scripts/build-and-test-container.py --image cece/cece-dev  # container image (default)
 ```
 
 - **Host repo root is derived from the script's own location, never the
   cwd**: `Path(__file__).resolve().parent.parent` (the script lives in
-  `util/`, directly under the repo root) — the same pattern the runner's
+  `scripts/`, directly under the repo root) — the same pattern the runner's
   `settings.py` uses. The script works identically invoked from anywhere;
-  no assumption about executing from `util/` or the repo root, and no git
+  no assumption about executing from `scripts/` or the repo root, and no git
   dependency.
 - `--mount` (default `/work`): the **container-side** path the host repo
   root is mounted at; all in-container paths (`<mount>/build`, ctest
@@ -158,7 +158,7 @@ with a timestamped format, everything at INFO for now.)
 - **Pre-fix red demonstrated**: the new C++ test
   `DefaultConfigEmitsNoFabricatedAttributes` fails against the unfixed
   writer (finds `mol mol-1`), establishing the TDD baseline.
-- Post-fix, `./util/build-and-test-container.py` is green (invoked from an
+- Post-fix, `./scripts/build-and-test-container.py` is green (invoked from an
   arbitrary cwd, proving the `__file__`-derived root works): both C++
   writer-attribute tests pass in the container. **Separately**,
   `uv run pytest` in `combo-test-runner/` passes on the host — output

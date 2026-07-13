@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# util/build-and-test-container.py -> CECE repo root is one level up.
+# scripts/build-and-test-container.py -> CECE repo root is one level up.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
