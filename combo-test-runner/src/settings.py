@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CECE_")
 
-    docker_image: str = "deckyfre/cece-dev"
+    docker_image: str = "cece/cece-dev"
     root: Path = _REPO_ROOT
     driver_path: str = "./build/cece_standalone_driver"
     run_timeout_s: int = 300

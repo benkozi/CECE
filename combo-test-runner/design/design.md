@@ -199,7 +199,7 @@ session and can never pre-exist.
 ## Execution model
 
 Each combination runs independently in a fresh container using the image built
-by `setup.sh` (`deckyfre/cece-dev`, assumed already built — the runner never
+by `setup.sh` (`cece/cece-dev`, assumed already built — the runner never
 builds it). One driver invocation per container, container removed on exit
 (`--rm`):
 
@@ -209,7 +209,7 @@ docker run --rm \
     -w /work \                         # working directory inside the container
     -e OMPI_ALLOW_RUN_AS_ROOT=1 \
     -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
-    deckyfre/cece-dev \
+    cece/cece-dev \
     ./build/cece_standalone_driver <output-root>/<combo-name>/<combo-name>.yaml
 ```
 
@@ -278,7 +278,7 @@ beyond the test runner.
 
 | Setting          | Env var               | Default              |
 |------------------|-----------------------|----------------------|
-| `docker_image`   | `CECE_DOCKER_IMAGE`   | `deckyfre/cece-dev`  |
+| `docker_image`   | `CECE_DOCKER_IMAGE`   | `cece/cece-dev`  |
 | `root`           | `CECE_ROOT`           | repo root (derived)  |
 | `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
 | `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | 300 — caps the suite's `timeout_s` when smaller |
@@ -336,7 +336,7 @@ imported from the CECE repo outside `combo-test-runner/`.
 A `combo-test-runner/README.md` ships with v1 — deliberately simple at this
 stage: enough for a user to set up and run the suite. It covers:
 
-- **Prerequisites**: Docker with the `deckyfre/cece-dev` image available
+- **Prerequisites**: Docker with the `cece/cece-dev` image available
   (built via `./setup.sh` at the repo root), the driver built at
   `./build/cece_standalone_driver`, and `uv` installed.
 - **Setup**: `cd combo-test-runner && uv sync`.

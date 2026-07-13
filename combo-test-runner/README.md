@@ -7,7 +7,7 @@ driver exits 0. Design rationale lives in [design/design.md](design/design.md).
 
 ## Prerequisites
 
-- Docker, with the `deckyfre/cece-dev` image available locally (build it via
+- Docker, with the `cece/cece-dev` image available locally (build it via
   `./setup.sh` at the repo root).
 - The driver built at `./build/cece_standalone_driver` (repo root).
 - [uv](https://docs.astral.sh/uv/) installed.
@@ -117,7 +117,7 @@ statistics (`count`, `sum`, `mean`, `std`, `min`, `max`, `median`).
 
 | Env var                         | Meaning                                        | Default                          |
 |---------------------------------|------------------------------------------------|----------------------------------|
-| `CECE_DOCKER_IMAGE`             | container image                                | `deckyfre/cece-dev`              |
+| `CECE_DOCKER_IMAGE`             | container image                                | `cece/cece-dev`              |
 | `CECE_ROOT`                     | host repo root mounted at /work                | derived from this checkout       |
 | `CECE_DRIVER_PATH`              | driver path inside the container               | `./build/cece_standalone_driver` |
 | `CECE_RUN_TIMEOUT_S`            | caps the suite `timeout_s` when smaller        | `300`                            |
