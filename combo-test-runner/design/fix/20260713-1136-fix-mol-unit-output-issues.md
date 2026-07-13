@@ -109,6 +109,7 @@ environment, nothing more. A new **Python** script (argparse +
 ./util/build-and-test-container.py --no-build    # test only
 ./util/build-and-test-container.py --no-test     # build only
 ./util/build-and-test-container.py --mount /work # container-side mount point (default)
+./util/build-and-test-container.py --image deckyfre/cece-dev  # container image (default)
 ```
 
 - **Host repo root is derived from the script's own location, never the
@@ -120,6 +121,9 @@ environment, nothing more. A new **Python** script (argparse +
 - `--mount` (default `/work`): the **container-side** path the host repo
   root is mounted at; all in-container paths (`<mount>/build`, ctest
   invocations) derive from it.
+- `--image` (default `deckyfre/cece-dev`): the container image — the
+  default matches the image `setup.sh` builds/uses, so the script runs in
+  the same environment as interactive development without configuration.
 - `--clean` (off by default): removes the `build/` **and**
   `cmake-build-debug/` directories before anything else.
 - `--no-build` / `--no-test`: independently disable a phase; both phases
