@@ -189,7 +189,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
     }
 
     if (rank != 0) {
-        return 0; // Standalone writing is strictly serial and executed on Rank 0 only to avoid conflicts
+        return 0;  // Standalone writing is strictly serial and executed on Rank 0 only to avoid conflicts
     }
 
     CECE_LOG_INFO("[CECE] Writing time step " + std::to_string(step) + " (t=" + std::to_string(time_seconds) + ") via AMIO");
@@ -455,6 +455,9 @@ void cece_core_write_step(void* data_ptr, double time_seconds, int step_index, i
     auto* d = static_cast<cece::CeceInternalData*>(data_ptr);
 
     if (!d->standalone_mode || !g_standalone_writer) return;
+
+    // Skip the initial step (hour 0 / time = 0) since no integration/advancement has occurred
+    if (step_index == 0 || time_seconds <= 0.0) return;
 
     const int freq = d->config.output_config.frequency_steps;
     if (step_index % freq != 0) return;
