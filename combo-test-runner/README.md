@@ -50,11 +50,6 @@ driver running once per combination. If the driver run fails, its
 `test_driver_execution` fails and that combination's assertion tests are
 skipped with a `driver run failed: ...` reason.
 
-**Known driver bug — expected failures**: the driver currently emits
-malformed units for `co` (`mol mol-1`), so the `test_species_units` tests
-fail by design until the driver is fixed. Set `units: "__ignore__"` for the
-species (or drop the `species` block) if you need a green run.
-
 Options:
 
 - `--suite-config=PATH` — suite YAML defining the suite's unique `name`
