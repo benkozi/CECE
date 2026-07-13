@@ -8,3 +8,6 @@
 
 # requirements
 
+- fix the driver bug mentioned in combo-test-runner/design/feat/20260713-1049-expected-output-units.md
+- the fix likely involves some communication between extern/helm/libs/conf and extern/helm/libs/amio
+- look into how best to add a script to build CECE and run the test suite in the container in setup.sh
