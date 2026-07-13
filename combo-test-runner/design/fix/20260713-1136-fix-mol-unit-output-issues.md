@@ -59,7 +59,13 @@ output:
 
 ### Typed attribute values: string, integer, double
 
-*(Revision — not yet implemented.)* Nothing restricts user-provided
+*(Status: implemented, verified, then **backed out** — the AMIO/helm and
+runner changes were judged too fundamental for this fix's scope. The
+investigation findings below remain valid and are the basis for the
+follow-up. The `missing_value` whitelist exclusion is tracked as a
+**follow-up issue** together with the type-inference work.)*
+
+Nothing restricts user-provided
 attributes to strings: NetCDF attributes are typed, and a configured
 `missing_value: -999` or `scale_factor: 1.5` must land as a numeric
 attribute, not the text `"-999"`. The first cut stored and emitted strings
@@ -104,7 +110,13 @@ does the typing.
   quoted scalar stays text, and lifting the key whitelist (`conf` key
   iteration or an explicit attribute-name listing in the manifest schema).
 
-### `missing_value` support (first `extern/helm` change)
+### `missing_value` support (backed out; follow-up issue)
+
+*(Status: implemented red→green as designed — whitelist addition plus
+variable-type retyping in both drivers, all 289 CECE tests green — then
+**backed out** with the typed-attributes work. The design below stands as
+the reference for the follow-up issue tracking the `missing_value`
+exclusion.)*
 
 The whitelist gap bites hardest on `missing_value` — a standard CF
 attribute that today is **silently dropped**. Minimal, additive support:
@@ -270,15 +282,13 @@ with a timestamped format, everything at INFO for now.)
   for all three combos.
 - `--clean` removes and rebuilds from scratch successfully; `--no-build`
   and `--no-test` each skip exactly their phase; `setup.sh` is unchanged.
-- **Typed attributes (once implemented)**: a configured integer and double
-  attribute (whitelisted keys) arrive in the NetCDF with numeric types
-  (`nc_inq_atttype` confirms) and exact values; the runner model accepts
-  numeric attribute values via `NcAttrType`. (Quoting cannot force text —
-  known AMIO limitation; fixed in the committed type-inference follow-up
-  along with the whitelist rework.)
-- **`missing_value` (once implemented)**: the new C++ test is demonstrated
-  RED before the `extern/helm` change (attribute dropped) and green after —
-  present, variable-typed, exact value.
+- **Typed attributes / `missing_value`: backed out — follow-up issue.**
+  Both were implemented and verified (typed sniffing locked by
+  type-asserting tests; `missing_value` red→green with 289/289 CECE tests
+  green) before being reverted as out of scope for this fix. The follow-up
+  issue covers: the `missing_value` whitelist exclusion, quote-aware type
+  inference, lifting the key whitelist, and the runner's `NcAttrType`
+  widening.
 - A driver config without `field_attributes` produces output with **no**
   units/long_name attributes on data fields (verifiable with the assertion's
   `units: null` mode).
