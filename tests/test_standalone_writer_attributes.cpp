@@ -1,11 +1,4 @@
 // Regression tests for output-field attributes in the standalone writer.
-//
-// TDD baseline for the fix designed in
-// combo-test-runner/design/fix/20260713-1136-fix-mol-unit-output-issues.md:
-// the writer used to stamp every output field with fabricated attributes
-// (units: "mol mol-1", long_name: "mole_fraction_of_<name>_in_air"). A field
-// with no configured attributes must carry none, and configured attributes
-// must arrive in the NetCDF verbatim.
 
 #include <gtest/gtest.h>
 #include <mpi.h>
