@@ -10,12 +10,13 @@
 #   ./setup.sh              # Interactive shell (no ESMF)
 #   ./setup.sh -c "command" # Execute command and exit
 #   ./setup.sh --with-esmf  # Build image with ESMF/NUOPC (only applies when image is built)
+#   ./setup.sh --no-cache   # Rebuild the image even if it exists (docker build without cache)
 #
 # Flags may be given in any order.
 
 set -e
 
-USAGE='Usage: ./setup.sh [--with-esmf] [-c "command"]'
+USAGE='Usage: ./setup.sh [--with-esmf] [--no-cache] [-c "command"]'
 
 # Define the container image name
 IMAGE="cece/cece-dev"
@@ -25,11 +26,16 @@ IMAGE="cece/cece-dev"
 BUILD_ESMF=OFF
 # Command to run in the container; empty means interactive shell
 COMMAND=
+# Force a rebuild of the image, bypassing the docker build cache
+NO_CACHE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --with-esmf)
             BUILD_ESMF=ON
+            ;;
+        --no-cache)
+            NO_CACHE=1
             ;;
         -c)
             if [ -z "$2" ]; then
@@ -56,12 +62,17 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # Check if the development image already exists locally, if not build it
-if docker image inspect "$IMAGE" &> /dev/null; then
+# (--no-cache forces a rebuild regardless)
+if [ "$NO_CACHE" = "0" ] && docker image inspect "$IMAGE" &> /dev/null; then
     echo "Docker image $IMAGE already exists locally."
 else
     if [ -f "Dockerfile" ]; then
-        echo "Docker image $IMAGE not found. Building it from Dockerfile (BUILD_ESMF=$BUILD_ESMF)..."
-        docker buildx build --build-arg BUILD_ESMF="$BUILD_ESMF" -t "$IMAGE" .
+        BUILD_OPTS=""
+        if [ "$NO_CACHE" = "1" ]; then
+            BUILD_OPTS="--no-cache"
+        fi
+        echo "Building Docker image $IMAGE from Dockerfile (BUILD_ESMF=$BUILD_ESMF)..."
+        docker buildx build $BUILD_OPTS --build-arg BUILD_ESMF="$BUILD_ESMF" -t "$IMAGE" .
     else
         echo "Error: Dockerfile not found at root directory to build $IMAGE."
         exit 1
