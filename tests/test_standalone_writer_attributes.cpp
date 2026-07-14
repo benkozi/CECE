@@ -60,8 +60,7 @@ class StandaloneWriterAttributesTest : public ::testing::Test {
     }
 
     // The variable's attribute value, or nullopt when the attribute is absent.
-    static std::optional<std::string> ReadTextAttribute(const fs::path& nc_path, const std::string& variable,
-                                                        const std::string& attribute) {
+    static std::optional<std::string> ReadTextAttribute(const fs::path& nc_path, const std::string& variable, const std::string& attribute) {
         int nc_id = -1;
         EXPECT_EQ(nc_open(nc_path.c_str(), NC_NOWRITE, &nc_id), NC_NOERR) << "cannot open " << nc_path;
         int var_id = -1;

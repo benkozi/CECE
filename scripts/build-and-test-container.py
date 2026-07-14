@@ -88,7 +88,9 @@ def clean() -> None:
 
 def build(image: str, mount: str) -> None:
     logger.info("build phase: image=%s mount=%s", image, mount)
-    configure = f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
+    configure = (
+        f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
+    )
     # Default "all" target: the driver plus every registered test executable.
     run_in_container(image, mount, f"{configure} && cmake --build {mount}/build -j")
 
