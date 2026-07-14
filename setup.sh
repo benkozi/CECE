@@ -10,19 +10,44 @@
 #   ./setup.sh              # Interactive shell (no ESMF)
 #   ./setup.sh -c "command" # Execute command and exit
 #   ./setup.sh --esmf       # Build image with ESMF/NUOPC (only applies when image is built)
+#
+# Flags may be given in any order.
 
 set -e
+
+USAGE='Usage: ./setup.sh [--esmf] [-c "command"]'
 
 # Define the container image name
 IMAGE="cece/cece-dev"
 
 # ESMF is not built by default; pass --esmf to include it in the image build
-# (OFF disables the ESMF build and leaves ESMFMKFILE unpopulated)
+# (OFF disables the ESMF build)
 BUILD_ESMF=OFF
-if [ "$1" = "--esmf" ]; then
-    BUILD_ESMF=ON
+# Command to run in the container; empty means interactive shell
+COMMAND=
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --esmf)
+            BUILD_ESMF=ON
+            ;;
+        -c)
+            if [ -z "$2" ]; then
+                echo "Error: -c requires a command argument." >&2
+                echo "$USAGE" >&2
+                exit 1
+            fi
+            COMMAND="$2"
+            shift
+            ;;
+        *)
+            echo "Error: unrecognized argument: $1" >&2
+            echo "$USAGE" >&2
+            exit 1
+            ;;
+    esac
     shift
-fi
+done
 
 # Ensure docker is installed
 if ! command -v docker &> /dev/null; then
@@ -46,7 +71,7 @@ fi
 echo "Launching CECE Development Container using $IMAGE..."
 
 # Check if command mode or interactive mode
-if [ "$1" = "-c" ] && [ -n "$2" ]; then
+if [ -n "$COMMAND" ]; then
     # Command mode: execute command and exit
     docker run --rm \
         -v "$(pwd):/work" \
@@ -54,7 +79,7 @@ if [ "$1" = "-c" ] && [ -n "$2" ]; then
         -e OMPI_ALLOW_RUN_AS_ROOT=1 \
         -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
         "$IMAGE" \
-        /bin/bash -c "$2"
+        /bin/bash -c "$COMMAND"
 else
     # Interactive mode: drop into bash shell
     docker run -it --rm \
