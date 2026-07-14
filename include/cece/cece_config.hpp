@@ -8,6 +8,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -151,6 +152,10 @@ struct CeceOutputConfig {
     bool include_diagnostics = false;                                             ///< Also write diagnostic fields when true.
     bool enabled = false;                                                         ///< True when an output block is present in the YAML.
     int amio_worker_threads = -1;  ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).
+    /// Per-field NetCDF attributes (field -> attribute -> value) from the YAML
+    /// output.field_attributes node. Fields without configured attributes get
+    /// none — the writer never fabricates units/long_name.
+    std::map<std::string, std::map<std::string, std::string>> field_attributes;
 };
 
 /**

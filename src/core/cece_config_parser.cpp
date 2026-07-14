@@ -394,6 +394,14 @@ CeceConfig ParseConfig(const std::string& filename) {
                 config.output_config.fields.push_back(f.as<std::string>());
             }
         }
+        if (out_node["field_attributes"]) {
+            for (auto const& field_entry : out_node["field_attributes"]) {
+                auto field_name = field_entry.first.as<std::string>();
+                for (auto const& attr_entry : field_entry.second) {
+                    config.output_config.field_attributes[field_name][attr_entry.first.as<std::string>()] = attr_entry.second.as<std::string>();
+                }
+            }
+        }
         if (out_node["diagnostics"]) {
             config.output_config.include_diagnostics = out_node["diagnostics"].as<bool>();
         }

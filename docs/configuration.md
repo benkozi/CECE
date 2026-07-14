@@ -50,6 +50,7 @@ The `driver` section configures the execution timing and control parameters for 
 | `end_time` | String | Simulation end time in ISO 8601 format |
 | `timestep_seconds` | Integer | Base time step duration in seconds. All component refresh intervals must be integer multiples of this value. |
 | `stacking_refresh_interval_seconds` | Integer | (Optional) Stacking engine execution interval in seconds. Must be a positive multiple of `timestep_seconds`. Default: `0` (use `timestep_seconds`). |
+| `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads. Must be ≥ 1; invalid values warn and default to 1. Default: `1`. Used as the fallback when `output.amio_worker_threads` is not set. |
 
 **Example:**
 ```yaml
@@ -590,6 +591,37 @@ Configuration for NetCDF output file generation with emission fields and diagnos
 | `filename_pattern` | String | Filename template with time substitution |
 | `frequency_steps` | Integer | Output frequency in timesteps |
 | `fields` | List | List of field names to write to output |
+| `field_attributes` | Map | Per-field NetCDF attributes (field → attribute → value) |
+| `diagnostics` | Boolean | Also write diagnostic fields (default: false) |
+| `amio_worker_threads` | Integer | (Optional) Number of AMIO background I/O worker threads for output. Must be ≥ 1; invalid values warn and default to 1. Falls back to `driver.amio_worker_threads` when not set. |
+
+### Field Attributes
+
+`field_attributes` maps a field name to a set of NetCDF attributes written on
+that variable in the output file.
+
+```yaml
+output:
+  field_attributes:
+    co:
+      units: "kg m-2 s-1"
+      long_name: "carbon_monoxide_emission_flux"
+    isoprene:
+      units: "kg m-2 s-1"
+      long_name: "isoprene_emission_flux"
+      coordinates: "lat lon"
+```
+
+Semantics:
+
+- Only configured attributes are emitted. A field without a `field_attributes`
+  entry gets no attributes — the writer never fabricates `units` or
+  `long_name`.
+- The `coordinates` attribute is the one exception: it defaults to
+  the written field shape (`"time lev lat lon"`) for every field, and can be
+  overridden per field via `field_attributes`.
+- The coordinate variables `lon`, `lat`, `lev`, and `time` carry fixed
+  built-in attributes and are not affected by `field_attributes`.
 
 ### Filename Pattern Substitutions
 
@@ -614,4 +646,11 @@ output:
     - "nox"
     - "isoprene"
     - "sea_salt_total"
+  field_attributes:
+    co:
+      units: "kg m-2 s-1"
+      long_name: "carbon_monoxide_emission_flux"
+    nox:
+      units: "kg m-2 s-1"
+      long_name: "nitrogen_oxides_emission_flux"
 ```
