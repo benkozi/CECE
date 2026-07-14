@@ -112,7 +112,7 @@ RUN if [ "$BUILD_ESMF" = "ON" ]; then \
     fi
 
 # Set standard environment variables
-# ESMFMKFILE is always set even if ESMF is not build
+# ESMFMKFILE is always set even if ESMF is not built
 ENV ESMFMKFILE=/usr/local/lib/libO/Linux.gfortran.32.openmpi.default/esmf.mk
 ENV OMPI_ALLOW_RUN_AS_ROOT=1
 ENV OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
