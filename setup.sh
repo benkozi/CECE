@@ -9,18 +9,18 @@
 # Usage:
 #   ./setup.sh              # Interactive shell (no ESMF)
 #   ./setup.sh -c "command" # Execute command and exit
-#   ./setup.sh --esmf       # Build image with ESMF/NUOPC (only applies when image is built)
+#   ./setup.sh --with-esmf  # Build image with ESMF/NUOPC (only applies when image is built)
 #
 # Flags may be given in any order.
 
 set -e
 
-USAGE='Usage: ./setup.sh [--esmf] [-c "command"]'
+USAGE='Usage: ./setup.sh [--with-esmf] [-c "command"]'
 
 # Define the container image name
 IMAGE="cece/cece-dev"
 
-# ESMF is not built by default; pass --esmf to include it in the image build
+# ESMF is not built by default; pass --with-esmf to include it in the image build
 # (OFF disables the ESMF build)
 BUILD_ESMF=OFF
 # Command to run in the container; empty means interactive shell
@@ -28,7 +28,7 @@ COMMAND=
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --esmf)
+        --with-esmf)
             BUILD_ESMF=ON
             ;;
         -c)
