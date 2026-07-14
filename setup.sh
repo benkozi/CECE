@@ -17,10 +17,10 @@ set -e
 IMAGE="cece/cece-dev"
 
 # ESMF is not built by default; pass --esmf to include it in the image build
-# (empty disables the ESMF build and leaves ESMFMKFILE unpopulated)
-BUILD_ESMF=
+# (OFF disables the ESMF build and leaves ESMFMKFILE unpopulated)
+BUILD_ESMF=OFF
 if [ "$1" = "--esmf" ]; then
-    BUILD_ESMF=1
+    BUILD_ESMF=ON
     shift
 fi
 
@@ -35,7 +35,7 @@ if docker image inspect "$IMAGE" &> /dev/null; then
     echo "Docker image $IMAGE already exists locally."
 else
     if [ -f "Dockerfile" ]; then
-        echo "Docker image $IMAGE not found. Building it from Dockerfile (BUILD_ESMF='$BUILD_ESMF')..."
+        echo "Docker image $IMAGE not found. Building it from Dockerfile (BUILD_ESMF=$BUILD_ESMF)..."
         docker buildx build --build-arg BUILD_ESMF="$BUILD_ESMF" -t "$IMAGE" .
     else
         echo "Error: Dockerfile not found at root directory to build $IMAGE."
