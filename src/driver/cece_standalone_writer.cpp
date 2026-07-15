@@ -236,20 +236,11 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "staging_timeout_ms: 10000\n"
                    << "global_attributes:\n"
                    << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
-                   << "  Conventions: \"CF-1.8\"\n"
-                   << "variable_names: [";
+                   << "  Conventions: \"CF-1.8\"\n";
             // The collection is seeded with the coordinate variables, so it
-            // renders the whole variable side of the manifest; only time's
-            // runtime-derived units need patching in first.
-            config_.fields.Find("time")->attributes["units"] = time_units;
-            bool first_name = true;
-            for (const auto& field : config_.fields) {
-                m_file << (first_name ? "\"" : ", \"") << field.name << "\"";
-                first_name = false;
-            }
-            m_file << "]\n"
-                   << "variables:\n";
-            config_.fields.UpdateIOManifest(m_file);
+            // renders the whole variable side of the manifest (patching in
+            // time's runtime-derived units).
+            config_.fields.UpdateIOManifest(m_file, time_units);
             m_file.close();
         }
 

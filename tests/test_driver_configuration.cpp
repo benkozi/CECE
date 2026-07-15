@@ -535,39 +535,47 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
     EXPECT_FALSE(collection.Contains("absent"));
     EXPECT_EQ(collection.Find("absent"), nullptr);
 
-    // Find gives mutable access — the writer patches time's runtime units
-    // through it.
-    collection.Find("time")->attributes["units"] = "seconds since 2001-06-01 00:00:00";
-
-    // Collection emission is every field's block in declaration order:
-    // seeded coordinate variables (no coordinates attribute) first, then
-    // data fields with override-or-default coordinates last.
+    // The two-argument overload renders the whole variable side: it patches
+    // time's runtime-derived units, then emits the variable_names list and
+    // every field's block in declaration order (seeded coordinate variables
+    // without a coordinates attribute first, then data fields with
+    // override-or-default coordinates last).
     std::ostringstream manifest;
-    collection.UpdateIOManifest(manifest);
+    collection.UpdateIOManifest(manifest, "seconds since 2001-06-01 00:00:00");
+    const std::string expected_blocks =
+        "  lon:\n"
+        "    attributes:\n"
+        "      long_name: \"longitude\"\n"
+        "      units: \"degrees_east\"\n"
+        "  lat:\n"
+        "    attributes:\n"
+        "      long_name: \"latitude\"\n"
+        "      units: \"degrees_north\"\n"
+        "  lev:\n"
+        "    attributes:\n"
+        "      long_name: \"vertical level\"\n"
+        "      units: \"level\"\n"
+        "  time:\n"
+        "    attributes:\n"
+        "      long_name: \"time\"\n"
+        "      units: \"seconds since 2001-06-01 00:00:00\"\n"
+        "  co:\n"
+        "    attributes:\n"
+        "      units: \"kg m-2 s-1\"\n"
+        "      coordinates: \"time lev lat lon\"\n"
+        "  nox:\n"
+        "    attributes:\n"
+        "      coordinates: \"time lev lat lon\"\n";
     EXPECT_EQ(manifest.str(),
-              "  lon:\n"
-              "    attributes:\n"
-              "      long_name: \"longitude\"\n"
-              "      units: \"degrees_east\"\n"
-              "  lat:\n"
-              "    attributes:\n"
-              "      long_name: \"latitude\"\n"
-              "      units: \"degrees_north\"\n"
-              "  lev:\n"
-              "    attributes:\n"
-              "      long_name: \"vertical level\"\n"
-              "      units: \"level\"\n"
-              "  time:\n"
-              "    attributes:\n"
-              "      long_name: \"time\"\n"
-              "      units: \"seconds since 2001-06-01 00:00:00\"\n"
-              "  co:\n"
-              "    attributes:\n"
-              "      units: \"kg m-2 s-1\"\n"
-              "      coordinates: \"time lev lat lon\"\n"
-              "  nox:\n"
-              "    attributes:\n"
-              "      coordinates: \"time lev lat lon\"\n");
+              "variable_names: [\"lon\", \"lat\", \"lev\", \"time\", \"co\", \"nox\"]\n"
+              "variables:\n" +
+                  expected_blocks);
+
+    // The one-argument overload remains the composition primitive: blocks
+    // only, no patching (time keeps the units set above).
+    std::ostringstream blocks_only;
+    collection.UpdateIOManifest(blocks_only);
+    EXPECT_EQ(blocks_only.str(), expected_blocks);
 }
 
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {

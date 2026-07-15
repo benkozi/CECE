@@ -265,6 +265,22 @@ class CeceOutputFieldCollection {
         }
     }
 
+    /// Renders the whole variable side of an AMIO manifest: patches time's
+    /// runtime-derived units, then emits the variable_names list followed
+    /// by every field's variable block.
+    void UpdateIOManifest(std::ostream& manifest, std::string_view time_units) {
+        Find("time")->attributes["units"] = std::string(time_units);
+        manifest << "variable_names: [";
+        bool first_name = true;
+        for (const auto& field : fields_) {
+            manifest << (first_name ? "\"" : ", \"") << field.name << "\"";
+            first_name = false;
+        }
+        manifest << "]\n"
+                 << "variables:\n";
+        UpdateIOManifest(manifest);
+    }
+
     // std-style surface so the collection drops in where the storage vector
     // was used directly (range-for, parser push_back, test indexing).
     auto begin() const { return fields_.begin(); }
