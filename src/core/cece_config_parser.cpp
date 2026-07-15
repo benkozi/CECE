@@ -492,6 +492,11 @@ CeceConfig ParseConfig(const std::string& filename) {
         }
     }
 
+    // The output field collection is fully initialized here: seed the time
+    // coordinate's units from the run start (the driver section parses
+    // after the output section, so this cannot happen inside it).
+    config.output_config.fields.SetTimeUnits(config.driver_config.start_time);
+
     return config;
 }
 

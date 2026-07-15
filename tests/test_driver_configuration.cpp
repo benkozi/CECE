@@ -535,13 +535,14 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
     EXPECT_FALSE(collection.Contains("absent"));
     EXPECT_EQ(collection.Find("absent"), nullptr);
 
-    // The two-argument overload renders the whole variable side: it patches
-    // time's runtime-derived units, then emits the variable_names list and
-    // every field's block in declaration order (seeded coordinate variables
-    // without a coordinates attribute first, then data fields with
-    // override-or-default coordinates last).
+    // Time's units are set at initialization (SetTimeUnits turns the
+    // ISO-8601 T into a space); rendering is const and emits the
+    // variable_names list plus every field's block in declaration order
+    // (seeded coordinate variables without a coordinates attribute first,
+    // then data fields with override-or-default coordinates last).
+    collection.SetTimeUnits("2001-06-01T00:00:00");
     std::ostringstream manifest;
-    collection.UpdateIOManifest(manifest, "seconds since 2001-06-01 00:00:00");
+    collection.UpdateIOManifest(manifest);
     const std::string expected_blocks =
         "  lon:\n"
         "    attributes:\n"
@@ -570,12 +571,6 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
               "variable_names: [\"lon\", \"lat\", \"lev\", \"time\", \"co\", \"nox\"]\n"
               "variables:\n" +
                   expected_blocks);
-
-    // The one-argument overload remains the composition primitive: blocks
-    // only, no patching (time keeps the units set above).
-    std::ostringstream blocks_only;
-    collection.UpdateIOManifest(blocks_only);
-    EXPECT_EQ(blocks_only.str(), expected_blocks);
 }
 
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {

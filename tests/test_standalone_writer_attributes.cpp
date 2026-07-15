@@ -78,6 +78,9 @@ class StandaloneWriterAttributesTest : public ::testing::Test {
         config.filename_pattern = "attr_test_{HH}{mm}{ss}.nc";
         config.frequency_steps = 1;
         config.fields = {{"co", {}}};
+        // Configs built by hand (no ParseConfig) set time's units themselves,
+        // matching the start time passed to Initialize in WriteOneStep.
+        config.fields.SetTimeUnits("2010-01-01T00:00:00");
         return config;
     }
 

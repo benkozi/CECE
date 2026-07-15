@@ -211,12 +211,6 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 return -1;
             }
 
-            std::string time_units = "seconds since " + start_time_iso8601_;
-            size_t t_pos = time_units.find('T');
-            if (t_pos != std::string::npos) {
-                time_units[t_pos] = ' ';
-            }
-
             int write_threads = config_.amio_worker_threads;
             if (write_threads < 1) {
                 write_threads = 1;
@@ -237,10 +231,10 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "global_attributes:\n"
                    << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
                    << "  Conventions: \"CF-1.8\"\n";
-            // The collection is seeded with the coordinate variables, so it
-            // renders the whole variable side of the manifest (patching in
-            // time's runtime-derived units).
-            config_.fields.UpdateIOManifest(m_file, time_units);
+            // The collection is seeded with the coordinate variables and
+            // carries time's units from config initialization (SetTimeUnits),
+            // so it renders the whole variable side of the manifest.
+            config_.fields.UpdateIOManifest(m_file);
             m_file.close();
         }
 

@@ -257,19 +257,22 @@ class CeceOutputFieldCollection {
         return Find(field_name) != nullptr;
     }
 
-    /// Appends every contained field's variable block to an AMIO manifest
-    /// stream, in declaration order.
-    void UpdateIOManifest(std::ostream& manifest) const {
-        for (const auto& field : fields_) {
-            field.UpdateIOManifest(manifest);
+    /// Sets the seeded time field's units from the run start time
+    /// ("seconds since YYYY-MM-DD hh:mm:ss"). Called where the collection
+    /// is initialized (ParseConfig uses driver.start_time); rendering
+    /// never mutates the collection.
+    void SetTimeUnits(std::string_view start_time_iso8601) {
+        std::string units = "seconds since " + std::string(start_time_iso8601);
+        if (const auto t_pos = units.find('T'); t_pos != std::string::npos) {
+            units[t_pos] = ' ';
         }
+        Find("time")->attributes["units"] = std::move(units);
     }
 
-    /// Renders the whole variable side of an AMIO manifest: patches time's
-    /// runtime-derived units, then emits the variable_names list followed
-    /// by every field's variable block.
-    void UpdateIOManifest(std::ostream& manifest, std::string_view time_units) {
-        Find("time")->attributes["units"] = std::string(time_units);
+    /// Renders the whole variable side of an AMIO manifest: the
+    /// variable_names list followed by every field's variable block, in
+    /// declaration order.
+    void UpdateIOManifest(std::ostream& manifest) const {
         manifest << "variable_names: [";
         bool first_name = true;
         for (const auto& field : fields_) {
@@ -278,7 +281,9 @@ class CeceOutputFieldCollection {
         }
         manifest << "]\n"
                  << "variables:\n";
-        UpdateIOManifest(manifest);
+        for (const auto& field : fields_) {
+            field.UpdateIOManifest(manifest);
+        }
     }
 
     // std-style surface so the collection drops in where the storage vector
