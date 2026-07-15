@@ -476,33 +476,27 @@ physics_schemes:
     EXPECT_TRUE(data_fields[0].get().attributes.empty());
 }
 
-TEST_F(DriverConfigurationTest, OutputFieldUpdateIOManifest) {
+TEST_F(DriverConfigurationTest, OutputFieldCreateIOManifest) {
     // Configured attributes verbatim, coordinates override honored and
     // emitted last.
-    CeceOutputField configured{"co", {{"units", "kg m-2 s-1"}, {"coordinates", "lon lat time"}}};
-    std::ostringstream configured_out;
-    configured.UpdateIOManifest(configured_out);
-    EXPECT_EQ(configured_out.str(),
+    const CeceOutputField configured{"co", {{"units", "kg m-2 s-1"}, {"coordinates", "lon lat time"}}};
+    EXPECT_EQ(configured.CreateIOManifest(),
               "  co:\n"
               "    attributes:\n"
               "      units: \"kg m-2 s-1\"\n"
               "      coordinates: \"lon lat time\"\n");
 
     // No configured attributes: only the structural coordinates default.
-    CeceOutputField bare{"nox", {}};
-    std::ostringstream bare_out;
-    bare.UpdateIOManifest(bare_out);
-    EXPECT_EQ(bare_out.str(),
+    const CeceOutputField bare{"nox", {}};
+    EXPECT_EQ(bare.CreateIOManifest(),
               "  nox:\n"
               "    attributes:\n"
               "      coordinates: \"time lev lat lon\"\n");
 
     // Coordinate variables carry their configured attributes but never a
     // coordinates attribute of their own (attributes emit in map order).
-    CeceOutputField coordinate{"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}};
-    std::ostringstream coordinate_out;
-    coordinate.UpdateIOManifest(coordinate_out);
-    EXPECT_EQ(coordinate_out.str(),
+    const CeceOutputField coordinate{"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}};
+    EXPECT_EQ(coordinate.CreateIOManifest(),
               "  lon:\n"
               "    attributes:\n"
               "      long_name: \"longitude\"\n"
@@ -536,13 +530,11 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
     EXPECT_EQ(collection.Find("absent"), nullptr);
 
     // Time's units are set at initialization (SetTimeUnits turns the
-    // ISO-8601 T into a space); rendering is const and emits the
+    // ISO-8601 T into a space); rendering is const and returns the
     // variable_names list plus every field's block in declaration order
     // (seeded coordinate variables without a coordinates attribute first,
     // then data fields with override-or-default coordinates last).
     collection.SetTimeUnits("2001-06-01T00:00:00");
-    std::ostringstream manifest;
-    collection.UpdateIOManifest(manifest);
     const std::string expected_blocks =
         "  lon:\n"
         "    attributes:\n"
@@ -567,7 +559,7 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
         "  nox:\n"
         "    attributes:\n"
         "      coordinates: \"time lev lat lon\"\n";
-    EXPECT_EQ(manifest.str(),
+    EXPECT_EQ(collection.CreateIOManifest(),
               "variable_names: [\"lon\", \"lat\", \"lev\", \"time\", \"co\", \"nox\"]\n"
               "variables:\n" +
                   expected_blocks);

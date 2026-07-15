@@ -234,7 +234,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
             // The collection is seeded with the coordinate variables and
             // carries time's units from config initialization (SetTimeUnits),
             // so it renders the whole variable side of the manifest.
-            config_.fields.UpdateIOManifest(m_file);
+            m_file << config_.fields.CreateIOManifest();
             m_file.close();
         }
 

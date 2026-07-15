@@ -14,7 +14,6 @@
 #include <functional>
 #include <initializer_list>
 #include <map>
-#include <ostream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -181,23 +180,23 @@ struct CeceOutputField {
         return it != attributes.end() ? std::string_view(it->second) : kDefaultCoordinates;
     }
 
-    /// Appends this field's variable block to an AMIO manifest stream.
-    /// Only configured attributes are emitted; a field without configuration
-    /// gets none — never fabricated units/long_name. The structural
-    /// coordinates attribute is always present on data fields, resolved by
+    /// This field's AMIO manifest variable block. Only configured
+    /// attributes are emitted; a field without configuration gets none —
+    /// never fabricated units/long_name. The structural coordinates
+    /// attribute is always present on data fields, resolved by
     /// GetCoordinates; coordinate variables never receive one.
-    void UpdateIOManifest(std::ostream& manifest) const {
-        manifest << "  " << name << ":\n"
-                 << "    attributes:\n";
+    std::string CreateIOManifest() const {
+        std::string block = "  " + name + ":\n    attributes:\n";
         for (const auto& [attr_name, attr_value] : attributes) {
             if (attr_name == "coordinates") {
                 continue;  // emitted last via GetCoordinates
             }
-            manifest << "      " << attr_name << ": \"" << attr_value << "\"\n";
+            block += "      " + attr_name + ": \"" + attr_value + "\"\n";
         }
         if (!IsCoordinateName(name)) {
-            manifest << "      coordinates: \"" << GetCoordinates() << "\"\n";
+            block += "      coordinates: \"" + std::string(GetCoordinates()) + "\"\n";
         }
+        return block;
     }
 };
 
@@ -214,8 +213,8 @@ inline const std::vector<CeceOutputField> kCoordinateFields{
 /**
  * @class CeceOutputFieldCollection
  * @brief Owns the output fields and consolidates operations over them:
- *        coordinate/data partition, name lookup, and manifest emission
- *        (composed from each field's UpdateIOManifest). Every collection
+ *        coordinate/data partition, name lookup, and manifest rendering
+ *        (composed from each field's CreateIOManifest). Every collection
  *        is seeded with the coordinate variables (kCoordinateFields);
  *        configured data fields join them via push_back.
  */
@@ -269,21 +268,20 @@ class CeceOutputFieldCollection {
         Find("time")->attributes["units"] = std::move(units);
     }
 
-    /// Renders the whole variable side of an AMIO manifest: the
-    /// variable_names list followed by every field's variable block, in
-    /// declaration order.
-    void UpdateIOManifest(std::ostream& manifest) const {
-        manifest << "variable_names: [";
+    /// The whole variable side of an AMIO manifest: the variable_names
+    /// list followed by every field's variable block, in declaration order.
+    std::string CreateIOManifest() const {
+        std::string manifest = "variable_names: [";
         bool first_name = true;
         for (const auto& field : fields_) {
-            manifest << (first_name ? "\"" : ", \"") << field.name << "\"";
+            manifest += (first_name ? "\"" : ", \"") + field.name + "\"";
             first_name = false;
         }
-        manifest << "]\n"
-                 << "variables:\n";
+        manifest += "]\nvariables:\n";
         for (const auto& field : fields_) {
-            field.UpdateIOManifest(manifest);
+            manifest += field.CreateIOManifest();
         }
+        return manifest;
     }
 
     // std-style surface so the collection drops in where the storage vector
