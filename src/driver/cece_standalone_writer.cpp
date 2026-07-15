@@ -284,15 +284,11 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 // field.
                 m_file << "  " << field.name << ":\n"
                        << "    attributes:\n";
-                bool has_coordinates = false;
                 for (const auto& [attr_name, attr_value] : field.attributes) {
                     m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
-                    if (attr_name == "coordinates") {
-                        has_coordinates = true;
-                    }
                 }
-                if (!has_coordinates) {
-                    m_file << "      coordinates: \"time lev lat lon\"\n";
+                if (!field.HasCoordinates()) {
+                    m_file << "      coordinates: \"" << CeceOutputField::kDefaultCoordinates << "\"\n";
                 }
             }
             m_file.close();

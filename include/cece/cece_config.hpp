@@ -10,6 +10,7 @@
 
 #include <map>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -145,11 +146,22 @@ struct CeceDataConfig {
  * @brief One output.fields entry: a field to write and its NetCDF attributes.
  */
 struct CeceOutputField {
+    /// Default CF coordinates attribute, matching the written field shape
+    /// [time, lev, lat, lon]. Structural, so every field gets it unless the
+    /// entry configures its own coordinates value.
+    static constexpr std::string_view kDefaultCoordinates = "time lev lat lon";
+
     std::string name;  ///< Export field name.
     /// NetCDF attributes (attribute -> value) from the entry's optional
     /// "attributes" map. Fields without configured attributes get none —
     /// the writer never fabricates units/long_name.
     std::map<std::string, std::string> attributes;
+
+    /// True when the entry configures its own coordinates attribute,
+    /// overriding kDefaultCoordinates.
+    bool HasCoordinates() const {
+        return attributes.count("coordinates") != 0;
+    }
 };
 
 /**
