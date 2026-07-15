@@ -277,20 +277,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 if (IsCoordinateName(field.name)) {
                     continue;
                 }
-                // Only configured attributes are emitted; a field without
-                // configuration gets none — never fabricated units/long_name.
-                // The structural coordinates attribute is always present,
-                // resolved by the field (configured override or the default
-                // matching the written field shape [time, lev, lat, lon]).
-                m_file << "  " << field.name << ":\n"
-                       << "    attributes:\n";
-                for (const auto& [attr_name, attr_value] : field.attributes) {
-                    if (attr_name == "coordinates") {
-                        continue;  // emitted below via GetCoordinates
-                    }
-                    m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
-                }
-                m_file << "      coordinates: \"" << field.GetCoordinates() << "\"\n";
+                field.UpdateIOManifest(m_file);
             }
             m_file.close();
         }

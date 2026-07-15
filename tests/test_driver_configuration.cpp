@@ -471,6 +471,28 @@ physics_schemes:
     EXPECT_TRUE(config.output_config.fields[0].attributes.empty());
 }
 
+TEST_F(DriverConfigurationTest, OutputFieldUpdateIOManifest) {
+    // Configured attributes verbatim, coordinates override honored and
+    // emitted last.
+    CeceOutputField configured{"co", {{"units", "kg m-2 s-1"}, {"coordinates", "lon lat time"}}};
+    std::ostringstream configured_out;
+    configured.UpdateIOManifest(configured_out);
+    EXPECT_EQ(configured_out.str(),
+              "  co:\n"
+              "    attributes:\n"
+              "      units: \"kg m-2 s-1\"\n"
+              "      coordinates: \"lon lat time\"\n");
+
+    // No configured attributes: only the structural coordinates default.
+    CeceOutputField bare{"nox", {}};
+    std::ostringstream bare_out;
+    bare.UpdateIOManifest(bare_out);
+    EXPECT_EQ(bare_out.str(),
+              "  nox:\n"
+              "    attributes:\n"
+              "      coordinates: \"time lev lat lon\"\n");
+}
+
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {
     WriteConfigFile(test_config_file, R"(
 output:

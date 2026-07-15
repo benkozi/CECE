@@ -9,6 +9,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <map>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -163,6 +164,22 @@ struct CeceOutputField {
     std::string_view GetCoordinates() const {
         auto it = attributes.find("coordinates");
         return it != attributes.end() ? std::string_view(it->second) : kDefaultCoordinates;
+    }
+
+    /// Appends this field's variable block to an AMIO manifest stream.
+    /// Only configured attributes are emitted; a field without configuration
+    /// gets none — never fabricated units/long_name. The structural
+    /// coordinates attribute is always present, resolved by GetCoordinates.
+    void UpdateIOManifest(std::ostream& manifest) const {
+        manifest << "  " << name << ":\n"
+                 << "    attributes:\n";
+        for (const auto& [attr_name, attr_value] : attributes) {
+            if (attr_name == "coordinates") {
+                continue;  // emitted last via GetCoordinates
+            }
+            manifest << "      " << attr_name << ": \"" << attr_value << "\"\n";
+        }
+        manifest << "      coordinates: \"" << GetCoordinates() << "\"\n";
     }
 };
 
