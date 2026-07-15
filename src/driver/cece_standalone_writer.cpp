@@ -238,26 +238,18 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
                    << "  Conventions: \"CF-1.8\"\n"
                    << "variable_names: [";
-            // One collection renders the whole variable side of the
-            // manifest: the writer-managed coordinate variables (time's
-            // units are runtime-derived), then the configured data fields.
-            CeceOutputFieldCollection manifest_fields{
-                {"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}},
-                {"lat", {{"units", "degrees_north"}, {"long_name", "latitude"}}},
-                {"lev", {{"units", "level"}, {"long_name", "vertical level"}}},
-                {"time", {{"units", time_units}, {"long_name", "time"}}},
-            };
-            for (const CeceOutputField& field : config_.fields.GetDataFields()) {
-                manifest_fields.push_back(field);
-            }
+            // The collection is seeded with the coordinate variables, so it
+            // renders the whole variable side of the manifest; only time's
+            // runtime-derived units need patching in first.
+            config_.fields.Find("time")->attributes["units"] = time_units;
             bool first_name = true;
-            for (const auto& field : manifest_fields) {
+            for (const auto& field : config_.fields) {
                 m_file << (first_name ? "\"" : ", \"") << field.name << "\"";
                 first_name = false;
             }
             m_file << "]\n"
                    << "variables:\n";
-            manifest_fields.UpdateIOManifest(m_file);
+            config_.fields.UpdateIOManifest(m_file);
             m_file.close();
         }
 
@@ -325,13 +317,16 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
         amio_io_handle time_io = nullptr;
         check_amio_rc(amio_write(dataset, "time", &time_val, AMIO_DTYPE_F64, &time_shape, &time_io), "amio_write(time)");
 
-        // Step 8: Write fields
+        // Step 8: Write fields. No configured data fields means write all
+        // export fields (the collection itself is never empty — it always
+        // holds the coordinate variables).
+        const bool write_all = config_.fields.GetDataFields().empty();
         for (const auto& [name, view] : fields) {
             if (IsCoordinateName(name)) {
                 continue;
             }
 
-            const bool should_write = config_.fields.empty() || config_.fields.Contains(name);
+            const bool should_write = write_all || config_.fields.Contains(name);
             if (should_write) {
                 auto& view_rw = const_cast<DualView3D&>(view);
                 view_rw.sync<Kokkos::HostSpace>();

@@ -429,22 +429,26 @@ physics_schemes:
 )");
     CeceConfig config = ParseConfig(test_config_file);
 
-    ASSERT_EQ(config.output_config.fields.size(), 4u);
-    EXPECT_EQ(config.output_config.fields[0].name, "co");
-    EXPECT_EQ(config.output_config.fields[1].name, "nox");
-    EXPECT_EQ(config.output_config.fields[2].name, "isoprene");
-    EXPECT_EQ(config.output_config.fields[3].name, "sea_salt_total");
+    const auto data_fields = config.output_config.fields.GetDataFields();
+    ASSERT_EQ(data_fields.size(), 4u);
+    EXPECT_EQ(data_fields[0].get().name, "co");
+    EXPECT_EQ(data_fields[1].get().name, "nox");
+    EXPECT_EQ(data_fields[2].get().name, "isoprene");
+    EXPECT_EQ(data_fields[3].get().name, "sea_salt_total");
 
-    ASSERT_EQ(config.output_config.fields[0].attributes.size(), 2u);
-    EXPECT_EQ(config.output_config.fields[0].attributes["units"], "kg m-2 s-1");
-    EXPECT_EQ(config.output_config.fields[0].attributes["long_name"], "carbon_monoxide_emission_flux");
+    ASSERT_EQ(data_fields[0].get().attributes.size(), 2u);
+    EXPECT_EQ(data_fields[0].get().attributes.at("units"), "kg m-2 s-1");
+    EXPECT_EQ(data_fields[0].get().attributes.at("long_name"), "carbon_monoxide_emission_flux");
 
-    ASSERT_EQ(config.output_config.fields[2].attributes.size(), 1u);
-    EXPECT_EQ(config.output_config.fields[2].attributes["units"], "kg m-2 s-1");
+    ASSERT_EQ(data_fields[2].get().attributes.size(), 1u);
+    EXPECT_EQ(data_fields[2].get().attributes.at("units"), "kg m-2 s-1");
 
     // Fields without configured attributes carry an empty map.
-    EXPECT_TRUE(config.output_config.fields[1].attributes.empty());
-    EXPECT_TRUE(config.output_config.fields[3].attributes.empty());
+    EXPECT_TRUE(data_fields[1].get().attributes.empty());
+    EXPECT_TRUE(data_fields[3].get().attributes.empty());
+
+    // The seeded coordinate variables tag along in every collection.
+    EXPECT_EQ(config.output_config.fields.GetCoordinateFields().size(), 4u);
 }
 
 TEST_F(DriverConfigurationTest, ParseOutputFieldsScalarShorthandStillWorks) {
@@ -466,9 +470,10 @@ physics_schemes:
 )");
     CeceConfig config = ParseConfig(test_config_file);
 
-    ASSERT_EQ(config.output_config.fields.size(), 1u);
-    EXPECT_EQ(config.output_config.fields[0].name, "CO");
-    EXPECT_TRUE(config.output_config.fields[0].attributes.empty());
+    const auto data_fields = config.output_config.fields.GetDataFields();
+    ASSERT_EQ(data_fields.size(), 1u);
+    EXPECT_EQ(data_fields[0].get().name, "CO");
+    EXPECT_TRUE(data_fields[0].get().attributes.empty());
 }
 
 TEST_F(DriverConfigurationTest, OutputFieldUpdateIOManifest) {
@@ -505,15 +510,20 @@ TEST_F(DriverConfigurationTest, OutputFieldUpdateIOManifest) {
 }
 
 TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest) {
-    const CeceOutputFieldCollection collection{
-        {"lon", {{"units", "degrees_east"}}},
+    // Every collection is seeded with the coordinate variables; configured
+    // entries join as data fields, and coordinate-named entries are dropped
+    // (the seeds are writer-managed and not user-configurable).
+    CeceOutputFieldCollection collection{
+        {"lon", {{"units", "overridden"}}},
         {"co", {{"units", "kg m-2 s-1"}}},
         {"nox", {}},
     };
 
     const auto coordinate_fields = collection.GetCoordinateFields();
-    ASSERT_EQ(coordinate_fields.size(), 1u);
+    ASSERT_EQ(coordinate_fields.size(), 4u);
     EXPECT_EQ(coordinate_fields[0].get().name, "lon");
+    EXPECT_EQ(coordinate_fields[0].get().attributes.at("units"), "degrees_east");
+    EXPECT_EQ(coordinate_fields[3].get().name, "time");
 
     const auto data_fields = collection.GetDataFields();
     ASSERT_EQ(data_fields.size(), 2u);
@@ -521,17 +531,36 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
     EXPECT_EQ(data_fields[1].get().name, "nox");
 
     EXPECT_TRUE(collection.Contains("co"));
-    EXPECT_FALSE(collection.Contains("lat"));
+    EXPECT_TRUE(collection.Contains("lat"));
+    EXPECT_FALSE(collection.Contains("absent"));
+    EXPECT_EQ(collection.Find("absent"), nullptr);
 
-    // Collection emission is the fields' blocks in declaration order:
-    // coordinate variable without a coordinates attribute, data fields with
-    // override-or-default coordinates last.
+    // Find gives mutable access — the writer patches time's runtime units
+    // through it.
+    collection.Find("time")->attributes["units"] = "seconds since 2001-06-01 00:00:00";
+
+    // Collection emission is every field's block in declaration order:
+    // seeded coordinate variables (no coordinates attribute) first, then
+    // data fields with override-or-default coordinates last.
     std::ostringstream manifest;
     collection.UpdateIOManifest(manifest);
     EXPECT_EQ(manifest.str(),
               "  lon:\n"
               "    attributes:\n"
+              "      long_name: \"longitude\"\n"
               "      units: \"degrees_east\"\n"
+              "  lat:\n"
+              "    attributes:\n"
+              "      long_name: \"latitude\"\n"
+              "      units: \"degrees_north\"\n"
+              "  lev:\n"
+              "    attributes:\n"
+              "      long_name: \"vertical level\"\n"
+              "      units: \"level\"\n"
+              "  time:\n"
+              "    attributes:\n"
+              "      long_name: \"time\"\n"
+              "      units: \"seconds since 2001-06-01 00:00:00\"\n"
               "  co:\n"
               "    attributes:\n"
               "      units: \"kg m-2 s-1\"\n"

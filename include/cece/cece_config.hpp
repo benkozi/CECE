@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace cece {
@@ -200,16 +201,32 @@ struct CeceOutputField {
     }
 };
 
+/// The writer-managed coordinate variables seeded into every
+/// CeceOutputFieldCollection. time's units attribute is runtime-derived
+/// ("seconds since <start>") and patched by the writer at manifest time.
+inline const std::vector<CeceOutputField> kCoordinateFields{
+    {"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}},
+    {"lat", {{"units", "degrees_north"}, {"long_name", "latitude"}}},
+    {"lev", {{"units", "level"}, {"long_name", "vertical level"}}},
+    {"time", {{"long_name", "time"}}},
+};
+
 /**
  * @class CeceOutputFieldCollection
- * @brief Owns the configured output fields and consolidates operations
- *        over them: coordinate/data partition, name lookup, and manifest
- *        emission (composed from each field's UpdateIOManifest).
+ * @brief Owns the output fields and consolidates operations over them:
+ *        coordinate/data partition, name lookup, and manifest emission
+ *        (composed from each field's UpdateIOManifest). Every collection
+ *        is seeded with the coordinate variables (kCoordinateFields);
+ *        configured data fields join them via push_back.
  */
 class CeceOutputFieldCollection {
    public:
-    CeceOutputFieldCollection() = default;
-    CeceOutputFieldCollection(std::initializer_list<CeceOutputField> fields) : fields_(fields) {}
+    CeceOutputFieldCollection() : fields_(kCoordinateFields) {}
+    CeceOutputFieldCollection(std::initializer_list<CeceOutputField> fields) : CeceOutputFieldCollection() {
+        for (const auto& field : fields) {
+            push_back(field);
+        }
+    }
 
     /// References to the entries naming coordinate variables
     /// (kCoordinateNames), in declaration order. The references are valid
@@ -225,9 +242,19 @@ class CeceOutputFieldCollection {
         return Filter(false);
     }
 
+    /// The entry with this field name, or nullptr. The pointer is valid
+    /// until the collection is mutated.
+    const CeceOutputField* Find(std::string_view field_name) const {
+        auto it = std::ranges::find_if(fields_, [&](const CeceOutputField& f) { return f.name == field_name; });
+        return it != fields_.end() ? &*it : nullptr;
+    }
+    CeceOutputField* Find(std::string_view field_name) {
+        return const_cast<CeceOutputField*>(std::as_const(*this).Find(field_name));
+    }
+
     /// True when any entry carries this field name.
     bool Contains(std::string_view field_name) const {
-        return std::ranges::any_of(fields_, [&](const CeceOutputField& f) { return f.name == field_name; });
+        return Find(field_name) != nullptr;
     }
 
     /// Appends every contained field's variable block to an AMIO manifest
@@ -244,7 +271,15 @@ class CeceOutputFieldCollection {
     auto end() const { return fields_.end(); }
     bool empty() const { return fields_.empty(); }
     std::size_t size() const { return fields_.size(); }
-    void push_back(CeceOutputField field) { fields_.push_back(std::move(field)); }
+    /// Appends a data field. Coordinate-named entries are dropped: the
+    /// seeded coordinate variables are writer-managed and never
+    /// user-configurable.
+    void push_back(CeceOutputField field) {
+        if (IsCoordinateName(field.name)) {
+            return;
+        }
+        fields_.push_back(std::move(field));
+    }
     const CeceOutputField& operator[](std::size_t index) const { return fields_[index]; }
     CeceOutputField& operator[](std::size_t index) { return fields_[index]; }
 
@@ -270,7 +305,7 @@ struct CeceOutputConfig {
     std::string directory = ".";                                                  ///< Output directory (created if absent).
     std::string filename_pattern = "cece_output_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc";  ///< Filename pattern with time tokens.
     int frequency_steps = 1;                                                      ///< Write every N time steps.
-    CeceOutputFieldCollection fields;                                             ///< Fields to write; empty means all export fields.
+    CeceOutputFieldCollection fields;  ///< Coordinate variables + configured data fields; no data fields means write all export fields.
     bool include_diagnostics = false;                                             ///< Also write diagnostic fields when true.
     bool enabled = false;                                                         ///< True when an output block is present in the YAML.
     int amio_worker_threads = -1;  ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).

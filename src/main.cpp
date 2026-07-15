@@ -145,9 +145,11 @@ int main(int argc, char* argv[]) {
 
         // Register the export fields configured for output with persistent
         // memory buffers, via the parsed config — the single authoritative
-        // interpretation of output.fields.
+        // interpretation of output.fields. Data fields only: the collection
+        // also carries the writer-managed coordinate variables.
         std::unordered_map<std::string, std::vector<double>> export_fields_mem;
-        for (const auto& field : cece::ParseConfig(config_file).output_config.fields) {
+        const cece::CeceConfig parsed_config = cece::ParseConfig(config_file);
+        for (const cece::CeceOutputField& field : parsed_config.output_config.fields.GetDataFields()) {
             export_fields_mem[field.name] = std::vector<double>(static_cast<std::size_t>(nx) * ny * nz, 0.0);
             cece_core_set_export_field(cece_data_ptr, field.name.c_str(), static_cast<int>(field.name.length()),
                                        export_fields_mem[field.name].data(), nx, ny, nz, &rc);
