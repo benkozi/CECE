@@ -504,6 +504,43 @@ TEST_F(DriverConfigurationTest, OutputFieldUpdateIOManifest) {
               "      units: \"degrees_east\"\n");
 }
 
+TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest) {
+    const CeceOutputFieldCollection collection{
+        {"lon", {{"units", "degrees_east"}}},
+        {"co", {{"units", "kg m-2 s-1"}}},
+        {"nox", {}},
+    };
+
+    const auto coordinate_fields = collection.GetCoordinateFields();
+    ASSERT_EQ(coordinate_fields.size(), 1u);
+    EXPECT_EQ(coordinate_fields[0].get().name, "lon");
+
+    const auto data_fields = collection.GetDataFields();
+    ASSERT_EQ(data_fields.size(), 2u);
+    EXPECT_EQ(data_fields[0].get().name, "co");
+    EXPECT_EQ(data_fields[1].get().name, "nox");
+
+    EXPECT_TRUE(collection.Contains("co"));
+    EXPECT_FALSE(collection.Contains("lat"));
+
+    // Collection emission is the fields' blocks in declaration order:
+    // coordinate variable without a coordinates attribute, data fields with
+    // override-or-default coordinates last.
+    std::ostringstream manifest;
+    collection.UpdateIOManifest(manifest);
+    EXPECT_EQ(manifest.str(),
+              "  lon:\n"
+              "    attributes:\n"
+              "      units: \"degrees_east\"\n"
+              "  co:\n"
+              "    attributes:\n"
+              "      units: \"kg m-2 s-1\"\n"
+              "      coordinates: \"time lev lat lon\"\n"
+              "  nox:\n"
+              "    attributes:\n"
+              "      coordinates: \"time lev lat lon\"\n");
+}
+
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {
     WriteConfigFile(test_config_file, R"(
 output:

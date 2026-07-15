@@ -10,6 +10,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <functional>
+#include <initializer_list>
 #include <map>
 #include <ostream>
 #include <string>
@@ -198,6 +201,68 @@ struct CeceOutputField {
 };
 
 /**
+ * @class CeceOutputFieldCollection
+ * @brief Owns the configured output fields and consolidates operations
+ *        over them: coordinate/data partition, name lookup, and manifest
+ *        emission (composed from each field's UpdateIOManifest).
+ */
+class CeceOutputFieldCollection {
+   public:
+    CeceOutputFieldCollection() = default;
+    CeceOutputFieldCollection(std::initializer_list<CeceOutputField> fields) : fields_(fields) {}
+
+    /// References to the entries naming coordinate variables
+    /// (kCoordinateNames), in declaration order. The references are valid
+    /// until the collection is mutated.
+    std::vector<std::reference_wrapper<const CeceOutputField>> GetCoordinateFields() const {
+        return Filter(true);
+    }
+
+    /// References to the entries naming data fields (everything that is not
+    /// a coordinate variable), in declaration order. The references are
+    /// valid until the collection is mutated.
+    std::vector<std::reference_wrapper<const CeceOutputField>> GetDataFields() const {
+        return Filter(false);
+    }
+
+    /// True when any entry carries this field name.
+    bool Contains(std::string_view field_name) const {
+        return std::ranges::any_of(fields_, [&](const CeceOutputField& f) { return f.name == field_name; });
+    }
+
+    /// Appends every contained field's variable block to an AMIO manifest
+    /// stream, in declaration order.
+    void UpdateIOManifest(std::ostream& manifest) const {
+        for (const auto& field : fields_) {
+            field.UpdateIOManifest(manifest);
+        }
+    }
+
+    // std-style surface so the collection drops in where the storage vector
+    // was used directly (range-for, parser push_back, test indexing).
+    auto begin() const { return fields_.begin(); }
+    auto end() const { return fields_.end(); }
+    bool empty() const { return fields_.empty(); }
+    std::size_t size() const { return fields_.size(); }
+    void push_back(CeceOutputField field) { fields_.push_back(std::move(field)); }
+    const CeceOutputField& operator[](std::size_t index) const { return fields_[index]; }
+    CeceOutputField& operator[](std::size_t index) { return fields_[index]; }
+
+   private:
+    std::vector<std::reference_wrapper<const CeceOutputField>> Filter(bool coordinates) const {
+        std::vector<std::reference_wrapper<const CeceOutputField>> matches;
+        for (const auto& field : fields_) {
+            if (IsCoordinateName(field.name) == coordinates) {
+                matches.emplace_back(field);
+            }
+        }
+        return matches;
+    }
+
+    std::vector<CeceOutputField> fields_;
+};
+
+/**
  * @struct CeceOutputConfig
  * @brief Configuration for standalone NetCDF output (Requirement 11.12).
  */
@@ -205,7 +270,7 @@ struct CeceOutputConfig {
     std::string directory = ".";                                                  ///< Output directory (created if absent).
     std::string filename_pattern = "cece_output_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc";  ///< Filename pattern with time tokens.
     int frequency_steps = 1;                                                      ///< Write every N time steps.
-    std::vector<CeceOutputField> fields;                                          ///< Fields to write; empty means all export fields.
+    CeceOutputFieldCollection fields;                                             ///< Fields to write; empty means all export fields.
     bool include_diagnostics = false;                                             ///< Also write diagnostic fields when true.
     bool enabled = false;                                                         ///< True when an output block is present in the YAML.
     int amio_worker_threads = -1;  ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).

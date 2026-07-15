@@ -237,30 +237,27 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "global_attributes:\n"
                    << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
                    << "  Conventions: \"CF-1.8\"\n"
-                   << "variable_names: [\"lon\", \"lat\", \"lev\", \"time\"";
-            for (const auto& field : config_.fields) {
-                if (IsCoordinateName(field.name)) {
-                    continue;
-                }
-                m_file << ", \"" << field.name << "\"";
-            }
-            const std::vector<CeceOutputField> coordinate_fields{
+                   << "variable_names: [";
+            // One collection renders the whole variable side of the
+            // manifest: the writer-managed coordinate variables (time's
+            // units are runtime-derived), then the configured data fields.
+            CeceOutputFieldCollection manifest_fields{
                 {"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}},
                 {"lat", {{"units", "degrees_north"}, {"long_name", "latitude"}}},
                 {"lev", {{"units", "level"}, {"long_name", "vertical level"}}},
                 {"time", {{"units", time_units}, {"long_name", "time"}}},
             };
+            for (const CeceOutputField& field : config_.fields.GetDataFields()) {
+                manifest_fields.push_back(field);
+            }
+            bool first_name = true;
+            for (const auto& field : manifest_fields) {
+                m_file << (first_name ? "\"" : ", \"") << field.name << "\"";
+                first_name = false;
+            }
             m_file << "]\n"
                    << "variables:\n";
-            for (const auto& field : coordinate_fields) {
-                field.UpdateIOManifest(m_file);
-            }
-            for (const auto& field : config_.fields) {
-                if (IsCoordinateName(field.name)) {
-                    continue;
-                }
-                field.UpdateIOManifest(m_file);
-            }
+            manifest_fields.UpdateIOManifest(m_file);
             m_file.close();
         }
 
@@ -334,18 +331,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 continue;
             }
 
-            bool should_write = false;
-            if (config_.fields.empty()) {
-                should_write = true;
-            } else {
-                for (const auto& f : config_.fields) {
-                    if (f.name == name) {
-                        should_write = true;
-                        break;
-                    }
-                }
-            }
-
+            const bool should_write = config_.fields.empty() || config_.fields.Contains(name);
             if (should_write) {
                 auto& view_rw = const_cast<DualView3D&>(view);
                 view_rw.sync<Kokkos::HostSpace>();
