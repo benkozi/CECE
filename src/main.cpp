@@ -146,7 +146,9 @@ int main(int argc, char* argv[]) {
         std::unordered_map<std::string, std::vector<double>> export_fields_mem;
         if (config["output"] && config["output"]["fields"]) {
             for (const auto& field_node : config["output"]["fields"]) {
-                std::string field_name = field_node.as<std::string>();
+                // Entries are either a scalar field name or a map with "name"
+                // (and optional "attributes").
+                std::string field_name = field_node.IsMap() ? field_node["name"].as<std::string>() : field_node.as<std::string>();
                 export_fields_mem[field_name] = std::vector<double>(static_cast<std::size_t>(nx) * ny * nz, 0.0);
                 cece_core_set_export_field(cece_data_ptr, field_name.c_str(), static_cast<int>(field_name.length()),
                                            export_fields_mem[field_name].data(), nx, ny, nz, &rc);

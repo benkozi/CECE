@@ -117,8 +117,8 @@ TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) 
     EXPECT_EQ(*coordinates, "lon lat time");
 }
 
-// Regression lock for output.field_attributes: configured attributes arrive
-// in the NetCDF verbatim.
+// Regression lock for configured per-field attributes: they arrive in the
+// NetCDF verbatim.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredFieldAttributesReachTheOutput) {
     cece::CeceOutputConfig config = BaseConfig();
     config.field_attributes["co"]["units"] = "kg m-2 s-1";

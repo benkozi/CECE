@@ -398,6 +398,101 @@ physics_schemes:
     EXPECT_EQ(config.output_config.amio_worker_threads, -1);
 }
 
+TEST_F(DriverConfigurationTest, ParseOutputFieldsWithInlineAttributes) {
+    // output.fields entries may be maps carrying per-field NetCDF attributes;
+    // scalar entries remain valid shorthand for a field with no attributes.
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  directory: ./cece_output
+  fields:
+    - name: co
+      attributes:
+        units: "kg m-2 s-1"
+        long_name: "carbon_monoxide_emission_flux"
+    - name: nox
+    - name: isoprene
+      attributes:
+        units: "kg m-2 s-1"
+    - sea_salt_total
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    CeceConfig config = ParseConfig(test_config_file);
+
+    ASSERT_EQ(config.output_config.fields.size(), 4u);
+    EXPECT_EQ(config.output_config.fields[0], "co");
+    EXPECT_EQ(config.output_config.fields[1], "nox");
+    EXPECT_EQ(config.output_config.fields[2], "isoprene");
+    EXPECT_EQ(config.output_config.fields[3], "sea_salt_total");
+
+    ASSERT_EQ(config.output_config.field_attributes.count("co"), 1u);
+    EXPECT_EQ(config.output_config.field_attributes["co"]["units"], "kg m-2 s-1");
+    EXPECT_EQ(config.output_config.field_attributes["co"]["long_name"], "carbon_monoxide_emission_flux");
+
+    ASSERT_EQ(config.output_config.field_attributes.count("isoprene"), 1u);
+    EXPECT_EQ(config.output_config.field_attributes["isoprene"]["units"], "kg m-2 s-1");
+
+    // Fields without configured attributes get no map entry at all.
+    EXPECT_EQ(config.output_config.field_attributes.count("nox"), 0u);
+    EXPECT_EQ(config.output_config.field_attributes.count("sea_salt_total"), 0u);
+}
+
+TEST_F(DriverConfigurationTest, ParseOutputFieldsScalarShorthandStillWorks) {
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  fields: [CO]
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    CeceConfig config = ParseConfig(test_config_file);
+
+    ASSERT_EQ(config.output_config.fields.size(), 1u);
+    EXPECT_EQ(config.output_config.fields[0], "CO");
+    EXPECT_TRUE(config.output_config.field_attributes.empty());
+}
+
+TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  fields:
+    - attributes:
+        units: "kg m-2 s-1"
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    EXPECT_THROW(ParseConfig(test_config_file), std::runtime_error);
+}
+
 // ---------------------------------------------------------------------------
 // Tests for Configuration Validation (Task 1.5)
 // ---------------------------------------------------------------------------

@@ -390,16 +390,28 @@ CeceConfig ParseConfig(const std::string& filename) {
             config.output_config.frequency_steps = out_node["frequency_steps"].as<int>();
         }
         if (out_node["fields"]) {
+            // Each entry is either a scalar field name (shorthand) or a map
+            // with a required "name" and optional "attributes" (attribute
+            // name -> value, written verbatim on the output variable).
+            std::size_t entry_index = 0;
             for (auto const& f : out_node["fields"]) {
-                config.output_config.fields.push_back(f.as<std::string>());
-            }
-        }
-        if (out_node["field_attributes"]) {
-            for (auto const& field_entry : out_node["field_attributes"]) {
-                auto field_name = field_entry.first.as<std::string>();
-                for (auto const& attr_entry : field_entry.second) {
-                    config.output_config.field_attributes[field_name][attr_entry.first.as<std::string>()] = attr_entry.second.as<std::string>();
+                if (f.IsScalar()) {
+                    config.output_config.fields.push_back(f.as<std::string>());
+                } else if (f.IsMap()) {
+                    if (!f["name"] || f["name"].as<std::string>().empty()) {
+                        throw std::runtime_error("output.fields entry " + std::to_string(entry_index) + " is missing a non-empty 'name'");
+                    }
+                    auto field_name = f["name"].as<std::string>();
+                    config.output_config.fields.push_back(field_name);
+                    if (f["attributes"]) {
+                        for (auto const& attr_entry : f["attributes"]) {
+                            config.output_config.field_attributes[field_name][attr_entry.first.as<std::string>()] = attr_entry.second.as<std::string>();
+                        }
+                    }
+                } else {
+                    throw std::runtime_error("output.fields entry " + std::to_string(entry_index) + " must be a field name or a map with 'name'/'attributes'");
                 }
+                ++entry_index;
             }
         }
         if (out_node["diagnostics"]) {
