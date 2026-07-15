@@ -87,6 +87,17 @@ class StandaloneWriterAttributesTest : public ::testing::Test {
     fs::path out_dir_;
 };
 
+// A disabled config produces no output at all: every writer entry point
+// no-ops.
+TEST_F(StandaloneWriterAttributesTest, DisabledConfigWritesNothing) {
+    cece::CeceOutputConfig config = BaseConfig();
+    config.enabled = false;
+
+    const fs::path nc_path = WriteOneStep(config);
+    EXPECT_FALSE(fs::exists(nc_path)) << "disabled writer produced " << nc_path;
+    EXPECT_TRUE(fs::is_empty(out_dir_)) << "disabled writer left files in the output directory";
+}
+
 // RED before the units fix: the writer fabricated units ("mol mol-1") and a
 // mole-fraction long_name for every field. A field with no configured
 // attributes must have none — absence over fabrication.

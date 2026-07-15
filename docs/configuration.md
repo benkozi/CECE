@@ -586,7 +586,7 @@ Configuration for NetCDF output file generation with emission fields and diagnos
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `enabled` | Boolean | Enable NetCDF output (default: false) |
+| `enabled` | Boolean | Enable NetCDF output. Presence of the `output:` block enables output unless `enabled: false`; with no block, output is disabled. `enabled: false` keeps the rest of the block as dormant configuration. |
 | `directory` | String | Output directory path |
 | `filename_pattern` | String | Filename template with time substitution |
 | `frequency_steps` | Integer | Output frequency in timesteps |

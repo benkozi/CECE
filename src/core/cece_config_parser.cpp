@@ -378,7 +378,9 @@ CeceConfig ParseConfig(const std::string& filename) {
     // Parse standalone output configuration (Requirement 11.12)
     if (root["output"]) {
         auto out_node = root["output"];
-        config.output_config.enabled = true;
+        // Presence of the block enables output unless enabled: false — the
+        // rest of the block is kept as dormant configuration.
+        config.output_config.enabled = out_node["enabled"] ? out_node["enabled"].as<bool>() : true;
 
         if (out_node["directory"]) {
             config.output_config.directory = out_node["directory"].as<std::string>();

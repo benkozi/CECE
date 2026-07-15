@@ -565,6 +565,41 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
                   expected_blocks);
 }
 
+TEST_F(DriverConfigurationTest, ParseOutputEnabledFalse) {
+    // enabled: false keeps the block as dormant configuration but disables
+    // output; an omitted or true enabled key keeps output on.
+    const std::string config_tail = R"(
+  directory: ./cece_output
+  fields: [CO]
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)";
+    WriteConfigFile(test_config_file, "output:\n  enabled: false" + config_tail);
+    CeceConfig config = ParseConfig(test_config_file);
+    EXPECT_FALSE(config.output_config.enabled);
+    // The rest of the block still parses (dormant, not discarded).
+    EXPECT_EQ(config.output_config.directory, "./cece_output");
+    EXPECT_EQ(config.output_config.fields.GetDataFields().size(), 1u);
+
+    WriteConfigFile(test_config_file, "output:\n  enabled: true" + config_tail);
+    config = ParseConfig(test_config_file);
+    EXPECT_TRUE(config.output_config.enabled);
+
+    // Presence of the block enables output when the key is omitted.
+    WriteConfigFile(test_config_file, "output:" + config_tail);
+    config = ParseConfig(test_config_file);
+    EXPECT_TRUE(config.output_config.enabled);
+}
+
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {
     WriteConfigFile(test_config_file, R"(
 output:
