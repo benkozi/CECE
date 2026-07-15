@@ -6,6 +6,7 @@
 
 #include <Kokkos_Core.hpp>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -71,18 +72,35 @@ class StandaloneWriterAttributesTest : public ::testing::Test {
         return value;
     }
 
-    cece::CeceOutputConfig BaseConfig() const {
+    // Configs are constructed fully formed (the collection is immutable
+    // after construction apart from SetTimeUnits): co's attributes are a
+    // parameter rather than patched in afterwards.
+    cece::CeceOutputConfig BaseConfig(std::map<std::string, std::string> co_attributes = {}) const {
         cece::CeceOutputConfig config;
         config.enabled = true;
         config.directory = out_dir_.string();
         config.filename_pattern = "attr_test_{HH}{mm}{ss}.nc";
         config.frequency_steps = 1;
-        config.fields = {"co"};
+        config.fields = {{"co", std::move(co_attributes)}};
+        // Configs built by hand (no ParseConfig) set time's units themselves,
+        // matching the start time passed to Initialize in WriteOneStep.
+        config.fields.SetTimeUnits("2010-01-01T00:00:00");
         return config;
     }
 
     fs::path out_dir_;
 };
+
+// A disabled config produces no output at all: every writer entry point
+// no-ops.
+TEST_F(StandaloneWriterAttributesTest, DisabledConfigWritesNothing) {
+    cece::CeceOutputConfig config = BaseConfig();
+    config.enabled = false;
+
+    const fs::path nc_path = WriteOneStep(config);
+    EXPECT_FALSE(fs::exists(nc_path)) << "disabled writer produced " << nc_path;
+    EXPECT_TRUE(fs::is_empty(out_dir_)) << "disabled writer left files in the output directory";
+}
 
 // RED before the units fix: the writer fabricated units ("mol mol-1") and a
 // mole-fraction long_name for every field. A field with no configured
@@ -106,8 +124,7 @@ TEST_F(StandaloneWriterAttributesTest, DefaultConfigEmitsNoFabricatedAttributes)
 
 // A user-supplied coordinates attribute overrides the "time lev lat lon" default.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) {
-    cece::CeceOutputConfig config = BaseConfig();
-    config.field_attributes["co"]["coordinates"] = "lon lat time";
+    const cece::CeceOutputConfig config = BaseConfig({{"coordinates", "lon lat time"}});
 
     const fs::path nc_path = WriteOneStep(config);
     ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";
@@ -117,12 +134,13 @@ TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) 
     EXPECT_EQ(*coordinates, "lon lat time");
 }
 
-// Regression lock for output.field_attributes: configured attributes arrive
-// in the NetCDF verbatim.
+// Regression lock for configured per-field attributes: they arrive in the
+// NetCDF verbatim.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredFieldAttributesReachTheOutput) {
-    cece::CeceOutputConfig config = BaseConfig();
-    config.field_attributes["co"]["units"] = "kg m-2 s-1";
-    config.field_attributes["co"]["long_name"] = "carbon_monoxide_emission_flux";
+    const cece::CeceOutputConfig config = BaseConfig({
+        {"units", "kg m-2 s-1"},
+        {"long_name", "carbon_monoxide_emission_flux"},
+    });
 
     const fs::path nc_path = WriteOneStep(config);
     ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";
