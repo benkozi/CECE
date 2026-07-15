@@ -6,6 +6,7 @@
 
 #include <Kokkos_Core.hpp>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -71,13 +72,16 @@ class StandaloneWriterAttributesTest : public ::testing::Test {
         return value;
     }
 
-    cece::CeceOutputConfig BaseConfig() const {
+    // Configs are constructed fully formed (the collection is immutable
+    // after construction apart from SetTimeUnits): co's attributes are a
+    // parameter rather than patched in afterwards.
+    cece::CeceOutputConfig BaseConfig(std::map<std::string, std::string> co_attributes = {}) const {
         cece::CeceOutputConfig config;
         config.enabled = true;
         config.directory = out_dir_.string();
         config.filename_pattern = "attr_test_{HH}{mm}{ss}.nc";
         config.frequency_steps = 1;
-        config.fields = {{"co", {}}};
+        config.fields = {{"co", std::move(co_attributes)}};
         // Configs built by hand (no ParseConfig) set time's units themselves,
         // matching the start time passed to Initialize in WriteOneStep.
         config.fields.SetTimeUnits("2010-01-01T00:00:00");
@@ -120,8 +124,7 @@ TEST_F(StandaloneWriterAttributesTest, DefaultConfigEmitsNoFabricatedAttributes)
 
 // A user-supplied coordinates attribute overrides the "time lev lat lon" default.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) {
-    cece::CeceOutputConfig config = BaseConfig();
-    config.fields.Find("co")->attributes["coordinates"] = "lon lat time";
+    const cece::CeceOutputConfig config = BaseConfig({{"coordinates", "lon lat time"}});
 
     const fs::path nc_path = WriteOneStep(config);
     ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";
@@ -134,9 +137,10 @@ TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) 
 // Regression lock for configured per-field attributes: they arrive in the
 // NetCDF verbatim.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredFieldAttributesReachTheOutput) {
-    cece::CeceOutputConfig config = BaseConfig();
-    config.fields.Find("co")->attributes["units"] = "kg m-2 s-1";
-    config.fields.Find("co")->attributes["long_name"] = "carbon_monoxide_emission_flux";
+    const cece::CeceOutputConfig config = BaseConfig({
+        {"units", "kg m-2 s-1"},
+        {"long_name", "carbon_monoxide_emission_flux"},
+    });
 
     const fs::path nc_path = WriteOneStep(config);
     ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";

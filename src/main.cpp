@@ -151,8 +151,8 @@ int main(int argc, char* argv[]) {
         const cece::CeceConfig parsed_config = cece::ParseConfig(config_file);
         for (const cece::CeceOutputField& field : parsed_config.output_config.fields.GetDataFields()) {
             export_fields_mem[field.name] = std::vector<double>(static_cast<std::size_t>(nx) * ny * nz, 0.0);
-            cece_core_set_export_field(cece_data_ptr, field.name.c_str(), static_cast<int>(field.name.length()),
-                                       export_fields_mem[field.name].data(), nx, ny, nz, &rc);
+            cece_core_set_export_field(cece_data_ptr, field.name.c_str(), static_cast<int>(field.name.length()), export_fields_mem[field.name].data(),
+                                       nx, ny, nz, &rc);
         }
 
         // Setup CECE grid coordinate arrays (either generated dynamically from NamedGridRegistry, or calculated uniformly)

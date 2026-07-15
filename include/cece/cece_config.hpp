@@ -248,9 +248,6 @@ class CeceOutputFieldCollection {
         auto it = std::ranges::find_if(fields_, [&](const CeceOutputField& f) { return f.name == field_name; });
         return it != fields_.end() ? &*it : nullptr;
     }
-    CeceOutputField* Find(std::string_view field_name) {
-        return const_cast<CeceOutputField*>(std::as_const(*this).Find(field_name));
-    }
 
     /// True when any entry carries this field name.
     bool Contains(std::string_view field_name) const {
@@ -266,7 +263,8 @@ class CeceOutputFieldCollection {
         if (const auto t_pos = units.find('T'); t_pos != std::string::npos) {
             units[t_pos] = ' ';
         }
-        Find("time")->attributes["units"] = std::move(units);
+        auto it = std::ranges::find_if(fields_, [](const CeceOutputField& f) { return f.name == "time"; });
+        it->attributes["units"] = std::move(units);
     }
 
     /// The whole variable side of an AMIO manifest: the variable_names
@@ -293,21 +291,32 @@ class CeceOutputFieldCollection {
 
     // std-style surface so the collection drops in where the storage vector
     // was used directly (range-for, parser push_back, test indexing).
-    auto begin() const { return fields_.begin(); }
-    auto end() const { return fields_.end(); }
-    bool empty() const { return fields_.empty(); }
-    std::size_t size() const { return fields_.size(); }
-    /// Appends a data field. Coordinate-named entries are dropped: the
-    /// seeded coordinate variables are writer-managed and never
-    /// user-configurable.
+    auto begin() const {
+        return fields_.begin();
+    }
+    auto end() const {
+        return fields_.end();
+    }
+    bool empty() const {
+        return fields_.empty();
+    }
+    std::size_t size() const {
+        return fields_.size();
+    }
+    /// Appends a data field. Field names must be unique across the whole
+    /// collection — a duplicate data name, or any coordinate name (the
+    /// seeded coordinate variables are always present and writer-managed),
+    /// is rejected.
     void push_back(CeceOutputField field) {
-        if (IsCoordinateName(field.name)) {
-            return;
+        if (Contains(field.name)) {
+            throw std::runtime_error("duplicate output field name '" + field.name +
+                                     "' — field names must be unique, and the coordinate variables (lon, lat, lev, time) are always present");
         }
         fields_.push_back(std::move(field));
     }
-    const CeceOutputField& operator[](std::size_t index) const { return fields_[index]; }
-    CeceOutputField& operator[](std::size_t index) { return fields_[index]; }
+    const CeceOutputField& operator[](std::size_t index) const {
+        return fields_[index];
+    }
 
    private:
     std::vector<std::reference_wrapper<const CeceOutputField>> Filter(bool coordinates) const {
@@ -332,9 +341,9 @@ struct CeceOutputConfig {
     std::string filename_pattern = "cece_output_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc";  ///< Filename pattern with time tokens.
     int frequency_steps = 1;                                                      ///< Write every N time steps.
     CeceOutputFieldCollection fields;  ///< Coordinate variables + configured data fields; no data fields means write all export fields.
-    bool include_diagnostics = false;                                             ///< Also write diagnostic fields when true.
-    bool enabled = false;                                                         ///< True when an output block is present in the YAML.
-    int amio_worker_threads = -1;  ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).
+    bool include_diagnostics = false;  ///< Also write diagnostic fields when true.
+    bool enabled = false;              ///< True when an output block is present in the YAML.
+    int amio_worker_threads = -1;      ///< Number of AMIO background I/O worker threads (default: -1, meaning use fallback).
 };
 
 /**

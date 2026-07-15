@@ -411,7 +411,8 @@ CeceConfig ParseConfig(const std::string& filename) {
                         }
                     }
                 } else {
-                    throw std::runtime_error("output.fields entry " + std::to_string(entry_index) + " must be a field name or a map with 'name'/'attributes'");
+                    throw std::runtime_error("output.fields entry " + std::to_string(entry_index) +
+                                             " must be a field name or a map with 'name'/'attributes'");
                 }
                 config.output_config.fields.push_back(std::move(field));
                 ++entry_index;

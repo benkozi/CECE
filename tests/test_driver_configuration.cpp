@@ -505,10 +505,9 @@ TEST_F(DriverConfigurationTest, OutputFieldCreateIOManifest) {
 
 TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest) {
     // Every collection is seeded with the coordinate variables; configured
-    // entries join as data fields, and coordinate-named entries are dropped
-    // (the seeds are writer-managed and not user-configurable).
+    // entries join as data fields (coordinate-named entries are rejected —
+    // see CollectionRejectsDuplicateFieldNames).
     CeceOutputFieldCollection collection{
-        {"lon", {{"units", "overridden"}}},
         {"co", {{"units", "kg m-2 s-1"}}},
         {"nox", {}},
     };
@@ -563,6 +562,43 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
               "variable_names: [\"lon\", \"lat\", \"lev\", \"time\", \"co\", \"nox\"]\n"
               "variables:\n" +
                   expected_blocks);
+}
+
+TEST_F(DriverConfigurationTest, CollectionRejectsDuplicateFieldNames) {
+    // Duplicate data field name.
+    CeceOutputFieldCollection collection{{"co", {}}};
+    EXPECT_THROW(collection.push_back({"co", {}}), std::runtime_error);
+
+    // Coordinate names collide with the seeded coordinate variables.
+    EXPECT_THROW((CeceOutputFieldCollection{{"lon", {}}}), std::runtime_error);
+
+    // Duplicates inside a single initializer list are caught too — the
+    // list constructor routes every entry through push_back.
+    EXPECT_THROW((CeceOutputFieldCollection{{"co", {}}, {"co", {}}}), std::runtime_error);
+}
+
+TEST_F(DriverConfigurationTest, ParseOutputFieldsDuplicateRejected) {
+    WriteConfigFile(test_config_file, R"(
+output:
+  enabled: true
+  fields:
+    - co
+    - name: co
+      attributes:
+        units: "kg m-2 s-1"
+
+species:
+  CO:
+    - operation: add
+      field: CO_anthro
+      hierarchy: 0
+      scale: 1.0
+
+physics_schemes:
+  - name: NativeExample
+    language: cpp
+)");
+    EXPECT_THROW(ParseConfig(test_config_file), std::runtime_error);
 }
 
 TEST_F(DriverConfigurationTest, CreateIOManifestRequiresTimeUnits) {

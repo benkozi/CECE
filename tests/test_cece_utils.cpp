@@ -125,7 +125,9 @@ TEST_F(CeceUtilsTest, StandaloneWriterDuplicateFieldsFiltering) {
     CeceOutputConfig config;
     config.enabled = true;
     config.directory = test_dir;
-    config.fields = {{"lon", {}}, {"lat", {}}, {"lev", {}}, {"time", {}}, {"test_field", {}}};
+    // Coordinate variables are seeded automatically (configuring them is a
+    // duplicate-name error); only the data field is listed.
+    config.fields = {{"test_field", {}}};
     // Hand-built configs (no ParseConfig) set time's units themselves.
     config.fields.SetTimeUnits("2020-01-01T00:00:00");
 
