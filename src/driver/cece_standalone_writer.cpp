@@ -7,6 +7,8 @@ extern "C" {
 void amio_set_parent_communicator(MPI_Fint comm);
 }
 
+#include <algorithm>
+#include <array>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -14,6 +16,7 @@ void amio_set_parent_communicator(MPI_Fint comm);
 #include <iomanip>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <vector>
 
 #include "cece/cece_logger.hpp"
@@ -23,6 +26,14 @@ namespace fs = std::filesystem;
 namespace cece {
 
 namespace {
+
+// The coordinate variables the writer manages itself: they carry fixed
+// built-in attributes in the manifest and are never written as data fields.
+constexpr std::array<std::string_view, 4> kCoordinateNames{"lon", "lat", "lev", "time"};
+
+bool IsCoordinateName(std::string_view name) {
+    return std::ranges::find(kCoordinateNames, name) != kCoordinateNames.end();
+}
 
 std::tm ParseISO8601(const std::string& iso_time) {
     std::tm tm = {};
@@ -238,11 +249,11 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "  title: \"CECE-HELM Standalone Simulation Output\"\n"
                    << "  Conventions: \"CF-1.8\"\n"
                    << "variable_names: [\"lon\", \"lat\", \"lev\", \"time\"";
-            for (const auto& name : config_.fields) {
-                if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
+            for (const auto& field : config_.fields) {
+                if (IsCoordinateName(field.name)) {
                     continue;
                 }
-                m_file << ", \"" << name << "\"";
+                m_file << ", \"" << field.name << "\"";
             }
             m_file << "]\n"
                    << "variables:\n"
@@ -262,25 +273,22 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                    << "    attributes:\n"
                    << "      units: \"" << time_units << "\"\n"
                    << "      long_name: \"time\"\n";
-            for (const auto& name : config_.fields) {
-                if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
+            for (const auto& field : config_.fields) {
+                if (IsCoordinateName(field.name)) {
                     continue;
                 }
-                // Only configured attributes are emitted (the "attributes" map
-                // on output.fields entries); a field without configuration gets
-                // none — never fabricated units/long_name. The structural
-                // coordinates attribute defaults to the written field shape
-                // [time, lev, lat, lon] and is overridable per field.
-                m_file << "  " << name << ":\n"
+                // Only configured attributes are emitted; a field without
+                // configuration gets none — never fabricated units/long_name.
+                // The structural coordinates attribute defaults to the written
+                // field shape [time, lev, lat, lon] and is overridable per
+                // field.
+                m_file << "  " << field.name << ":\n"
                        << "    attributes:\n";
                 bool has_coordinates = false;
-                auto attrs_it = config_.field_attributes.find(name);
-                if (attrs_it != config_.field_attributes.end()) {
-                    for (const auto& [attr_name, attr_value] : attrs_it->second) {
-                        m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
-                        if (attr_name == "coordinates") {
-                            has_coordinates = true;
-                        }
+                for (const auto& [attr_name, attr_value] : field.attributes) {
+                    m_file << "      " << attr_name << ": \"" << attr_value << "\"\n";
+                    if (attr_name == "coordinates") {
+                        has_coordinates = true;
                     }
                 }
                 if (!has_coordinates) {
@@ -356,7 +364,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
 
         // Step 8: Write fields
         for (const auto& [name, view] : fields) {
-            if (name == "lon" || name == "lat" || name == "lev" || name == "time") {
+            if (IsCoordinateName(name)) {
                 continue;
             }
 
@@ -365,7 +373,7 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 should_write = true;
             } else {
                 for (const auto& f : config_.fields) {
-                    if (f == name) {
+                    if (f.name == name) {
                         should_write = true;
                         break;
                     }

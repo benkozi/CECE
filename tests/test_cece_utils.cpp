@@ -125,7 +125,7 @@ TEST_F(CeceUtilsTest, StandaloneWriterDuplicateFieldsFiltering) {
     CeceOutputConfig config;
     config.enabled = true;
     config.directory = test_dir;
-    config.fields = {"lon", "lat", "lev", "time", "test_field"};
+    config.fields = {{"lon", {}}, {"lat", {}}, {"lev", {}}, {"time", {}}, {"test_field", {}}};
 
     CeceStandaloneWriter writer(config);
 
@@ -171,7 +171,7 @@ TEST_F(CeceUtilsTest, CoreWriteStepSkipsInitialStep) {
     d.standalone_mode = true;
     d.config.output_config.enabled = true;
     d.config.output_config.directory = test_dir;
-    d.config.output_config.fields = {"test_field"};
+    d.config.output_config.fields = {{"test_field", {}}};
     d.config.output_config.frequency_steps = 1;
     d.config.output_config.filename_pattern = "cece_output_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc";
 

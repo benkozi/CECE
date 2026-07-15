@@ -77,7 +77,7 @@ class StandaloneWriterAttributesTest : public ::testing::Test {
         config.directory = out_dir_.string();
         config.filename_pattern = "attr_test_{HH}{mm}{ss}.nc";
         config.frequency_steps = 1;
-        config.fields = {"co"};
+        config.fields = {{"co", {}}};
         return config;
     }
 
@@ -107,7 +107,7 @@ TEST_F(StandaloneWriterAttributesTest, DefaultConfigEmitsNoFabricatedAttributes)
 // A user-supplied coordinates attribute overrides the "time lev lat lon" default.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) {
     cece::CeceOutputConfig config = BaseConfig();
-    config.field_attributes["co"]["coordinates"] = "lon lat time";
+    config.fields[0].attributes["coordinates"] = "lon lat time";
 
     const fs::path nc_path = WriteOneStep(config);
     ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";
@@ -121,8 +121,8 @@ TEST_F(StandaloneWriterAttributesTest, ConfiguredCoordinatesOverrideTheDefault) 
 // NetCDF verbatim.
 TEST_F(StandaloneWriterAttributesTest, ConfiguredFieldAttributesReachTheOutput) {
     cece::CeceOutputConfig config = BaseConfig();
-    config.field_attributes["co"]["units"] = "kg m-2 s-1";
-    config.field_attributes["co"]["long_name"] = "carbon_monoxide_emission_flux";
+    config.fields[0].attributes["units"] = "kg m-2 s-1";
+    config.fields[0].attributes["long_name"] = "carbon_monoxide_emission_flux";
 
     const fs::path nc_path = WriteOneStep(config);
     ASSERT_TRUE(fs::exists(nc_path)) << nc_path << " was not written";

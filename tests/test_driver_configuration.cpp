@@ -430,21 +430,21 @@ physics_schemes:
     CeceConfig config = ParseConfig(test_config_file);
 
     ASSERT_EQ(config.output_config.fields.size(), 4u);
-    EXPECT_EQ(config.output_config.fields[0], "co");
-    EXPECT_EQ(config.output_config.fields[1], "nox");
-    EXPECT_EQ(config.output_config.fields[2], "isoprene");
-    EXPECT_EQ(config.output_config.fields[3], "sea_salt_total");
+    EXPECT_EQ(config.output_config.fields[0].name, "co");
+    EXPECT_EQ(config.output_config.fields[1].name, "nox");
+    EXPECT_EQ(config.output_config.fields[2].name, "isoprene");
+    EXPECT_EQ(config.output_config.fields[3].name, "sea_salt_total");
 
-    ASSERT_EQ(config.output_config.field_attributes.count("co"), 1u);
-    EXPECT_EQ(config.output_config.field_attributes["co"]["units"], "kg m-2 s-1");
-    EXPECT_EQ(config.output_config.field_attributes["co"]["long_name"], "carbon_monoxide_emission_flux");
+    ASSERT_EQ(config.output_config.fields[0].attributes.size(), 2u);
+    EXPECT_EQ(config.output_config.fields[0].attributes["units"], "kg m-2 s-1");
+    EXPECT_EQ(config.output_config.fields[0].attributes["long_name"], "carbon_monoxide_emission_flux");
 
-    ASSERT_EQ(config.output_config.field_attributes.count("isoprene"), 1u);
-    EXPECT_EQ(config.output_config.field_attributes["isoprene"]["units"], "kg m-2 s-1");
+    ASSERT_EQ(config.output_config.fields[2].attributes.size(), 1u);
+    EXPECT_EQ(config.output_config.fields[2].attributes["units"], "kg m-2 s-1");
 
-    // Fields without configured attributes get no map entry at all.
-    EXPECT_EQ(config.output_config.field_attributes.count("nox"), 0u);
-    EXPECT_EQ(config.output_config.field_attributes.count("sea_salt_total"), 0u);
+    // Fields without configured attributes carry an empty map.
+    EXPECT_TRUE(config.output_config.fields[1].attributes.empty());
+    EXPECT_TRUE(config.output_config.fields[3].attributes.empty());
 }
 
 TEST_F(DriverConfigurationTest, ParseOutputFieldsScalarShorthandStillWorks) {
@@ -467,8 +467,8 @@ physics_schemes:
     CeceConfig config = ParseConfig(test_config_file);
 
     ASSERT_EQ(config.output_config.fields.size(), 1u);
-    EXPECT_EQ(config.output_config.fields[0], "CO");
-    EXPECT_TRUE(config.output_config.field_attributes.empty());
+    EXPECT_EQ(config.output_config.fields[0].name, "CO");
+    EXPECT_TRUE(config.output_config.fields[0].attributes.empty());
 }
 
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {
