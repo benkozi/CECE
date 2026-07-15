@@ -565,6 +565,18 @@ TEST_F(DriverConfigurationTest, OutputFieldCollectionPartitionLookupAndManifest)
                   expected_blocks);
 }
 
+TEST_F(DriverConfigurationTest, CreateIOManifestRequiresTimeUnits) {
+    // Rendering without SetTimeUnits would silently emit a time block with
+    // no units; the collection refuses instead. Presence is checked, not
+    // content.
+    const CeceOutputFieldCollection unset{{"co", {}}};
+    EXPECT_THROW(unset.CreateIOManifest(), std::runtime_error);
+
+    CeceOutputFieldCollection set{{"co", {}}};
+    set.SetTimeUnits("2001-06-01T00:00:00");
+    EXPECT_NO_THROW(set.CreateIOManifest());
+}
+
 TEST_F(DriverConfigurationTest, ParseOutputEnabledFalse) {
     // enabled: false keeps the block as dormant configuration but disables
     // output; an omitted or true enabled key keeps output on.

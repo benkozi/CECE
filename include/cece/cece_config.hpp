@@ -14,6 +14,7 @@
 #include <functional>
 #include <initializer_list>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -270,7 +271,13 @@ class CeceOutputFieldCollection {
 
     /// The whole variable side of an AMIO manifest: the variable_names
     /// list followed by every field's variable block, in declaration order.
+    /// Throws when time's units were never set (SetTimeUnits) — a time
+    /// block without units is structural breakage, not a configuration
+    /// choice.
     std::string CreateIOManifest() const {
+        if (Find("time")->attributes.count("units") == 0) {
+            throw std::runtime_error("time units are not set — call SetTimeUnits() before CreateIOManifest()");
+        }
         std::string manifest = "variable_names: [";
         bool first_name = true;
         for (const auto& field : fields_) {
