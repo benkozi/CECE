@@ -150,23 +150,34 @@ struct CeceDataConfig {
 
 /// The coordinate variables the standalone writer manages itself: they
 /// carry fixed built-in attributes, are never written as data fields, and
-/// never receive a coordinates attribute of their own.
-inline constexpr std::array<std::string_view, 4> kCoordinateNames{"lon", "lat", "lev", "time"};
+/// never receive a coordinates attribute of their own. Listed in the
+/// written field shape order [time, lev, lat, lon] — the order of the
+/// default coordinates attribute derived below.
+inline constexpr std::array<std::string_view, 4> kCoordinateNames{"time", "lev", "lat", "lon"};
 
 inline bool IsCoordinateName(std::string_view name) {
     return std::ranges::find(kCoordinateNames, name) != kCoordinateNames.end();
 }
+
+/// Default CF coordinates attribute for data fields: the coordinate names
+/// joined in written-shape order. Structural, so every data field gets it
+/// unless the entry configures its own coordinates value.
+inline const std::string kDefaultCoordinates = [] {
+    std::string joined;
+    for (const std::string_view name : kCoordinateNames) {
+        if (!joined.empty()) {
+            joined += ' ';
+        }
+        joined += name;
+    }
+    return joined;
+}();
 
 /**
  * @struct CeceOutputField
  * @brief One output.fields entry: a field to write and its NetCDF attributes.
  */
 struct CeceOutputField {
-    /// Default CF coordinates attribute, matching the written field shape
-    /// [time, lev, lat, lon]. Structural, so every field gets it unless the
-    /// entry configures its own coordinates value.
-    static constexpr std::string_view kDefaultCoordinates = "time lev lat lon";
-
     std::string name;  ///< Export field name.
     /// NetCDF attributes (attribute -> value) from the entry's optional
     /// "attributes" map. Fields without configured attributes get none —
