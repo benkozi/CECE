@@ -157,10 +157,12 @@ struct CeceOutputField {
     /// the writer never fabricates units/long_name.
     std::map<std::string, std::string> attributes;
 
-    /// True when the entry configures its own coordinates attribute,
-    /// overriding kDefaultCoordinates.
-    bool HasCoordinates() const {
-        return attributes.count("coordinates") != 0;
+    /// The effective coordinates attribute: the entry's configured value
+    /// when present, kDefaultCoordinates otherwise. The returned view is
+    /// valid as long as this field's attributes map is unmodified.
+    std::string_view GetCoordinates() const {
+        auto it = attributes.find("coordinates");
+        return it != attributes.end() ? std::string_view(it->second) : kDefaultCoordinates;
     }
 };
 
