@@ -8,6 +8,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
+#include <array>
 #include <map>
 #include <ostream>
 #include <string>
@@ -142,6 +144,15 @@ struct CeceDataConfig {
     int debug_level = 0;                        ///< TIDE/strdata debug verbosity level (0=off, 1=time-matching info).
 };
 
+/// The coordinate variables the standalone writer manages itself: they
+/// carry fixed built-in attributes, are never written as data fields, and
+/// never receive a coordinates attribute of their own.
+inline constexpr std::array<std::string_view, 4> kCoordinateNames{"lon", "lat", "lev", "time"};
+
+inline bool IsCoordinateName(std::string_view name) {
+    return std::ranges::find(kCoordinateNames, name) != kCoordinateNames.end();
+}
+
 /**
  * @struct CeceOutputField
  * @brief One output.fields entry: a field to write and its NetCDF attributes.
@@ -169,7 +180,8 @@ struct CeceOutputField {
     /// Appends this field's variable block to an AMIO manifest stream.
     /// Only configured attributes are emitted; a field without configuration
     /// gets none — never fabricated units/long_name. The structural
-    /// coordinates attribute is always present, resolved by GetCoordinates.
+    /// coordinates attribute is always present on data fields, resolved by
+    /// GetCoordinates; coordinate variables never receive one.
     void UpdateIOManifest(std::ostream& manifest) const {
         manifest << "  " << name << ":\n"
                  << "    attributes:\n";
@@ -179,7 +191,9 @@ struct CeceOutputField {
             }
             manifest << "      " << attr_name << ": \"" << attr_value << "\"\n";
         }
-        manifest << "      coordinates: \"" << GetCoordinates() << "\"\n";
+        if (!IsCoordinateName(name)) {
+            manifest << "      coordinates: \"" << GetCoordinates() << "\"\n";
+        }
     }
 };
 

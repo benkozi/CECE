@@ -7,8 +7,6 @@ extern "C" {
 void amio_set_parent_communicator(MPI_Fint comm);
 }
 
-#include <algorithm>
-#include <array>
 #include <cstring>
 #include <ctime>
 #include <filesystem>
@@ -16,7 +14,6 @@ void amio_set_parent_communicator(MPI_Fint comm);
 #include <iomanip>
 #include <set>
 #include <sstream>
-#include <string_view>
 #include <vector>
 
 #include "cece/cece_logger.hpp"
@@ -26,14 +23,6 @@ namespace fs = std::filesystem;
 namespace cece {
 
 namespace {
-
-// The coordinate variables the writer manages itself: they carry fixed
-// built-in attributes in the manifest and are never written as data fields.
-constexpr std::array<std::string_view, 4> kCoordinateNames{"lon", "lat", "lev", "time"};
-
-bool IsCoordinateName(std::string_view name) {
-    return std::ranges::find(kCoordinateNames, name) != kCoordinateNames.end();
-}
 
 std::tm ParseISO8601(const std::string& iso_time) {
     std::tm tm = {};
@@ -255,24 +244,17 @@ int CeceStandaloneWriter::WriteTimeStep(const std::unordered_map<std::string, Du
                 }
                 m_file << ", \"" << field.name << "\"";
             }
+            const std::vector<CeceOutputField> coordinate_fields{
+                {"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}},
+                {"lat", {{"units", "degrees_north"}, {"long_name", "latitude"}}},
+                {"lev", {{"units", "level"}, {"long_name", "vertical level"}}},
+                {"time", {{"units", time_units}, {"long_name", "time"}}},
+            };
             m_file << "]\n"
-                   << "variables:\n"
-                   << "  lon:\n"
-                   << "    attributes:\n"
-                   << "      units: \"degrees_east\"\n"
-                   << "      long_name: \"longitude\"\n"
-                   << "  lat:\n"
-                   << "    attributes:\n"
-                   << "      units: \"degrees_north\"\n"
-                   << "      long_name: \"latitude\"\n"
-                   << "  lev:\n"
-                   << "    attributes:\n"
-                   << "      units: \"level\"\n"
-                   << "      long_name: \"vertical level\"\n"
-                   << "  time:\n"
-                   << "    attributes:\n"
-                   << "      units: \"" << time_units << "\"\n"
-                   << "      long_name: \"time\"\n";
+                   << "variables:\n";
+            for (const auto& field : coordinate_fields) {
+                field.UpdateIOManifest(m_file);
+            }
             for (const auto& field : config_.fields) {
                 if (IsCoordinateName(field.name)) {
                     continue;

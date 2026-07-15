@@ -491,6 +491,17 @@ TEST_F(DriverConfigurationTest, OutputFieldUpdateIOManifest) {
               "  nox:\n"
               "    attributes:\n"
               "      coordinates: \"time lev lat lon\"\n");
+
+    // Coordinate variables carry their configured attributes but never a
+    // coordinates attribute of their own (attributes emit in map order).
+    CeceOutputField coordinate{"lon", {{"units", "degrees_east"}, {"long_name", "longitude"}}};
+    std::ostringstream coordinate_out;
+    coordinate.UpdateIOManifest(coordinate_out);
+    EXPECT_EQ(coordinate_out.str(),
+              "  lon:\n"
+              "    attributes:\n"
+              "      long_name: \"longitude\"\n"
+              "      units: \"degrees_east\"\n");
 }
 
 TEST_F(DriverConfigurationTest, OutputFieldEntryWithoutNameIsRejected) {
