@@ -1,0 +1,27 @@
+[project]
+name = "combo-test-runner"
+version = "0.1.0"
+description = "Combinatorial pytest runner for cece_standalone_driver"
+requires-python = ">=3.11"
+dependencies = [
+    "cartopy>=0.22",
+    "dask[distributed]>=2024.1",
+    "matplotlib>=3.8",
+    "netcdf4>=1.6",
+    "pandas>=2.0",
+    "pillow>=10.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pytest>=8.0",
+    "pytest-mock>=3.0",
+    "python-ulid>=2.0",
+    "pyyaml>=6.0",
+    "xarray>=2024.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+pythonpath = ["src"]
