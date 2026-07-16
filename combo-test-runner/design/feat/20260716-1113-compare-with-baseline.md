@@ -1,31 +1,174 @@
-# always do
+# Feature: baseline comparison of combination NetCDF output
 
-- include updating design.md as part of the implementation
-- update combo-test-runner tests in addition to any changes to test_driver_combos.py
-- update README.md with any necessary documentation changes in case of an api adjustment
-- use pydantic models as opposed to dataclasses
-  - all pydantic fields should include a description like `... = Field(description="<description content here>", ...`
-- do *not* add driver bugs to known bugs in `README.md` unless explicitly told to do so
-- use a test-driven development, red-green-refactor approach for all fixes and features (when possible)
+## Goal
 
-# requirements
+Optionally compare each combination's NetCDF output against a **baseline** —
+the payoff the stats/ids groundwork has been building toward. Pairing is at
+the **combination** level (not every combination has a baseline), baselines
+are identified by **ULID**, and the comparison models `nccmp`: bit-for-bit
+by default, tolerance-based on request, with structural checks (files,
+formats, dimensions, variables, attributes) always exact. Every comparison
+produces a YAML results artifact from a pydantic model.
 
-- netcdf output from combination runs need to be optionally compared with a baseline
-- a realization<->baseline pair occurs at the *combination* level. we may not have baselines for all combinations
-  - check all netcdf outputs from a combination
-  - the file count and names must match exactly
-  - a baseline is found using a ULID identifier
-- comparison should model nccmp. it needs to check data bit-for-bit or with a tolerance, global attributes, and field attributes.
-  - bit-for-bit is default (rtol=0), if rtol is a float great than zero, then use a tolerance. tolerance should be 0 or positive float
-  - right now always check attributes (global and variable level). assume exact
-  - variable counts and names match exactly
-  - dimension sizes and names match exactly
-  - netcdf file type matches exactly
-- eventually, baselines will be retrieved online, but now assume they are stored locally
-  - add a setting: `baseline_root_dir` (default: `None`). if none, assume cwd
-  - so, expect a baseline at <base_line_root_dir>/<ulid>
-  - in future work, we will create baselines that will have a manifest linking ULIDs to a combination and other metadata
-- use parallel xarray to speed comparison
-- following the comparison, generate a yaml file describing the comparison results
-  - have the comparison generate a pydantic model that is converted to yaml
-- generate an initial baseline in `/Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-baselines` with the provided config
+## Design
+
+### Suite config: the `comparison` block
+
+```yaml
+comparison:
+  rtol: 0.0                                # default: bit-for-bit; > 0 = relative tolerance
+  baselines:                               # combination name -> baseline ULID
+    MACCITY.map-bilinear: 01K0AAAAAAAAAAAAAAAAAAAAAA
+    MACCITY.map-consd:    01K0BBBBBBBBBBBBBBBBBBBBBB
+```
+
+```python
+class Comparison(StrictModel):
+    rtol: float = Field(0.0, ge=0, description="0 = bit-for-bit; > 0 = relative tolerance for data comparison")
+    baselines: dict[str, str] = Field(default_factory=dict, description="Combination name -> baseline ULID")
+
+class SuiteConfig(StrictModel):
+    ...
+    comparison: Comparison | None = Field(None, description="Baseline comparison; None disables it entirely")
+```
+
+- Keys are **combination names** (human-readable, deterministic, stable
+  across runs — the established cross-run join key). Validated at session
+  start against the enumerated combinations, like sweep selectors: an
+  unknown name fails before any container runs.
+- Combinations without an entry skip the comparison test (the "optional"
+  in the requirement); `comparison: null`/absent disables it for the suite.
+- `rtol` is suite-level for now (per-combination overrides are future work)
+  and pydantic-validated `ge=0`.
+
+### Setting and baseline layout
+
+| Setting             | Env var                  | Default                |
+|---------------------|--------------------------|------------------------|
+| `baseline_root_dir` | `CECE_BASELINE_ROOT_DIR` | `None` → cwd           |
+
+A baseline lives at `<baseline_root_dir>/<ulid>/` and contains exactly the
+`*.nc` files of the combination run it was captured from (flat, same
+filenames the driver produced). A **configured baseline that cannot be
+found is a test failure, not a skip** — a declared expectation that cannot
+be evaluated must be loud. Future work replaces local lookup with online
+retrieval plus a manifest linking ULIDs to combination names and metadata;
+nothing in this design depends on the directory carrying metadata today.
+
+### Comparison engine (`src/comparison.py`, modeled on nccmp)
+
+Per combination, given the combo dir and the baseline dir:
+
+1. **File sets**: `*.nc` names and counts must match exactly (missing and
+   unexpected files reported by name).
+2. Per matched file pair, all checked and reported:
+   - **NetCDF format** exact (e.g. `NETCDF4` vs classic — via the
+     underlying file `data_model`).
+   - **Dimensions**: names and sizes exact.
+   - **Variables**: names and counts exact.
+   - **Global attributes**: exact (raw, undecoded — same
+     `decode_cf=False` rationale as the species-attributes assertion).
+   - **Per-variable attributes**: exact, raw.
+   - **Data**: `rtol == 0` → bit-for-bit (dtypes equal; values identical
+     with NaNs required in identical positions); `rtol > 0` →
+     `|realization - baseline| <= rtol * |baseline|` elementwise (NaN
+     positions still identical). Always-exact attributes are per the
+     requirement — tolerance applies to data only.
+3. **Parallel xarray**: datasets open with `chunks="auto"`; per-variable
+   comparison reductions (equality / max-abs-diff / max-rel-diff) are
+   gathered into a single `dask.compute` executed on the existing
+   session `dask_client` — the same batching pattern as the stats step.
+
+### Results: pydantic model → YAML artifact
+
+```python
+class VariableComparison(StrictModel):   # frozen; every field described
+    name, dtype_match, data_match, attributes_match, max_abs_diff, max_rel_diff, detail
+
+class FileComparison(StrictModel):
+    file, format_match, dimensions_match, variables_match,
+    global_attributes_match, variables: list[VariableComparison], passed
+
+class BaselineComparisonResult(StrictModel):
+    run_id, combo, combo_id, baseline_ulid, rtol,
+    file_names_match, files: list[FileComparison], passed
+```
+
+Written to `<combo-dir>/<combo_id>-comparison.yaml` via the `to_yaml`
+convention **whether the comparison passes or fails** (like `.out`), so a
+failed comparison leaves its full diff record. The test then asserts
+`result.passed`, with the failure message summarizing the offending
+files/variables/checks.
+
+### Test structure
+
+A new unwrapped test on the shared fixture, standard skip ladder:
+
+- `test_baseline_comparison[<combo>]` — skips when the driver run failed;
+  skips with `no baseline configured for this combination` when the combo
+  has no `baselines` entry (or the block is absent); otherwise compares and
+  asserts. Missing baseline directory → **failure** (see above).
+
+### Initial baseline generation (implementation step)
+
+With the current fixed driver and checked-in config:
+
+1. Run the suite; for each of the three combinations, copy its `*.nc` into
+   `/Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-baselines/<new ULID>/`
+   (one freshly generated ULID per combination).
+2. Wire those ULIDs into the checked-in suite's `comparison.baselines` and
+   set `CECE_BASELINE_ROOT_DIR` to the Dropbox path when running locally.
+
+**Portability caveat, accepted**: the checked-in suite then references
+baselines that exist only where `CECE_BASELINE_ROOT_DIR` points at this
+store; elsewhere the comparison tests fail loudly (missing baseline). The
+future manifest/online-retrieval work resolves this properly.
+
+## TDD plan (red first)
+
+Harness tests against fabricated NetCDF pairs, written before
+`comparison.py` exists:
+
+- identical pair → passes bit-for-bit; a single perturbed value → fails at
+  `rtol=0`, passes at a covering `rtol`, fails at a tighter one
+- NaN-position mismatch fails even under tolerance
+- changed variable attribute / global attribute → fails (attributes are
+  always exact)
+- dimension size change, variable added/removed, file added/removed/renamed,
+  format mismatch (`to_netcdf(format="NETCDF4"/"NETCDF3_CLASSIC")`) → each
+  fails naming the check
+- results YAML written on both pass and fail and round-trips through the
+  model
+- suite parsing: `rtol` validation (`-0.5` rejected), unknown baseline
+  combination name rejected at session start
+
+## Ripples (standing process rules)
+
+- **`design.md`**: suite-configuration example gains the `comparison`
+  block; settings table gains `baseline_root_dir`; the artifacts layout
+  gains `<combo_id>-comparison.yaml`; the "no baseline comparison yet"
+  non-goal is removed.
+- **`README.md`**: env var table (`CECE_BASELINE_ROOT_DIR`), test list
+  gains `test_baseline_comparison`, results layout gains the comparison
+  yaml.
+- Pydantic models with described fields, never dataclasses.
+
+## Non-goals
+
+- No online baseline retrieval, no baseline manifest (ULID → combination
+  metadata), no baseline *creation* tooling in the runner — capture is a
+  manual/scripted step this iteration.
+- No per-combination `rtol` overrides; no absolute-tolerance (`atol`) mode.
+- No statistics-CSV comparison — this feature compares the NetCDF files
+  themselves.
+
+## Acceptance criteria
+
+- Harness passes without docker, covering the matrix above.
+- Integration with the generated baselines and
+  `CECE_BASELINE_ROOT_DIR` set: all `test_baseline_comparison` tests pass
+  bit-for-bit against the freshly captured baselines; each combo dir
+  contains its `<combo_id>-comparison.yaml` with `passed: true`.
+- Removing a combination's `baselines` entry skips its comparison test with
+  the explicit reason; pointing at a nonexistent ULID fails it.
+- All other tests keep their outcomes.
