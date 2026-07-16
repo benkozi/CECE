@@ -8,7 +8,7 @@ from assertions import (
     assert_nc_filenames,
     assert_species_attributes,
 )
-from comparison import compare_with_baseline
+from comparison import compare_with_baseline, write_comparison_csv
 from models.suite_config import Analysis, Assertions
 from runner import DriverRunResult
 from settings import Settings
@@ -95,12 +95,13 @@ def test_baseline_comparison(
         baseline_dir,
         atol=entry.atol,
         run_id=run_context.run_id,
+        suite=run_context.suite,
         combo=driver_run.combo.name,
         combo_id=driver_run.combo.combo_id,
         baseline_ulid=entry.ulid,
     )
-    result.to_yaml(
-        driver_run.combo_dir / f"{driver_run.combo.combo_id}-comparison.yaml"
+    write_comparison_csv(
+        result, driver_run.combo_dir / f"{driver_run.combo.combo_id}-stats-comparison.csv"
     )
     assert result.passed, f"baseline comparison failed: {result.failure_summary()}"
 

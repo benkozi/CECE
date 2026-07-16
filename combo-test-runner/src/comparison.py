@@ -16,8 +16,8 @@ import dask
 import dask.array as dsa
 import netCDF4
 import numpy as np
+import pandas as pd
 import xarray as xr
-import yaml
 from pydantic import ConfigDict, Field
 
 from logs import get_logger
@@ -45,6 +45,23 @@ class VariableComparison(StrictModel):
         None,
         description="Maximum absolute elementwise difference; None when shapes/dtypes prevented comparison",
     )
+    rmse: float | None = Field(
+        None, description="Root-mean-square of the difference; None when comparison was prevented"
+    )
+    n_evaluated: int | None = Field(
+        None,
+        description="Number of elements evaluated (non-NaN difference values); None when comparison was prevented",
+    )
+    n_mismatched: int | None = Field(
+        None,
+        description="Number of elements failing the data check under atol (NaN-position mismatches included); data_match iff 0",
+    )
+    diff_sum: float | None = Field(None, description="Sum of the difference values (nan-aware)")
+    diff_mean: float | None = Field(None, description="Mean of the difference values (nan-aware)")
+    diff_std: float | None = Field(None, description="Standard deviation of the difference values (nan-aware)")
+    diff_min: float | None = Field(None, description="Minimum difference value (nan-aware)")
+    diff_max: float | None = Field(None, description="Maximum difference value (nan-aware)")
+    diff_median: float | None = Field(None, description="Median difference value (nan-aware)")
     detail: str | None = Field(
         None, description="Human-readable mismatch detail; None when everything matched"
     )
@@ -79,13 +96,14 @@ class FileComparison(StrictModel):
 
 
 class BaselineComparisonResult(StrictModel):
-    """The full comparison record for one combination, written as YAML."""
+    """The full comparison record for one combination, flattened to CSV rows."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     run_id: str = Field(
         description="Session ULID of the run that produced the realization"
     )
+    suite: str = Field(description="Unique suite name the realization was produced by")
     combo: str = Field(description="Canonical combination name")
     combo_id: str = Field(description="Content-hash combination id")
     baseline_ulid: str = Field(description="ULID identifying the baseline")
@@ -97,15 +115,6 @@ class BaselineComparisonResult(StrictModel):
         description="Per-file outcomes for the common files"
     )
     passed: bool = Field(description="Whether the whole comparison passed")
-
-    def to_yaml(self, path: Path) -> None:
-        with open(path, "w") as f:
-            yaml.dump(
-                self.model_dump(mode="json"),
-                f,
-                default_flow_style=False,
-                sort_keys=False,
-            )
 
     def failure_summary(self) -> str:
         parts: list[str] = []
@@ -286,15 +295,42 @@ def _compare_variable(
             values_equal = (real == base) | both_nan
         else:
             values_equal = (abs(real - base) <= atol) | both_nan
-        equal_graph = (values_equal & nan_positions_equal).all()
+        elements_ok = values_equal & nan_positions_equal
+        equal_graph = elements_ok.all()
+        mismatch_graph = dsa.sum(~elements_ok)
         diff_graph = dsa.nanmax(abs(real - base))
     else:
-        equal_graph = (
-            (real == base).all() if atol == 0.0 else (abs(real - base) <= atol).all()
-        )
+        elements_ok = (real == base) if atol == 0.0 else (abs(real - base) <= atol)
+        equal_graph = elements_ok.all()
+        mismatch_graph = dsa.sum(~elements_ok)
         diff_graph = abs(real - base).max()
 
-    equal, max_diff = dask.compute(equal_graph, diff_graph)
+    # Difference statistics: the descriptive set applied to the difference
+    # field, plus RMSE — one batched compute alongside the match reductions.
+    diff_flat = (real.astype(float) - base.astype(float)).ravel()
+    stats_graphs = (
+        dsa.sqrt(dsa.nanmean(diff_flat**2)),
+        dsa.sum(~dsa.isnan(diff_flat)),
+        dsa.nansum(diff_flat),
+        dsa.nanmean(diff_flat),
+        dsa.nanstd(diff_flat),
+        dsa.nanmin(diff_flat),
+        dsa.nanmax(diff_flat),
+        dsa.nanmedian(diff_flat, axis=0),
+    )
+    (
+        equal,
+        n_mismatched,
+        max_diff,
+        rmse,
+        n_evaluated,
+        diff_sum,
+        diff_mean,
+        diff_std,
+        diff_min,
+        diff_max,
+        diff_median,
+    ) = dask.compute(equal_graph, mismatch_graph, diff_graph, *stats_graphs)
     data_match = bool(equal) and dtype_match
     max_abs_diff = float(max_diff) if np.isfinite(max_diff) else None
     if not bool(equal):
@@ -306,6 +342,15 @@ def _compare_variable(
         data_match=data_match,
         attributes_match=attributes_match,
         max_abs_diff=max_abs_diff,
+        rmse=float(rmse),
+        n_evaluated=int(n_evaluated),
+        n_mismatched=int(n_mismatched),
+        diff_sum=float(diff_sum),
+        diff_mean=float(diff_mean),
+        diff_std=float(diff_std),
+        diff_min=float(diff_min),
+        diff_max=float(diff_max),
+        diff_median=float(diff_median),
         detail="; ".join(detail_parts) or None,
     )
 
@@ -369,6 +414,7 @@ def compare_with_baseline(
     baseline_dir: Path,
     atol: float,
     run_id: str,
+    suite: str,
     combo: str,
     combo_id: str,
     baseline_ulid: str,
@@ -395,6 +441,7 @@ def compare_with_baseline(
     passed = file_names_match and all(file.passed for file in files)
     result = BaselineComparisonResult(
         run_id=run_id,
+        suite=suite,
         combo=combo,
         combo_id=combo_id,
         baseline_ulid=baseline_ulid,
@@ -410,3 +457,69 @@ def compare_with_baseline(
             "comparison FAILED for combo %s: %s", combo, result.failure_summary()
         )
     return result
+
+
+_COMPARISON_COLUMNS = [
+    "run_id", "suite", "combo_id", "combo", "baseline_ulid", "atol",
+    "file", "file_names_match", "format_match", "dimensions_match",
+    "variables_match", "global_attributes_match",
+    "variable", "dtype_match", "data_match", "attributes_match",
+    "max_abs_diff", "rmse", "n_evaluated", "n_mismatched", "diff_sum", "diff_mean",
+    "diff_std", "diff_min", "diff_max", "diff_median", "passed",
+]
+
+
+def write_comparison_csv(result: BaselineComparisonResult, csv_path: Path) -> pd.DataFrame:
+    """Flatten one combination's comparison result to CSV: one row per
+    (file, variable), replacing the former YAML artifact."""
+    rows = []
+    for file in result.files:
+        for variable in file.variables:
+            rows.append(
+                {
+                    "run_id": result.run_id,
+                    "suite": result.suite,
+                    "combo_id": result.combo_id,
+                    "combo": result.combo,
+                    "baseline_ulid": result.baseline_ulid,
+                    "atol": result.atol,
+                    "file": file.file,
+                    "file_names_match": result.file_names_match,
+                    "format_match": file.format_match,
+                    "dimensions_match": file.dimensions_match,
+                    "variables_match": file.variables_match,
+                    "global_attributes_match": file.global_attributes_match,
+                    "variable": variable.name,
+                    "dtype_match": variable.dtype_match,
+                    "data_match": variable.data_match,
+                    "attributes_match": variable.attributes_match,
+                    "max_abs_diff": variable.max_abs_diff,
+                    "rmse": variable.rmse,
+                    "n_evaluated": variable.n_evaluated,
+                    "n_mismatched": variable.n_mismatched,
+                    "diff_sum": variable.diff_sum,
+                    "diff_mean": variable.diff_mean,
+                    "diff_std": variable.diff_std,
+                    "diff_min": variable.diff_min,
+                    "diff_max": variable.diff_max,
+                    "diff_median": variable.diff_median,
+                    "passed": result.passed,
+                }
+            )
+    frame = pd.DataFrame(rows, columns=_COMPARISON_COLUMNS)
+    frame.to_csv(csv_path, index=False)
+    logger.info("wrote %s comparison row(s) to %s", len(frame), csv_path)
+    return frame
+
+
+def concatenate_comparison_csvs(csv_paths: list[Path], out_path: Path) -> pd.DataFrame:
+    """Concatenate per-combo comparison CSVs into the suite-level record."""
+    combined = pd.concat([pd.read_csv(path) for path in csv_paths], ignore_index=True)
+    combined.to_csv(out_path, index=False)
+    logger.info(
+        "concatenated %s comparison csv file(s) (%s rows) to %s",
+        len(csv_paths),
+        len(combined),
+        out_path,
+    )
+    return combined

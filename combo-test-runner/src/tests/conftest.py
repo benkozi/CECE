@@ -8,11 +8,11 @@ from pydantic import BaseModel, ConfigDict
 
 from analysis import RunContext, concatenate_stats_csvs
 from combos import Combo, build_config, enumerate_combos, write_combos_csv
-from comparison import resolve_baseline_comparisons
+from comparison import concatenate_comparison_csvs, resolve_baseline_comparisons
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
 from models.suite_config import Analysis, Assertions, RunManifest, SuiteConfig
-from plotting import render_all_plots
+from plotting import render_all_bias_plots, render_all_plots
 from ulid import ULID
 from resolution import resolve_output_roots, resolve_suite_path
 from runner import DriverRunResult, run_driver
@@ -132,20 +132,42 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """Concatenate every per-combo stats CSV that exists into the suite-level
-    descriptive_stats.csv at the output root, then render spatial plots (the
-    shared color scale derives from those stats)."""
+    """Session-end artifact pipeline, in order: stats concat -> overview
+    plots -> comparison-stats concat -> bias plots. Bias plotting is
+    independent of the overview plotting/stats gates: its scale derives from
+    the comparison CSV and it is governed per comparison entry."""
     config = session.config
     suite: SuiteConfig | None = getattr(config, "_combo_suite", None)
     roots: ComboRoots | None = getattr(config, "_combo_roots_realized", None)
-    if suite is None or roots is None or not suite.analysis.compute_descriptive_stats:
+    if suite is None or roots is None:
         return
-    combo_csvs = sorted(roots.host.glob("*/*-stats.csv"))
-    if not combo_csvs:
-        return
-    stats = concatenate_stats_csvs(combo_csvs, roots.host / "descriptive_stats.csv")
-    if suite.plotting.enabled and not stats.empty:
-        render_all_plots(roots.host, stats, gif_enabled=suite.plotting.gif_enabled)
+
+    if suite.analysis.compute_descriptive_stats:
+        combo_csvs = sorted(roots.host.glob("*/*-stats.csv"))
+        if combo_csvs:
+            stats = concatenate_stats_csvs(
+                combo_csvs, roots.host / "descriptive_stats.csv"
+            )
+            if suite.plotting.enabled and not stats.empty:
+                render_all_plots(
+                    roots.host, stats, gif_enabled=suite.plotting.gif_enabled
+                )
+
+    comparison_csvs = sorted(roots.host.glob("*/*-stats-comparison.csv"))
+    if comparison_csvs:
+        comparison_stats = concatenate_comparison_csvs(
+            comparison_csvs, roots.host / "stats-comparison.csv"
+        )
+        settings: Settings = getattr(config, "_combo_settings")
+        resolved = getattr(config, "_combo_baselines", {})
+        baseline_root = settings.baseline_root_dir or Path.cwd()
+        pairs = [
+            (roots.host / combo.combo_id, baseline_root / resolved[combo.name].ulid)
+            for combo in getattr(config, "_combos", [])
+            if combo.name in resolved and resolved[combo.name].plot
+        ]
+        if pairs and not comparison_stats.empty:
+            render_all_bias_plots(pairs, comparison_stats)
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:

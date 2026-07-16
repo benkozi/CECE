@@ -213,6 +213,10 @@ class BaselineComparison(StrictModel):
         ge=0,
         description="0 = bit-for-bit data comparison; > 0 = absolute tolerance (no scaling)",
     )
+    plot: bool = Field(
+        True,
+        description="Render bias plots + GIF for this comparison at session end",
+    )
 
 
 class Plotting(StrictModel):

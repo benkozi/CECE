@@ -10,7 +10,9 @@ from combos import enumerate_combos
 from comparison import (
     BaselineComparisonResult,
     compare_with_baseline,
+    concatenate_comparison_csvs,
     resolve_baseline_comparisons,
+    write_comparison_csv,
 )
 from models.cece_config import CeceConfig
 from models.suite_config import (
@@ -71,6 +73,7 @@ def _compare(
         baseline,
         atol=atol,
         run_id="01JTESTRUN",
+        suite="simple-maccity",
         combo="MACCITY.map-consd",
         combo_id="deadbeefdeadbeef",
         baseline_ulid="01JTESTBASELINE",
@@ -104,6 +107,16 @@ def test_perturbed_value_respects_absolute_tolerance(
     assert not _compare(realization, baseline, atol=0.0).passed  # bit-for-bit
     assert _compare(realization, baseline, atol=1e-5).passed  # covering atol
     assert not _compare(realization, baseline, atol=1e-7).passed  # tighter atol
+
+    # n_mismatched respects atol: the one perturbed element at 0.0/1e-7,
+    # none at the covering tolerance (data_match <=> n_mismatched == 0).
+    def _variable(result):
+        (variable,) = [v for f in result.files for v in f.variables]
+        return variable
+
+    assert _variable(_compare(realization, baseline, atol=0.0)).n_mismatched == 1
+    assert _variable(_compare(realization, baseline, atol=1e-5)).n_mismatched == 0
+    assert _variable(_compare(realization, baseline, atol=1e-7)).n_mismatched == 1
 
     result = _compare(realization, baseline, atol=0.0)
     (variable,) = [v for f in result.files for v in f.variables]
@@ -189,7 +202,44 @@ def test_format_mismatch_fails(pair_dirs: tuple[Path, Path]) -> None:
     assert not result.files[0].format_match
 
 
-def test_result_yaml_round_trips_on_failure(
+def test_difference_statistics_match_numpy(pair_dirs: tuple[Path, Path]) -> None:
+    realization, baseline = pair_dirs
+    values = _values()
+    rng = np.random.default_rng(7)
+    perturbed = values + rng.normal(0, 1e-3, values.shape)
+    _write_nc(realization / "cece_a.nc", perturbed)
+    _write_nc(baseline / "cece_a.nc", values)
+
+    result = _compare(realization, baseline)
+    (variable,) = [v for f in result.files for v in f.variables]
+    diff = perturbed - values
+    assert variable.rmse == pytest.approx(float(np.sqrt(np.nanmean(diff**2))))
+    assert variable.n_evaluated == int(np.sum(~np.isnan(diff)))
+    assert variable.n_mismatched == int(np.sum(diff != 0))
+    assert variable.diff_sum == pytest.approx(float(np.nansum(diff)))
+    assert variable.diff_mean == pytest.approx(float(np.nanmean(diff)))
+    assert variable.diff_std == pytest.approx(float(np.nanstd(diff)))
+    assert variable.diff_min == pytest.approx(float(np.nanmin(diff)))
+    assert variable.diff_max == pytest.approx(float(np.nanmax(diff)))
+    assert variable.diff_median == pytest.approx(float(np.nanmedian(diff)))
+
+
+def test_identical_pair_has_zero_difference_statistics(
+    pair_dirs: tuple[Path, Path],
+) -> None:
+    realization, baseline = pair_dirs
+    values = _values()
+    _write_nc(realization / "cece_a.nc", values)
+    _write_nc(baseline / "cece_a.nc", values)
+
+    (variable,) = [v for f in _compare(realization, baseline).files for v in f.variables]
+    assert variable.rmse == 0.0
+    assert variable.diff_min == 0.0
+    assert variable.diff_max == 0.0
+    assert variable.n_mismatched == 0  # data_match <=> n_mismatched == 0
+
+
+def test_comparison_csv_one_row_per_file_variable(
     pair_dirs: tuple[Path, Path], tmp_path: Path
 ) -> None:
     realization, baseline = pair_dirs
@@ -198,14 +248,43 @@ def test_result_yaml_round_trips_on_failure(
     _write_nc(baseline / "cece_a.nc", values)
 
     result = _compare(realization, baseline)
-    assert not result.passed
+    csv_path = tmp_path / "x-stats-comparison.csv"
+    frame = write_comparison_csv(result, csv_path)
 
-    yaml_path = tmp_path / "comparison.yaml"
-    result.to_yaml(yaml_path)
-    reloaded = BaselineComparisonResult.model_validate(
-        yaml.safe_load(yaml_path.read_text())
+    assert csv_path.is_file()
+    assert len(frame) == 1  # one file, one variable
+    row = frame.iloc[0]
+    assert (row["run_id"], row["suite"], row["combo"]) == (
+        "01JTESTRUN",
+        "simple-maccity",
+        "MACCITY.map-consd",
     )
-    assert reloaded == result
+    assert row["baseline_ulid"] == "01JTESTBASELINE"
+    assert (row["file"], row["variable"]) == ("cece_a.nc", "co")
+    assert not row["data_match"]
+    assert row["rmse"] == pytest.approx(1.0)
+    assert row["n_evaluated"] == 24  # 2 x 3 x 4 elements
+    assert row["n_mismatched"] == 24  # every element shifted by 1.0
+    assert not row["passed"]
+
+
+def test_comparison_csvs_concatenate_to_root(
+    pair_dirs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    realization, baseline = pair_dirs
+    values = _values()
+    _write_nc(realization / "cece_a.nc", values)
+    _write_nc(baseline / "cece_a.nc", values)
+
+    result = _compare(realization, baseline)
+    path_a = tmp_path / "a-stats-comparison.csv"
+    path_b = tmp_path / "b-stats-comparison.csv"
+    write_comparison_csv(result, path_a)
+    write_comparison_csv(result, path_b)
+
+    combined = concatenate_comparison_csvs([path_a, path_b], tmp_path / "stats-comparison.csv")
+    assert (tmp_path / "stats-comparison.csv").is_file()
+    assert len(combined) == 2
 
 
 def _stream_selector(

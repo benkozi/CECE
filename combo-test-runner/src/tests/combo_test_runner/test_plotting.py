@@ -89,7 +89,7 @@ def test_render_combo_plots_pngs_and_gif(combo_dirs) -> None:
 
     render_combo_plots(combo_dir, scales, gif_enabled=True)
 
-    plots = combo_dir / "plots"
+    plots = combo_dir / "plots-overview"
     assert (plots / "co__cece_20100101_010000.png").is_file()
     assert (plots / "co__cece_20100101_020000.png").is_file()
     gif = plots / "co.gif"
@@ -106,7 +106,7 @@ def test_render_combo_plots_gif_disabled(combo_dirs) -> None:
         {"co": VariableScale(variable="co", vmin=0.0, vmax=3.0)},
         gif_enabled=False,
     )
-    plots = combo_dir / "plots"
+    plots = combo_dir / "plots-overview"
     assert (plots / "co__cece_20100101_010000.png").is_file()
     assert not (plots / "co.gif").exists()
 
@@ -120,8 +120,8 @@ def test_render_all_plots_covers_every_combo_dir(combo_dirs) -> None:
         ]
     )
     render_all_plots(root, stats, gif_enabled=True)
-    assert (root / "3f9a1c2b7d4e8a01" / "plots" / "co.gif").is_file()
-    assert (root / "9004a4e23c1dd90a" / "plots" / "co.gif").is_file()
+    assert (root / "3f9a1c2b7d4e8a01" / "plots-overview" / "co.gif").is_file()
+    assert (root / "9004a4e23c1dd90a" / "plots-overview" / "co.gif").is_file()
 
 
 def test_plotting_defaults_and_unknown_key() -> None:
@@ -156,3 +156,55 @@ def test_stats_disabled_with_plotting_disabled_is_valid(
     )
     suite = SuiteConfig.from_yaml(suite_file)
     assert suite.plotting.enabled is False
+
+
+def _write_pair(realization: Path, baseline: Path, offset: float, hour: int) -> None:
+    rng = np.random.default_rng(3)
+    base_values = rng.random((1, 4, 5))
+    name = f"cece_201001{hour:02d}_010000.nc"
+    _write_nc(realization / name, base_values + offset, hour=1)
+    _write_nc(baseline / name, base_values, hour=1)
+
+
+def test_derive_bias_scales_symmetric_suite_wide() -> None:
+    from plotting import derive_bias_scales
+
+    stats = pd.DataFrame(
+        [
+            {"variable": "co", "max_abs_diff": 0.25},
+            {"variable": "co", "max_abs_diff": 0.75},
+            {"variable": "nox", "max_abs_diff": 0.1},
+        ]
+    )
+    scales = derive_bias_scales(stats)
+    assert (scales["co"].vmin, scales["co"].vmax) == (-0.75, 0.75)
+    assert (scales["nox"].vmin, scales["nox"].vmax) == (-0.1, 0.1)
+
+
+def test_derive_bias_scales_guards_zero_bias() -> None:
+    from plotting import derive_bias_scales
+
+    scales = derive_bias_scales(pd.DataFrame([{"variable": "co", "max_abs_diff": 0.0}]))
+    assert scales["co"].vmin < 0 < scales["co"].vmax  # flat bias still renders
+
+
+def test_render_combo_bias_plots_pngs_and_gif(tmp_path: Path) -> None:
+    from plotting import VariableScale, render_combo_bias_plots
+
+    realization = tmp_path / "combo"
+    baseline = tmp_path / "baseline"
+    realization.mkdir()
+    baseline.mkdir()
+    _write_pair(realization, baseline, offset=0.1, hour=1)
+    _write_pair(realization, baseline, offset=0.2, hour=2)
+
+    scales = {"co": VariableScale(variable="co", vmin=-0.3, vmax=0.3)}
+    render_combo_bias_plots(realization, baseline, scales)
+
+    plots = realization / "plots-baselines"
+    pngs = sorted(plots.glob("co__*.png"))
+    assert len(pngs) == 2 and all(p.stat().st_size > 0 for p in pngs)
+    gif = plots / "co.gif"
+    assert gif.is_file()
+    with Image.open(gif) as image:
+        assert image.n_frames == 2  # gif always accompanies the bias plots

@@ -18,10 +18,17 @@ The per-variable dask batch in `_compare_variable` gains reductions over
 `diff = realization − baseline` (nan-aware, same batching pattern):
 
 - `rmse` — `sqrt(nanmean(diff**2))`
+- `n_evaluated` — the number of elements evaluated (non-NaN difference
+  values)
+- `n_mismatched` — the number of elements **failing the data check under
+  the entry's `atol`** (bitwise-unequal at `atol=0`; `|diff| > atol`
+  otherwise; NaN-position mismatches included). Unlike the `diff_*`
+  statistics it depends on the comparison rule, and it carries the
+  invariant `data_match ⟺ n_mismatched == 0`.
 - the established descriptive set applied to the difference:
-  `diff_count, diff_sum, diff_mean, diff_std, diff_min, diff_max,
-  diff_median` (mirroring the descriptive-stats columns, so the two CSV
-  families read alike)
+  `diff_sum, diff_mean, diff_std, diff_min, diff_max, diff_median`
+  (mirroring the descriptive-stats columns, so the two CSV families read
+  alike)
 
 All become described fields on `VariableComparison` (`None` when
 shapes/dtypes prevented comparison). `max_abs_diff` stays (it also feeds
@@ -38,7 +45,7 @@ concatenated** — the same two-layer pattern as descriptive stats:
   checks (`file, format_match, dimensions_match, variables_match,
   global_attributes_match, file_names_match`), per-variable checks
   (`variable, dtype_match, data_match, attributes_match`), the difference
-  statistics above, and `passed`.
+  statistics above (`n_evaluated`/`n_mismatched` included), and `passed`.
 - **Root level**: `stats-comparison.csv`, concatenated from every per-combo
   comparison CSV at `pytest_sessionfinish` (exactly like
   `descriptive_stats.csv`; partial runs concatenate what exists).

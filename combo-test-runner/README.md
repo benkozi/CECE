@@ -66,8 +66,12 @@ written to `<combo_id>-stats.csv`; all combos concatenated into
 baseline: each `baseline_comparisons` entry carries a `sweep_selector` —
 mirroring the sweep structure with regexes at the leaves — that must select
 exactly one combination, a baseline `ulid` under `CECE_BASELINE_ROOT_DIR`,
-and an optional per-entry `atol`; structure and attributes exact, data
-bit-for-bit or within `atol`; unselected combinations skip) — with the
+an optional per-entry `atol`, and a `plot` switch for bias plots; structure
+and attributes exact, data bit-for-bit or within `atol`; RMSE and
+difference statistics recorded per file x variable in
+`<combo_id>-stats-comparison.csv`, concatenated to `stats-comparison.csv`
+at the root; bias maps + GIF render at session end into `plots-baselines/`
+on a suite-wide symmetric color scale; unselected combinations skip) — with the
 driver running once per combination. If the driver run fails, its
 `test_driver_execution` fails and that combination's assertion tests are
 skipped with a `driver run failed: ...` reason.
@@ -101,12 +105,14 @@ failures point there; pytest keeps the last few runs under e.g.
   run.yaml                       # run manifest: session ULID + the resolved suite config
   combos.csv                     # maps combo directory ids to the tested combinations
   descriptive_stats.csv          # all combos' statistics, concatenated
+  stats-comparison.csv           # all combos' comparison rows, concatenated
   9004a4e23c1dd90a/              # one directory per combination (content-hash id)
     9004a4e23c1dd90a.yaml        # generated driver config
     9004a4e23c1dd90a.out         # captured driver stdout+stderr
     9004a4e23c1dd90a-stats.csv   # per-NetCDF descriptive statistics
-    9004a4e23c1dd90a-comparison.yaml  # baseline comparison record (when configured)
-    plots/                       # spatial plot per NetCDF + per-variable GIF
+    9004a4e23c1dd90a-stats-comparison.csv  # comparison rows (when configured)
+    plots-overview/              # spatial plot per NetCDF + per-variable GIF
+    plots-baselines/             # bias maps + GIF (compared combos only)
     *.nc                         # driver NetCDF output
 ```
 

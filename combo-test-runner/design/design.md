@@ -56,6 +56,7 @@ baseline_comparisons:                      # optional; each entry pairs one comb
             mapalgo: consd
     ulid: 01KXNXCJ86E8Z2FKVAXRER5ND4       # baseline under CECE_BASELINE_ROOT_DIR
     atol: 0.0                              # per entry; 0 = bit-for-bit (default)
+    plot: true                             # per entry; bias plots + GIF at session end
 sweep:
   cece_data:
     streams:
@@ -195,15 +196,19 @@ Layout under the output root is the same either way:
   run.yaml                     # RunManifest: session ULID + resolved suite config
   combos.csv                   # combo id -> name/dimensions dereference map
   descriptive_stats.csv        # all combos' statistics, concatenated at session end
+  stats-comparison.csv         # all combos' baseline-comparison rows, concatenated
   9004a4e23c1dd90a/            # one directory per combination (content-hash id)
     9004a4e23c1dd90a.yaml      # generated driver config
     9004a4e23c1dd90a.out       # captured driver stdout+stderr (".log" is
                                #   reserved for a future real driver log file)
     9004a4e23c1dd90a-stats.csv # per-NetCDF descriptive statistics
-    9004a4e23c1dd90a-comparison.yaml # baseline comparison record (when configured)
-    plots/                     # session-end spatial plots + per-variable GIF
+    9004a4e23c1dd90a-stats-comparison.csv # comparison record: one row per file x variable
+    plots-overview/            # session-end spatial plots + per-variable GIF
       co__cece_..._010000.png  #   (suite-wide exact min/max color scale,
       co.gif                   #    derived from the descriptive stats)
+    plots-baselines/           # bias maps (realization - baseline) + GIF,
+                               #   RdBu_r symmetric suite-wide scale from
+                               #   the comparison stats; compared combos only
     *.nc                       # driver NetCDF output (output.directory in
                                #   the yaml points here)
 ```
