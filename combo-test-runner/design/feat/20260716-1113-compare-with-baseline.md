@@ -28,3 +28,4 @@
 - use parallel xarray to speed comparison
 - following the comparison, generate a yaml file describing the comparison results
   - have the comparison generate a pydantic model that is converted to yaml
+- generate an initial baseline in `/Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-baselines` with the provided config
