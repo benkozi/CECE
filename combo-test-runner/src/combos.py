@@ -22,16 +22,22 @@ from typing import Callable
 import pandas as pd
 
 from logs import get_logger
-from models.cece_config import CeceConfig, VdistMethod
+from models.cece_config import CeceConfig, Vdist, VdistMethod
 from models.suite_config import Sweep
 
 logger = get_logger("combos")
 
 NAME_SEPARATOR = "__"  # shell-safe; nothing parses the name back (combos.csv does)
 
-# Companion vdist bounds required for a valid config when sweeping VdistMethod.
-_VDIST_HEIGHT_BOUNDS_M = (0.0, 100.0)
-_VDIST_PRESSURE_BOUNDS_PA = (100000.0, 90000.0)
+# Companion vdist fields required for a meaningful config when sweeping
+# VdistMethod. Layer indices are 0-based and inclusive in the stacking engine.
+_VDIST_COMPANIONS: dict[VdistMethod, dict[str, float | int]] = {
+    VdistMethod.height: {"h_start": 0.0, "h_end": 100.0},
+    VdistMethod.pressure: {"p_start": 100000.0, "p_end": 90000.0},
+    VdistMethod.range: {"layer_start": 0, "layer_end": 2},
+    VdistMethod.single: {"layer_start": 0},
+    VdistMethod.pbl: {},
+}
 
 # Fixed canonical field order within a target: (config field, name tag).
 _SPECIES_FIELDS: tuple[tuple[str, str], ...] = (
@@ -96,12 +102,13 @@ def _apply_species_field(
 ) -> Callable[[CeceConfig, StrEnum], None]:
     def apply(config: CeceConfig, value: StrEnum) -> None:
         entry = config.species[species][index]
-        setattr(entry, field, value)
         if field == "vdist_method":
-            if value is VdistMethod.height:
-                entry.vdist_h_start, entry.vdist_h_end = _VDIST_HEIGHT_BOUNDS_M
-            elif value is VdistMethod.pressure:
-                entry.vdist_p_start, entry.vdist_p_end = _VDIST_PRESSURE_BOUNDS_PA
+            # The driver reads vdist as a nested block; the swept method gets
+            # the companion fields it needs to take effect.
+            assert isinstance(value, VdistMethod)
+            entry.vdist = Vdist(method=value, **_VDIST_COMPANIONS[value])
+        else:
+            setattr(entry, field, value)
 
     return apply
 

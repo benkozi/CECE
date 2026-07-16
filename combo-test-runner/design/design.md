@@ -37,6 +37,7 @@ timeout_s: 10                              # per combination; capped by CECE_RUN
 assertions:
   expected_nc_file_count: null             # null = derive from the combo config
   validate_filenames: true                 # false skips the filename tests
+  validate_file_count: true                # false skips the file-count test
   species:                                 # per-species output expectations
     co:
       attributes:                          # full attribute-dictionary match
@@ -83,6 +84,16 @@ class SuiteConfig(StrictModel):  # via models/base.py; unknown keys rejected
     sweep: Sweep
 ```
 
+A sweep value list may instead be a **regex string**, expanded (fullmatch)
+against the enum's values into the sorted matching list at load time — so
+`mapalgo: ".*"` always means every value, including ones added after the
+suite was written, and `run.yaml` records the expanded list (the run stays
+reproducible as enums grow). A regex matching nothing, like an invalid one,
+fails the load. See
+`design/feat/20260716-1647-exhaustive-maccity.md`, whose
+`exhaustive-maccity-run-only-suite.yaml` sweeps `".*"` on every dimension
+(1,440 combinations, run on demand — typically with `--dry-run` first).
+
 Duplicate sweep values, duplicate stream names, and unknown keys are all
 rejected at load; sweep selectors (stream names, species keys, entry counts)
 are validated against the loaded base config at session start, before any
@@ -113,18 +124,30 @@ Each swept dimension attaches to an explicit target; the sweep says where:
 |---------------|--------|------------------------------------------------|
 | `Operation`   | 2      | a species entry (`species.<name>[<entry>]`)    |
 | `Category`    | 6      | a species entry                                |
-| `VdistMethod` | 3      | a species entry                                |
+| `VdistMethod` | 5      | a species entry                                |
 | `Taxmode`     | 2      | a stream, selected by `name`                   |
 | `Tintalgo`    | 2      | a stream, selected by `name`                   |
 | `Mapalgo`     | 6      | a stream, selected by `name`                   |
 
-Some enum values require companion fields to form a valid config; the generator
-supplies them:
+The enum values are hand-mirrored from the driver C++ (audited in
+`design/feat/20260716-1647-exhaustive-maccity.md`): `Mapalgo` holds only the
+regridder's canonical values (`passthrough, nn, bilinear, cubic, conss,
+consd` — unknown strings silently regrid with the default method, so no
+others may exist here) and `VdistMethod` holds the parser's lowercase
+strings (`single, range, pressure, height, pbl` — the uppercase validator
+whitelist is dead code in standalone mode, and unknown strings silently run
+as `single`).
 
-- `VdistMethod.height` → set `vdist_h_start` / `vdist_h_end` to fixed sensible
-  defaults (e.g. 0.0 / 100.0 m).
-- `VdistMethod.pressure` → set `vdist_p_start` / `vdist_p_end` (e.g. 100000.0 /
-  90000.0 Pa).
+Sweeping `vdist_method` builds the **nested `vdist:` block** the driver
+parses (a `Vdist` sub-model on the species entry; flat `vdist_*` keys are a
+removed schema the driver silently ignored), with the companion fields each
+method needs to take effect:
+
+- `height` → `h_start` / `h_end` (0.0 / 100.0 m)
+- `pressure` → `p_start` / `p_end` (100000.0 / 90000.0 Pa)
+- `range` → `layer_start` / `layer_end` (0 / 2 — 0-based inclusive
+  model-level indices)
+- `single` → `layer_start` (0); `pbl` → no companions
 
 ### Combination naming and ids
 
@@ -195,6 +218,8 @@ Layout under the output root is the same either way:
 <output-root>/                 # default: pytest tmp dir; else /work-relative
   run.yaml                     # RunManifest: session ULID + resolved suite config
   combos.csv                   # combo id -> name/dimensions dereference map
+  test-report.csv              # every combo-test's outcome: pytest_name,
+                               #   combo_id, combo, result (passed/failed/skipped)
   descriptive_stats.csv        # all combos' statistics, concatenated at session end
   stats-comparison.csv         # all combos' baseline-comparison rows, concatenated
   9004a4e23c1dd90a/            # one directory per combination (content-hash id)
@@ -284,6 +309,20 @@ exit is the failure condition. The environment variables mirror `setup.sh`
   - `--combo-clean-root` — flag; if an explicitly given output root already
     exists, remove it (`shutil.rmtree`) before generating configs. Has no
     effect with the default temp root, which is always freshly created.
+  - `--dry-run` — flag; the full session **minus driver execution**. Suite
+    load, regex expansion, enumeration, selector/baseline resolution,
+    `run.yaml`, `combos.csv`, every combination's generated config, and
+    `test-report.csv` all happen for real; the driver-run fixture skips
+    right before the docker invocation, so every combo test skips (a
+    skip-only session exits 0, docker is never touched, and the lazy dask
+    client never starts). Validates any suite — notably the exhaustive
+    one — before paying for containers.
+- **Test report.** A `pytest_runtest_makereport` hookwrapper collects every
+  combo-parameterized test's outcome (phases combine failed > skipped >
+  passed via `report.worst_result`); `pytest_sessionfinish` writes
+  `test-report.csv` (pytest_name, combo_id, combo, result) first in its
+  artifact pipeline, whenever combinations ran. Non-combo (harness) tests
+  are not reported.
 - **Existing explicit output root is an error by default.** When
   `--combo-output-root` is given, the runner checks at session start — before
   any configs are generated or containers run — whether that root exists on
@@ -341,6 +380,7 @@ combo-test-runner/
     combos.py             # sweep → combinations, combo naming, config generation
     logs.py               # namespace logger, level from CECE_LOG_LEVEL
     plotting.py           # session-end spatial plots + GIFs (cartopy/matplotlib)
+    report.py             # test-report.csv: row model, outcome precedence, writer
     resolution.py         # pure path-resolution rules (suite path, output roots)
     runner.py             # docker run construction, check_output, .out writing,
                           #   DriverRunResult
@@ -349,6 +389,8 @@ combo-test-runner/
       config/
         cece/simple-maccity.yaml          # base driver config
         suite/simple-maccity-suite.yaml   # initial suite (--suite-config default)
+        suite/exhaustive-maccity-run-only-suite.yaml  # every enum value via ".*"
+                                          #   regex sweeps; on-demand, run-only
       combo_test_runner/  # the runner's own tests: mocked process call, no docker
       conftest.py         # options, session fixture (generate yamls), param fixture
       test_driver_combos.py               # integration tests (real docker)

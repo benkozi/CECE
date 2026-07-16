@@ -53,14 +53,17 @@ class Tintalgo(StrEnum):
     nearest = "nearest"
 
 
+# Canonical regridder values only (the driver also accepts aliases, e.g.
+# "bilin"). The regridder has no unknown-value error branch — anything else
+# silently regrids with the default method — so no other values may live here.
 @unique
 class Mapalgo(StrEnum):
     consd = "consd"
     bilinear = "bilinear"
     passthrough = "passthrough"
-    consf = "consf"
     nn = "nn"
-    redist = "redist"
+    cubic = "cubic"
+    conss = "conss"
 
 
 @unique
@@ -73,11 +76,16 @@ class Category(StrEnum):
     biogenic = "biogenic"
 
 
+# Lowercase, exactly as the driver's parser matches them (its uppercase
+# validator whitelist checks a schema that doesn't exist in this config and
+# never fires). Unknown strings — including uppercase — silently run as single.
 @unique
 class VdistMethod(StrEnum):
-    pbl = "PBL"
-    height = "HEIGHT"
-    pressure = "PRESSURE"
+    single = "single"
+    range = "range"
+    pressure = "pressure"
+    height = "height"
+    pbl = "pbl"
 
 
 # ── Sub-models ────────────────────────────────────────────────────────────────
@@ -101,6 +109,37 @@ class Driver(StrictModel):
     end_time: str = Field(description="Simulation end time (ISO-8601)")
     timestep_seconds: int = Field(description="Model timestep in seconds")
     grid: Grid = Field(description="Spatial grid definition")
+
+
+class Vdist(StrictModel):
+    """Vertical distribution block nested under a species entry — the driver
+    parses `vdist:` as a map (flat vdist_* keys are silently ignored by it)."""
+
+    method: VdistMethod = Field(description="Vertical distribution method")
+    layer_start: int | None = Field(
+        None,
+        description="First model-level index (0-based, inclusive); used by single and range",
+    )
+    layer_end: int | None = Field(
+        None,
+        description="Last model-level index (inclusive); used by range",
+    )
+    p_start: float | None = Field(
+        None,
+        description="Lower bound of the vertical injection layer (Pa); used by pressure",
+    )
+    p_end: float | None = Field(
+        None,
+        description="Upper bound of the vertical injection layer (Pa); used by pressure",
+    )
+    h_start: float | None = Field(
+        None,
+        description="Lower bound of the vertical injection layer (metres); used by height",
+    )
+    h_end: float | None = Field(
+        None,
+        description="Upper bound of the vertical injection layer (metres); used by height",
+    )
 
 
 class SpeciesEntry(StrictModel):
@@ -136,24 +175,9 @@ class SpeciesEntry(StrictModel):
         None,
         description="Export-state fields used as additional multiplicative scaling (e.g. temperature, LAI)",
     )
-    vdist_method: VdistMethod | None = Field(
-        None, description="Vertical distribution method"
-    )
-    vdist_h_start: float | None = Field(
+    vdist: Vdist | None = Field(
         None,
-        description="Lower bound of vertical injection layer (metres); used with HEIGHT method",
-    )
-    vdist_h_end: float | None = Field(
-        None,
-        description="Upper bound of vertical injection layer (metres); used with HEIGHT method",
-    )
-    vdist_p_start: float | None = Field(
-        None,
-        description="Lower bound of vertical injection layer (Pa); used with PRESSURE method",
-    )
-    vdist_p_end: float | None = Field(
-        None,
-        description="Upper bound of vertical injection layer (Pa); used with PRESSURE method",
+        description="Vertical distribution of this entry's emissions across model levels",
     )
 
 

@@ -169,32 +169,58 @@ def test_stream_targets_sorted_lexicographically(two_stream_config_path: Path) -
     assert combo.name == "AUXDATA.tax-extend__MACCITY.map-consd"
 
 
-def test_build_config_supplies_vdist_companion_fields(
+def test_build_config_supplies_vdist_companions_per_method(
     base_config: CeceConfig, cece_config_path: Path
 ) -> None:
-    sweep = Sweep(
-        species={
-            "co": [
-                SpeciesEntrySweep(
-                    vdist_method=[VdistMethod.height, VdistMethod.pressure]
-                )
-            ]
-        }
+    # Sweeping vdist_method builds the nested vdist block the driver parses,
+    # with the companions each method needs for a meaningful config.
+    sweep = Sweep(species={"co": [SpeciesEntrySweep(vdist_method=list(VdistMethod))]})
+    combos = enumerate_combos(sweep, base_config)
+    assert [combo.name for combo in combos] == [
+        "co.vd-height",
+        "co.vd-pbl",
+        "co.vd-pressure",
+        "co.vd-range",
+        "co.vd-single",
+    ]
+
+    def vdist_for(name: str):
+        (combo,) = [c for c in combos if c.name == name]
+        entry = build_config(
+            combo, output_directory=".", config_path=cece_config_path
+        ).species["co"][0]
+        assert entry.vdist is not None
+        return entry.vdist
+
+    height = vdist_for("co.vd-height")
+    assert height.method is VdistMethod.height
+    assert (height.h_start, height.h_end) == (0.0, 100.0)
+    assert height.layer_start is None and height.p_start is None
+
+    pressure = vdist_for("co.vd-pressure")
+    assert pressure.method is VdistMethod.pressure
+    assert (pressure.p_start, pressure.p_end) == (100000.0, 90000.0)
+    assert pressure.layer_start is None and pressure.h_start is None
+
+    layer_range = vdist_for("co.vd-range")
+    assert layer_range.method is VdistMethod.range
+    assert (layer_range.layer_start, layer_range.layer_end) == (0, 2)
+    assert layer_range.p_start is None and layer_range.h_start is None
+
+    single = vdist_for("co.vd-single")
+    assert single.method is VdistMethod.single
+    assert single.layer_start == 0
+    assert single.layer_end is None
+
+    pbl = vdist_for("co.vd-pbl")
+    assert pbl.method is VdistMethod.pbl
+    assert (pbl.layer_start, pbl.layer_end) == (None, None)
+    assert (pbl.p_start, pbl.p_end, pbl.h_start, pbl.h_end) == (
+        None,
+        None,
+        None,
+        None,
     )
-    height, pressure = enumerate_combos(sweep, base_config)
-    assert height.name == "co.vd-HEIGHT"
-
-    entry = build_config(
-        height, output_directory=".", config_path=cece_config_path
-    ).species["co"][0]
-    assert entry.vdist_method is VdistMethod.height
-    assert (entry.vdist_h_start, entry.vdist_h_end) == (0.0, 100.0)
-
-    entry = build_config(
-        pressure, output_directory=".", config_path=cece_config_path
-    ).species["co"][0]
-    assert entry.vdist_method is VdistMethod.pressure
-    assert (entry.vdist_p_start, entry.vdist_p_end) == (100000.0, 90000.0)
 
 
 def test_unknown_stream_selector_rejected(base_config: CeceConfig) -> None:

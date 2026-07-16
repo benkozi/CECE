@@ -13,6 +13,7 @@ from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
 from models.suite_config import Analysis, Assertions, RunManifest, SuiteConfig
 from plotting import render_all_bias_plots, render_all_plots
+from report import TestReportRow, worst_result, write_test_report_csv
 from ulid import ULID
 from resolution import resolve_output_roots, resolve_suite_path
 from runner import DriverRunResult, run_driver
@@ -74,6 +75,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         help="Remove an existing output root before running (default: existing root is an error).",
     )
+    group.addoption(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Generate every combination's config and the session artifacts "
+            "(run.yaml, combos.csv, test-report.csv) but skip driver execution; "
+            "every combo test skips."
+        ),
+    )
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -129,11 +139,41 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     config._combo_roots = roots  # type: ignore[attr-defined]
     config._combos = combos  # type: ignore[attr-defined]
     config._combo_baselines = resolved_baselines  # type: ignore[attr-defined]
+    # test-report.csv rows, keyed by nodeid in execution order; filled by the
+    # pytest_runtest_makereport hookwrapper below.
+    config._combo_report_rows = {}  # type: ignore[attr-defined]
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
+    """Collect every combo-parameterized test's outcome for test-report.csv.
+    A test's phases combine via worst_result (failed > skipped > passed), so
+    fixture skips (dry run, failed driver) and teardown failures report
+    truthfully. Non-combo tests are not reported."""
+    outcome = yield
+    report: pytest.TestReport = outcome.get_result()
+    callspec = getattr(item, "callspec", None)
+    combo = callspec.params.get("driver_run") if callspec is not None else None
+    rows: dict[str, TestReportRow] | None = getattr(
+        item.config, "_combo_report_rows", None
+    )
+    if not isinstance(combo, Combo) or rows is None:
+        return
+    row = rows.get(item.nodeid)
+    if row is None:
+        row = TestReportRow(
+            pytest_name=item.name,
+            combo_id=combo.combo_id,
+            combo=combo.name,
+            result="passed",
+        )
+        rows[item.nodeid] = row
+    row.result = worst_result(row.result, report.outcome)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    """Session-end artifact pipeline, in order: stats concat -> overview
-    plots -> comparison-stats concat -> bias plots. Bias plotting is
+    """Session-end artifact pipeline, in order: test report -> stats concat ->
+    overview plots -> comparison-stats concat -> bias plots. Bias plotting is
     independent of the overview plotting/stats gates: its scale derives from
     the comparison CSV and it is governed per comparison entry."""
     config = session.config
@@ -141,6 +181,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     roots: ComboRoots | None = getattr(config, "_combo_roots_realized", None)
     if suite is None or roots is None:
         return
+
+    report_rows: dict[str, TestReportRow] = getattr(config, "_combo_report_rows", {})
+    if report_rows:
+        write_test_report_csv(
+            list(report_rows.values()), roots.host / "test-report.csv"
+        )
 
     if suite.analysis.compute_descriptive_stats:
         combo_csvs = sorted(roots.host.glob("*/*-stats.csv"))
@@ -303,6 +349,13 @@ def driver_run(
     combo: Combo = request.param
     generated = generated_combos[combo.combo_id]
     out_path = generated.host_dir / f"{combo.combo_id}.out"
+
+    if request.config.getoption("--dry-run"):
+        # Everything up to here — enumeration, run.yaml, combos.csv, this
+        # combo's generated config — happened for real; only execution is
+        # skipped, and every dependent test skips with this reason.
+        logger.info("dry run: skipping driver execution for combo %s", combo.name)
+        pytest.skip("dry run: driver execution skipped")
 
     logger.info("running combo %s (timeout=%ss)", combo.name, run_timeout_s)
     start = time.monotonic()

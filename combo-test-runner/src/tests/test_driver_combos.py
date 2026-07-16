@@ -26,6 +26,8 @@ def test_nc_file_count(
     """The combo directory holds the expected number of NetCDF output files."""
     if driver_run.error is not None:
         pytest.skip(f"driver run failed: {driver_run.error}")
+    if not suite_assertions.validate_file_count:
+        pytest.skip("file count validation disabled by suite config")
     assert_nc_file_count(
         driver_run.combo_dir,
         driver_run.config,
@@ -101,7 +103,8 @@ def test_baseline_comparison(
         baseline_ulid=entry.ulid,
     )
     write_comparison_csv(
-        result, driver_run.combo_dir / f"{driver_run.combo.combo_id}-stats-comparison.csv"
+        result,
+        driver_run.combo_dir / f"{driver_run.combo.combo_id}-stats-comparison.csv",
     )
     assert result.passed, f"baseline comparison failed: {result.failure_summary()}"
 

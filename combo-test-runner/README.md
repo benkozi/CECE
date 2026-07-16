@@ -33,6 +33,14 @@ uv run pytest --combo-clean-root   # delete an existing output root first
 
 uv run pytest src/tests/combo_test_runner      # runner harness only: fast, no docker
 uv run pytest src/tests/test_driver_combos.py  # integration only (real docker)
+
+# everything except driver execution (no docker needed); all combo tests skip
+uv run pytest src/tests/test_driver_combos.py --dry-run
+
+# the exhaustive run-only suite: every enum value on every dimension (1,440
+# combinations, on demand only — dry-run it first; the real run is hours)
+uv run pytest src/tests/test_driver_combos.py --dry-run \
+  --suite-config=src/tests/config/suite/exhaustive-maccity-run-only-suite.yaml
 ```
 
 To rebuild the driver and run the CECE C++ tests in the container (this
@@ -53,7 +61,8 @@ quiet and failing tests include the output in their report under
 
 Each combination produces one test per assertion/analysis step —
 `test_driver_execution` (driver exits 0), `test_nc_file_count` (expected
-NetCDF output count), `test_nc_filenames` (filenames match
+NetCDF output count; `validate_file_count: false` skips it),
+`test_nc_filenames` (filenames match
 `filename_pattern` at the expected write times), `test_species_attributes`
 (the species variable's full attribute dictionary, one test per combo ×
 configured species; `exact: true` — the default — requires the dictionaries
@@ -84,7 +93,17 @@ Options:
   and the sweep — which mirrors the driver-config structure, attaching swept
   values to named streams (or positional species entries)
   (default: `src/tests/config/suite/simple-maccity-suite.yaml`). Use the
-  `--suite-config=PATH` form (with `=`), not a space.
+  `--suite-config=PATH` form (with `=`), not a space. A sweep value may be a
+  regex string instead of a list — `mapalgo: ".*"` expands (fullmatch,
+  against the enum's values) to every value at load time, including values
+  added after the suite was written; `run.yaml` records the expanded list.
+  The checked-in `exhaustive-maccity-run-only-suite.yaml` sweeps `".*"` on
+  every dimension.
+- `--dry-run` — everything except driver execution: the suite loads, combos
+  enumerate, `run.yaml`/`combos.csv`/every generated driver config/
+  `test-report.csv` are all written, and every combo test skips. No docker
+  required — use it to validate a suite (notably the exhaustive one) before
+  paying for containers.
 - `--combo-output-root=PATH` — root artifact directory; relative paths
   resolve against `/work` in the container, so results persist in the repo
   checkout. Default: a pytest-managed temporary directory (nothing is
@@ -104,6 +123,8 @@ failures point there; pytest keeps the last few runs under e.g.
 <output-root>/
   run.yaml                       # run manifest: session ULID + the resolved suite config
   combos.csv                     # maps combo directory ids to the tested combinations
+  test-report.csv                # per combo-test outcome: pytest_name, combo_id,
+                                 #   combo, result (passed/failed/skipped)
   descriptive_stats.csv          # all combos' statistics, concatenated
   stats-comparison.csv           # all combos' comparison rows, concatenated
   9004a4e23c1dd90a/              # one directory per combination (content-hash id)

@@ -25,6 +25,11 @@ def suite_path() -> Path:
 
 
 @pytest.fixture()
+def exhaustive_suite_path() -> Path:
+    return _CONFIG_ROOT / "suite" / "exhaustive-maccity-run-only-suite.yaml"
+
+
+@pytest.fixture()
 def maccity_n_timesteps() -> int:
     return MACCITY_N_TIMESTEPS
 

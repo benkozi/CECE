@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Callable
 
 import yaml
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -30,6 +31,33 @@ def _unique_values(values: list | None) -> list | None:
     return values
 
 
+def _expand_enum_regex(enum_cls: type) -> Callable[[object], object]:
+    """Sweep values accept a regex string in place of a value list: expanded
+    (fullmatch) against the enum's values into the sorted matching list at
+    load time, so ".*" always means every value — including ones added after
+    the suite was written — and run.yaml records the expanded list. A regex
+    matching nothing, like an invalid one, fails the load."""
+
+    def expand(value: object) -> object:
+        if isinstance(value, str):
+            try:
+                pattern = re.compile(value)
+            except re.error as exc:
+                raise ValueError(f"invalid regex {value!r}: {exc}") from exc
+            matched = sorted(
+                member.value for member in enum_cls if pattern.fullmatch(member.value)
+            )
+            if not matched:
+                raise ValueError(
+                    f"regex {value!r} matches no {enum_cls.__name__} value "
+                    f"(values: {sorted(member.value for member in enum_cls)})"
+                )
+            return matched
+        return value
+
+    return expand
+
+
 class StreamSweep(StrictModel):
     """Swept dimensions attached to one stream, selected by name."""
 
@@ -38,6 +66,15 @@ class StreamSweep(StrictModel):
     tintalgo: list[Tintalgo] | None = Field(None, min_length=1)
     mapalgo: list[Mapalgo] | None = Field(None, min_length=1)
 
+    _expand_taxmode = field_validator("taxmode", mode="before")(
+        _expand_enum_regex(Taxmode)
+    )
+    _expand_tintalgo = field_validator("tintalgo", mode="before")(
+        _expand_enum_regex(Tintalgo)
+    )
+    _expand_mapalgo = field_validator("mapalgo", mode="before")(
+        _expand_enum_regex(Mapalgo)
+    )
     _unique = field_validator("taxmode", "tintalgo", "mapalgo")(_unique_values)
 
 
@@ -61,6 +98,15 @@ class SpeciesEntrySweep(StrictModel):
     category: list[Category] | None = Field(None, min_length=1)
     vdist_method: list[VdistMethod] | None = Field(None, min_length=1)
 
+    _expand_operation = field_validator("operation", mode="before")(
+        _expand_enum_regex(Operation)
+    )
+    _expand_category = field_validator("category", mode="before")(
+        _expand_enum_regex(Category)
+    )
+    _expand_vdist_method = field_validator("vdist_method", mode="before")(
+        _expand_enum_regex(VdistMethod)
+    )
     _unique = field_validator("operation", "category", "vdist_method")(_unique_values)
 
 
@@ -109,6 +155,10 @@ class Assertions(StrictModel):
     validate_filenames: bool = Field(
         True,
         description="Assert NetCDF filenames match filename_pattern at the expected write times; false skips the test",
+    )
+    validate_file_count: bool = Field(
+        True,
+        description="Assert the NetCDF file count matches expected_nc_file_count (or the derived count); false skips the test",
     )
     species: dict[str, SpeciesAssertions] | None = Field(
         None,

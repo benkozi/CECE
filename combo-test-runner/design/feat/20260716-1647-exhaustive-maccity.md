@@ -21,7 +21,7 @@ Traced through `cece_config_parser.cpp`, `cece_config_validator.cpp`,
 |---|---|---|---|
 | `Operation` | `add`, `replace` (validator-enforced) | add, replace | **complete** |
 | `Category` | **never validated** — free-form pass-through string | 6 values | complete (any string passes; see runtime note) |
-| `VdistMethod` | `SINGLE`, `RANGE`, `PRESSURE`, `HEIGHT`, `PBL` (validator-enforced) | PBL, HEIGHT, PRESSURE | **missing `SINGLE`, `RANGE`** |
+| `VdistMethod` | `single`, `range`, `pressure`, `height`, `pbl` — **lowercase** (parser-matched; see finding 3) | PBL, HEIGHT, PRESSURE (uppercase) | **missing `single`, `range`; existing values are the wrong case** |
 | `Taxmode` | **inert in standalone mode** (zero facade reads; flows only to TIDE/dagr in NUOPC mode, where dagr accepts `clamp`/`cycle`) | cycle, extend | complete for sweeping; both trivially pass |
 | `Tintalgo` | `linear`, `nearest` (facade; default nearest) | linear, nearest | **complete** |
 | `Mapalgo` | canonical: `passthrough`, `nn`, `bilinear`, `cubic`, `conss`, `consd` (+aliases) | consd, bilinear, passthrough, consf, nn, redist | **missing `cubic`, `conss`; `consf`/`redist` are not driver values** |
@@ -45,18 +45,35 @@ Two findings beyond value lists:
    unseen). The runner must move to the nested schema for the exhaustive
    sweep to actually exercise vertical distribution. The stale flat table
    in `docs/configuration.md` is a driver-side doc bug to flag separately.
+3. **The vdist validator is dead code in standalone mode, and the parser
+   matches lowercase** (implementation-time finding): the validator's
+   `ValidateVerticalDistribution` (and its operation check) walk a
+   top-level `layers[i].vertical_distribution` schema that does not exist
+   in the driver config (`species.<name>[i].vdist`), so the uppercase
+   `SINGLE|RANGE|...` whitelist never fires — the **parser is the ground
+   truth**, and it compares `"range"`, `"pressure"`, `"height"`, `"pbl"`
+   in lowercase with a **silent fallthrough to SINGLE** for anything else
+   (including `"single"` itself, which is only reachable via the
+   fallthrough, and any typo or uppercase value). The Python enum values
+   therefore must be lowercase — the current uppercase `PBL`/`HEIGHT`/
+   `PRESSURE` would all silently run as SINGLE.
 
 ## Runner model updates (prerequisite, TDD'd)
 
 - `Mapalgo`: add `cubic`, `conss`; remove `consf`, `redist` (finding 1).
-- `VdistMethod`: add `SINGLE`, `RANGE`.
+- `VdistMethod`: add `single`, `range`; all values lowercase per finding 3
+  (`single`, `range`, `pressure`, `height`, `pbl`). Combo name segments
+  follow (`co.vd-height`), so vdist combo ids change — nothing checked-in
+  swept vdist, so no baseline references break.
 - `SpeciesEntry`: replace the flat `vdist_*` fields with a nested
   `vdist: Vdist | None` sub-model mirroring the driver parser
-  (`method, layer_start, layer_end, p_start, p_end, h_start, h_end`, all
-  described). `combos.py`'s vdist apply targets the nested model and
-  supplies per-method companions: HEIGHT → `h_start/h_end`; PRESSURE →
-  `p_start/p_end`; RANGE → `layer_start/layer_end`; SINGLE →
-  `layer_start`; PBL → none.
+  (`method` required; `layer_start`/`layer_end` ints;
+  `p_start`/`p_end`/`h_start`/`h_end` floats; all described).
+  `combos.py`'s vdist apply targets the nested model and supplies
+  per-method companions: height → `h_start/h_end` (0.0/100.0 m);
+  pressure → `p_start/p_end` (100000.0/90000.0 Pa); range →
+  `layer_start/layer_end` (0/2 — inclusive 0-based model-level indices in
+  the stacking engine); single → `layer_start` (0); pbl → none.
 
 ## Sweep value regexes: `.*` means "all values, forever"
 
@@ -113,14 +130,15 @@ sweep:
 ```
 
 **Size and runtime**: after the enum updates — 2 (op) × 6 (cat) × 5 (vd) ×
-2 (tax) × 2 (tint) × 6 (map) = **2,880 combinations**; at the observed
-~6–7 s per driver run, **≈ 5–6 hours serial** as an upper bound — expected
+2 (tax) × 2 (tint) × 6 (map) = **1,440 combinations** (the refine draft
+misstated 2,880; the product is 1,440); at the observed
+~6–7 s per driver run, **≈ 2.5–3 hours serial** as an upper bound — expected
 failures exit faster and hangs are capped at the 10 s timeout, so the real
 run will likely be shorter. This is an on-demand suite
 (`--suite-config=...exhaustive...`), never the default. Note: `category` is
 driver-inert (finding above), so sweeping it multiplies runtime ×6 for
-little signal — pinning `category: anthropogenic` cuts the suite to 480
-combos (~1 h) with identical driver coverage; the suite ships fully
+little signal — pinning `category: anthropogenic` cuts the suite to 240
+combos (~30 min) with identical driver coverage; the suite ships fully
 exhaustive per the requirement, with this trim documented as the obvious
 knob. Failures from inapplicable value combinations are expected and are
 the suite's data, not defects to fix here.
@@ -152,7 +170,7 @@ pytest --dry-run --suite-config=.../exhaustive-maccity-run-only-suite.yaml src/t
   image.
 - `test-report.csv` **is still written**, with every combo-test row
   `skipped` — a dry run of the exhaustive suite validates the report
-  machinery at the full 2,880-combination scale in seconds.
+  machinery at the full 1,440-combination scale in seconds.
 - General feature, not exhaustive-specific: useful for validating any new
   suite yaml (ids, selector resolution, config generation) before paying
   for containers.
@@ -174,6 +192,11 @@ combo-parameterized test, and `pytest_sessionfinish` writes
   no id parsing); non-combo tests (harness) are not reported.
 - Written whenever combinations ran, for every suite — small, always-useful
   artifact alongside `run.yaml`/`combos.csv`.
+- The row model and CSV writer live in a new `report.py`
+  (`TestReportRow` pydantic model + `write_test_report_csv` +
+  `worst_result` outcome precedence: failed > skipped > passed across a
+  test's setup/call/teardown phases) so the harness tests them directly;
+  the conftest hook (`pytest_runtest_makereport` hookwrapper) only collects.
 
 ## TDD plan (red first)
 
@@ -214,12 +237,13 @@ combo-parameterized test, and `pytest_sessionfinish` writes
 
 - Harness passes without docker, covering the matrix above (harness tests
   never require a driver call).
-- The exhaustive suite **collects 2,880 combinations** with only
-  `test_driver_execution` active per combo (others skipped/absent).
+- The exhaustive suite **collects 1,440 combinations** with only
+  `test_driver_execution` active per combo (the disabled assertion tests
+  collect and skip).
 - **All real driver execution is deferred for this feature** — no smoke
   slice, no full run. Any attempted execution of the integration suite
   during implementation carries `--dry-run`. The full-scale validation is
-  a `--dry-run` of the exhaustive suite, completing in seconds: all 2,880
+  a `--dry-run` of the exhaustive suite, completing in seconds: all 1,440
   configs generated on disk, `test-report.csv` at the output root with one
   all-`skipped` row per combo-test — validating generation and report
   machinery at full scale without producing real data. The real run stays
