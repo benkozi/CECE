@@ -1,16 +1,16 @@
-# Spike: exhaustive run-only maccity suite
+# Feature: exhaustive run-only maccity suite
 
 ## Goal
 
 An **exhaustive, run-only** suite sweeping every enum value across every
 dimension of the simple-maccity scenario — pass/fail per combination is the
 only question, with plotting, baselines, and statistics all off. Because
-the Python enums are hand-mirrored from the C++ implementation, the spike
+the Python enums are hand-mirrored from the C++ implementation, the feature
 starts with an **enum audit against the driver code**; the suite then uses
 **regex value expansion** (`".*"`) so it never needs editing as enums grow,
 and a **`test-report.csv`** summarizes every combination's outcome.
-Inapplicable value combinations may fail the driver — that is the spike's
-data, not defects to fix here.
+Inapplicable value combinations may fail the driver — that is the suite's
+data, not defects to fix here (a spike mindset for the results).
 
 ## Enum audit (C++ ground truth vs the runner's Python enums)
 
@@ -121,7 +121,7 @@ little signal — pinning `category: anthropogenic` cuts the suite to 480
 combos (~1 h) with identical driver coverage; the suite ships fully
 exhaustive per the requirement, with this trim documented as the obvious
 knob. Failures from inapplicable value combinations are expected and are
-the spike's data, not defects to fix here.
+the suite's data, not defects to fix here.
 
 ## The report: `test-report.csv`
 
@@ -180,7 +180,7 @@ combo-parameterized test, and `pytest_sessionfinish` writes
 - A full exhaustive run is executed on demand (expected multi-hour);
   `test-report.csv` at the output root carries one row per executed
   combo-test with pass/fail/skip truthfully recorded — failures analyzed
-  as spike findings, not fixed here.
+  as findings, not fixed here.
 - The regular `simple-maccity` suite keeps all current outcomes.
 
 ---
