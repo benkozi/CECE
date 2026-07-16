@@ -12,24 +12,24 @@ produces a YAML results artifact from a pydantic model.
 
 ## Design
 
-### Suite config: the `comparison` block
+### Suite config: the `baseline_comparison` block
 
 ```yaml
-comparison:
-  rtol: 0.0                                # default: bit-for-bit; > 0 = relative tolerance
+baseline_comparison:
+  atol: 0.0                                # default: bit-for-bit; > 0 = absolute tolerance
   baselines:                               # combination name -> baseline ULID
     MACCITY.map-bilinear: 01K0AAAAAAAAAAAAAAAAAAAAAA
     MACCITY.map-consd:    01K0BBBBBBBBBBBBBBBBBBBBBB
 ```
 
 ```python
-class Comparison(StrictModel):
-    rtol: float = Field(0.0, ge=0, description="0 = bit-for-bit; > 0 = relative tolerance for data comparison")
+class BaselineComparison(StrictModel):
+    atol: float = Field(0.0, ge=0, description="0 = bit-for-bit; > 0 = absolute tolerance for data comparison")
     baselines: dict[str, str] = Field(default_factory=dict, description="Combination name -> baseline ULID")
 
 class SuiteConfig(StrictModel):
     ...
-    comparison: Comparison | None = Field(None, description="Baseline comparison; None disables it entirely")
+    baseline_comparison: BaselineComparison | None = Field(None, description="Baseline comparison; None disables it entirely")
 ```
 
 - Keys are **combination names** (human-readable, deterministic, stable
@@ -37,9 +37,11 @@ class SuiteConfig(StrictModel):
   start against the enumerated combinations, like sweep selectors: an
   unknown name fails before any container runs.
 - Combinations without an entry skip the comparison test (the "optional"
-  in the requirement); `comparison: null`/absent disables it for the suite.
-- `rtol` is suite-level for now (per-combination overrides are future work)
-  and pydantic-validated `ge=0`.
+  in the requirement); `baseline_comparison: null`/absent disables it for
+  the suite.
+- `atol` is suite-level for now (per-combination overrides are future work)
+  and pydantic-validated `ge=0`. **Absolute** tolerance, deliberately: no
+  tolerance scaling by the baseline's magnitude.
 
 ### Setting and baseline layout
 
@@ -69,28 +71,35 @@ Per combination, given the combo dir and the baseline dir:
    - **Global attributes**: exact (raw, undecoded — same
      `decode_cf=False` rationale as the species-attributes assertion).
    - **Per-variable attributes**: exact, raw.
-   - **Data**: `rtol == 0` → bit-for-bit (dtypes equal; values identical
-     with NaNs required in identical positions); `rtol > 0` →
-     `|realization - baseline| <= rtol * |baseline|` elementwise (NaN
-     positions still identical). Always-exact attributes are per the
-     requirement — tolerance applies to data only.
+   - **Data**: `atol == 0` → bit-for-bit (dtypes equal; values identical
+     with NaNs required in identical positions); `atol > 0` →
+     `|realization - baseline| <= atol` elementwise — absolute tolerance,
+     no scaling by the baseline's magnitude (NaN positions still
+     identical). Always-exact attributes are per the requirement —
+     tolerance applies to data only.
 3. **Parallel xarray**: datasets open with `chunks="auto"`; per-variable
-   comparison reductions (equality / max-abs-diff / max-rel-diff) are
-   gathered into a single `dask.compute` executed on the existing
-   session `dask_client` — the same batching pattern as the stats step.
+   comparison reductions (equality / max-abs-diff) are gathered into a
+   single `dask.compute` executed on the existing session `dask_client` —
+   the same batching pattern as the stats step.
+4. **Logging** goes through the runner's logging system
+   (`logs.get_logger("comparison")`, level via `CECE_LOG_LEVEL`), in the
+   established style: an INFO line when a combination's comparison starts
+   (combo, baseline ULID, atol), one per file pair with its outcome, and a
+   summary line (`comparison passed`/`FAILED` with the failing checks);
+   mismatch details additionally at ERROR so they stand out at any level.
 
 ### Results: pydantic model → YAML artifact
 
 ```python
 class VariableComparison(StrictModel):   # frozen; every field described
-    name, dtype_match, data_match, attributes_match, max_abs_diff, max_rel_diff, detail
+    name, dtype_match, data_match, attributes_match, max_abs_diff, detail
 
 class FileComparison(StrictModel):
     file, format_match, dimensions_match, variables_match,
     global_attributes_match, variables: list[VariableComparison], passed
 
 class BaselineComparisonResult(StrictModel):
-    run_id, combo, combo_id, baseline_ulid, rtol,
+    run_id, combo, combo_id, baseline_ulid, atol,
     file_names_match, files: list[FileComparison], passed
 ```
 
@@ -116,7 +125,7 @@ With the current fixed driver and checked-in config:
 1. Run the suite; for each of the three combinations, copy its `*.nc` into
    `/Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-baselines/<new ULID>/`
    (one freshly generated ULID per combination).
-2. Wire those ULIDs into the checked-in suite's `comparison.baselines` and
+2. Wire those ULIDs into the checked-in suite's `baseline_comparison.baselines` and
    set `CECE_BASELINE_ROOT_DIR` to the Dropbox path when running locally.
 
 **Portability caveat, accepted**: the checked-in suite then references
@@ -130,7 +139,7 @@ Harness tests against fabricated NetCDF pairs, written before
 `comparison.py` exists:
 
 - identical pair → passes bit-for-bit; a single perturbed value → fails at
-  `rtol=0`, passes at a covering `rtol`, fails at a tighter one
+  `atol=0`, passes at a covering `atol`, fails at a tighter one
 - NaN-position mismatch fails even under tolerance
 - changed variable attribute / global attribute → fails (attributes are
   always exact)
@@ -139,13 +148,13 @@ Harness tests against fabricated NetCDF pairs, written before
   fails naming the check
 - results YAML written on both pass and fail and round-trips through the
   model
-- suite parsing: `rtol` validation (`-0.5` rejected), unknown baseline
+- suite parsing: `atol` validation (`-0.5` rejected), unknown baseline
   combination name rejected at session start
 
 ## Ripples (standing process rules)
 
-- **`design.md`**: suite-configuration example gains the `comparison`
-  block; settings table gains `baseline_root_dir`; the artifacts layout
+- **`design.md`**: suite-configuration example gains the
+  `baseline_comparison` block; settings table gains `baseline_root_dir`; the artifacts layout
   gains `<combo_id>-comparison.yaml`; the "no baseline comparison yet"
   non-goal is removed.
 - **`README.md`**: env var table (`CECE_BASELINE_ROOT_DIR`), test list
@@ -158,7 +167,8 @@ Harness tests against fabricated NetCDF pairs, written before
 - No online baseline retrieval, no baseline manifest (ULID → combination
   metadata), no baseline *creation* tooling in the runner — capture is a
   manual/scripted step this iteration.
-- No per-combination `rtol` overrides; no absolute-tolerance (`atol`) mode.
+- No per-combination `atol` overrides; no relative-tolerance (`rtol` /
+  scaled) mode — absolute only.
 - No statistics-CSV comparison — this feature compares the NetCDF files
   themselves.
 
