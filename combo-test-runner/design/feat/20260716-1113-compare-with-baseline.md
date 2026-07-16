@@ -12,7 +12,7 @@ produces a YAML results artifact from a pydantic model.
 
 ## Design
 
-### Suite config: the `baseline_comparison` block with combo selectors
+### Suite config: the `baseline_comparisons` list of combo selectors
 
 > Revised: the first cut mapped full combination names to ULIDs. Full names
 > grow with sweep dimensions and every name changes whenever a dimension is
@@ -26,21 +26,20 @@ the same reason: generality. A selector walks the same paths a sweep does,
 with regexes at the leaves:
 
 ```yaml
-baseline_comparison:
-  atol: 0.0                     # default: bit-for-bit; > 0 = absolute tolerance
-  baselines:                    # list of selectors, each pairing one combination
-    - sweep_selector:
-        cece_data:
-          streams:
-            - name: MACC.*      # regex vs the stream target's name
-              mapalgo: bilinear # regex vs that stream's swept value
-      baseline_ulid: 01K0AAAAAAAAAAAAAAAAAAAAAA
-    - sweep_selector:
-        cece_data:
-          streams:
-            - name: MACC.*
-              mapalgo: consd
-      baseline_ulid: 01K0BBBBBBBBBBBBBBBBBBBBBB
+baseline_comparisons:           # a list; each entry pairs one combination
+  - sweep_selector:
+      cece_data:
+        streams:
+          - name: MACC.*        # regex vs the stream target's name
+            mapalgo: bilinear   # regex vs that stream's swept value
+    ulid: 01K0AAAAAAAAAAAAAAAAAAAAAA
+  - sweep_selector:
+      cece_data:
+        streams:
+          - name: MACC.*
+            mapalgo: consd
+    ulid: 01K0BBBBBBBBBBBBBBBBBBBBBB
+    atol: 0.001                 # optional per-comparison override (default 0.0)
 ```
 
 (As with the original sweep sketch, `name` and its sibling fields form one
@@ -66,17 +65,14 @@ class SweepSelector(StrictModel):           # mirrors Sweep
     cece_data: CeceDataSweepSelector | None
     species: dict[str, list[SpeciesEntrySweepSelector]] | None  # key: regex vs species name; index -> entry
 
-class BaselineSelector(StrictModel):
-    sweep_selector: SweepSelector           # required; every field described
-    baseline_ulid: str
-
-class BaselineComparison(StrictModel):
-    atol: float = Field(0.0, ge=0, description="0 = bit-for-bit; > 0 = absolute tolerance for data comparison")
-    baselines: list[BaselineSelector] = Field(default_factory=list, description="Combo selectors pairing combinations with baseline ULIDs")
+class BaselineComparison(StrictModel):      # one list entry; every field described
+    sweep_selector: SweepSelector           # required
+    ulid: str                               # the baseline's ULID
+    atol: float = Field(0.0, ge=0, description="0 = bit-for-bit; > 0 = absolute tolerance for this comparison")
 
 class SuiteConfig(StrictModel):
     ...
-    baseline_comparison: BaselineComparison | None = Field(None, description="Baseline comparison; None disables it entirely")
+    baseline_comparisons: list[BaselineComparison] = Field(default_factory=list, description="Per-combination baseline comparisons; empty/absent disables")
 ```
 
 **Matching semantics** (a structural walk, fullmatch at the leaves):
@@ -111,11 +107,12 @@ class SuiteConfig(StrictModel):
 - A combination matched by **more than one selector** is an error (one
   baseline per combination).
 - Combinations matched by no selector skip the comparison test (the
-  "optional" in the requirement); `baseline_comparison: null`/absent
-  disables it for the suite.
-- `atol` is suite-level for now (per-selector overrides are future work)
-  and pydantic-validated `ge=0`. **Absolute** tolerance, deliberately: no
-  tolerance scaling by the baseline's magnitude.
+  "optional" in the requirement); an empty or absent `baseline_comparisons`
+  list disables it for the suite.
+- `atol` is **per comparison entry** (default `0.0` = bit-for-bit,
+  pydantic-validated `ge=0`), so each pairing states its own tolerance.
+  **Absolute** tolerance, deliberately: no tolerance scaling by the
+  baseline's magnitude.
 
 ### Setting and baseline layout
 
@@ -126,7 +123,7 @@ class SuiteConfig(StrictModel):
 
 `enable_baseline_comparisons` is the **global kill switch**: when `false`,
 every `test_baseline_comparison` skips with an explicit reason regardless of
-the suite's `baseline_comparison` block — an environment-level control (e.g.
+the suite's `baseline_comparisons` list — an environment-level control (e.g.
 a machine without the baseline store) that never requires editing suites.
 
 A baseline lives at `<baseline_root_dir>/<ulid>/` and contains exactly the
@@ -179,8 +176,9 @@ class FileComparison(StrictModel):
     global_attributes_match, variables: list[VariableComparison], passed
 
 class BaselineComparisonResult(StrictModel):
-    run_id, combo, combo_id, baseline_ulid, atol,
-    file_names_match, files: list[FileComparison], passed
+    run_id, combo, combo_id, baseline_ulid, atol,   # baseline_ulid stays
+    file_names_match, files: list[FileComparison], passed  # qualified: run_id
+                                                    # (also a ULID) coexists
 ```
 
 Written to `<combo-dir>/<combo_id>-comparison.yaml` via the `to_yaml`
@@ -196,9 +194,10 @@ A new unwrapped test on the shared fixture, standard skip ladder:
 - `test_baseline_comparison[<combo>]` — skip ladder, in order: driver run
   failed; `baseline comparisons disabled by settings` when
   `enable_baseline_comparisons` is false (the global switch trumps suite
-  config); `no baseline configured for this combination` when the combo has
-  no `baselines` entry (or the block is absent). Otherwise compares and
-  asserts. Missing baseline directory → **failure** (see above).
+  config); `no baseline configured for this combination` when no
+  `baseline_comparisons` entry selects the combo. Otherwise compares with
+  the entry's `atol` and asserts. Missing baseline directory →
+  **failure** (see above).
 
 ### Initial baseline generation (implementation step)
 
@@ -207,11 +206,10 @@ With the current fixed driver and checked-in config:
 1. Run the suite; for each of the three combinations, copy its `*.nc` into
    `/Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-baselines/<new ULID>/`
    (one freshly generated ULID per combination).
-2. Wire those ULIDs into the checked-in suite's
-   `baseline_comparison.baselines` as one `sweep_selector` per combination
-   (streams block: `name: MACCITY`, `mapalgo: bilinear|consd|passthrough`)
-   and set `CECE_BASELINE_ROOT_DIR` to the Dropbox path when running
-   locally.
+2. Wire those ULIDs into the checked-in suite's `baseline_comparisons`
+   as one entry per combination (streams block: `name: MACCITY`,
+   `mapalgo: bilinear|consd|passthrough`) and set
+   `CECE_BASELINE_ROOT_DIR` to the Dropbox path when running locally.
 
 **Portability caveat, accepted**: the checked-in suite then references
 baselines that exist only where `CECE_BASELINE_ROOT_DIR` points at this
@@ -242,12 +240,13 @@ Harness tests against fabricated NetCDF pairs, written before
   the name-matched stream only); species key regex + positional entries;
   `re.fullmatch` anchoring (no substring surprises); invalid regex
   rejected at load
-- suite parsing: `atol` validation (`-0.5` rejected)
+- suite parsing: per-entry `atol` validation (`-0.5` rejected) and the
+  per-entry override taking effect in the comparison
 
 ## Ripples (standing process rules)
 
 - **`design.md`**: suite-configuration example gains the
-  `baseline_comparison` block; settings table gains `baseline_root_dir`; the artifacts layout
+  `baseline_comparisons` list; settings table gains `baseline_root_dir`; the artifacts layout
   gains `<combo_id>-comparison.yaml`; the "no baseline comparison yet"
   non-goal is removed.
 - **`README.md`**: env var table (`CECE_BASELINE_ROOT_DIR`), test list
@@ -260,8 +259,8 @@ Harness tests against fabricated NetCDF pairs, written before
 - No online baseline retrieval, no baseline manifest (ULID → combination
   metadata), no baseline *creation* tooling in the runner — capture is a
   manual/scripted step this iteration.
-- No per-combination `atol` overrides; no relative-tolerance (`rtol` /
-  scaled) mode — absolute only.
+- No relative-tolerance (`rtol` / scaled) mode — absolute only
+  (per-comparison `atol` is in scope and delivered).
 - No statistics-CSV comparison — this feature compares the NetCDF files
   themselves.
 
