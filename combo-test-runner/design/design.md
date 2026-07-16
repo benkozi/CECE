@@ -143,10 +143,12 @@ config selected by the suite's `config_path` (the initial
 `examples/cece_config_ex1.yaml`: single species `co`, single `MACCITY` stream
 reading `/work/data/MACCity_4x5.nc`, coarse global grid, three-hour run). Base
 configs live inside `combo-test-runner/`, preserving zero runtime dependency
-on files elsewhere in the repo. The base config's
-`output.field_attributes` declares the NetCDF attributes (e.g. `co` units)
-the driver stamps on output fields — unconfigured fields get none — which is
-what the per-species units assertion verifies. For each combination the generator:
+on files elsewhere in the repo. The base config's `output.fields` entries
+declare each field to write together with its NetCDF attributes (a plain
+string is shorthand for a field with no configured attributes; the map form
+nests an `attributes` map under the field `name`) — unconfigured fields get
+none, which is what the per-species attributes assertion verifies. For each
+combination the generator:
 
 1. Loads the base config via `CeceConfig.from_yaml(config_path)`.
 2. Applies the swept enum values (plus companion vdist fields) at the

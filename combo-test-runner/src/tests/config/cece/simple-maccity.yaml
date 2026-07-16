@@ -38,8 +38,7 @@ output:
   filename_pattern: cece_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc
   frequency_steps: 1
   fields:
-    - co
-  field_attributes:
-    co:
-      units: kg m-2 s-1
-      long_name: carbon_monoxide_emission_flux
+    - name: co
+      attributes:
+        units: kg m-2 s-1
+        long_name: carbon_monoxide_emission_flux

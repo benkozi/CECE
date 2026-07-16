@@ -228,6 +228,17 @@ class Diagnostics(StrictModel):
     )
 
 
+class OutputField(StrictModel):
+    """The map form of an output.fields entry: a field to write paired with
+    its NetCDF attributes."""
+
+    name: str = Field(description="Export field name to write")
+    attributes: dict[str, str] | None = Field(
+        None,
+        description="NetCDF attributes (name -> value) for this field; fields without configured attributes get none",
+    )
+
+
 class Output(StrictModel):
     enabled: bool = Field(description="Whether NetCDF output is written")
     directory: str = Field(description="Directory where output files are written")
@@ -237,12 +248,8 @@ class Output(StrictModel):
     frequency_steps: int = Field(
         description="Number of timesteps between output writes"
     )
-    fields: list[str] = Field(
-        description="Export-state fields written to each output file"
-    )
-    field_attributes: dict[str, dict[str, str]] | None = Field(
-        None,
-        description="Per-field NetCDF attributes (field -> attribute -> value); unconfigured fields get none",
+    fields: list[str | OutputField] = Field(
+        description="Fields to write; a plain string is shorthand for a field with no configured attributes"
     )
 
 

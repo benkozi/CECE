@@ -5,7 +5,14 @@ import pytest
 import yaml
 
 from combos import build_config, enumerate_combos, write_combos_csv
-from models.cece_config import CeceConfig, Mapalgo, Operation, Taxmode, VdistMethod
+from models.cece_config import (
+    CeceConfig,
+    Mapalgo,
+    Operation,
+    OutputField,
+    Taxmode,
+    VdistMethod,
+)
 from models.suite_config import CeceDataSweep, SpeciesEntrySweep, StreamSweep, Sweep
 
 
@@ -102,16 +109,22 @@ def test_empty_sweep_yields_no_combos(base_config: CeceConfig) -> None:
 def test_field_attributes_round_trip_through_generated_configs(
     base_config: CeceConfig, cece_config_path: Path
 ) -> None:
-    # The checked-in base config declares output units for co; generated combo
-    # configs must carry them through to the driver (StrictModel accepts the key).
+    # The checked-in base config declares output attributes for co nested in
+    # its fields entry; generated combo configs carry them to the driver.
     assert base_config.output is not None
-    assert base_config.output.field_attributes == {
-        "co": {"units": "kg m-2 s-1", "long_name": "carbon_monoxide_emission_flux"}
-    }
+    assert base_config.output.fields == [
+        OutputField(
+            name="co",
+            attributes={
+                "units": "kg m-2 s-1",
+                "long_name": "carbon_monoxide_emission_flux",
+            },
+        )
+    ]
     (combo,) = enumerate_combos(_single_consd_sweep(), base_config)
     generated = build_config(combo, output_directory=".", config_path=cece_config_path)
     assert generated.output is not None
-    assert generated.output.field_attributes == base_config.output.field_attributes
+    assert generated.output.fields == base_config.output.fields
 
 
 def _single_consd_sweep() -> Sweep:

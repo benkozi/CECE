@@ -173,6 +173,38 @@ def test_unknown_suite_key_rejected(tmp_path: Path, cece_config_path: Path) -> N
         SuiteConfig.from_yaml(suite_file)
 
 
+def test_output_fields_mixed_shorthand_and_map_entries(
+    tmp_path: Path, cece_config_path: Path
+) -> None:
+    # An output.fields entry is a plain string (shorthand: no configured
+    # attributes) or a {name, attributes} map — matching the driver schema.
+    from models.cece_config import OutputField
+
+    content = yaml.safe_load(cece_config_path.read_text())
+    content["output"]["fields"] = [
+        {"name": "co", "attributes": {"units": "kg m-2 s-1"}},
+        "nox",
+    ]
+    config_file = tmp_path / "mixed-fields-config.yaml"
+    config_file.write_text(yaml.dump(content))
+
+    config = CeceConfig.from_yaml(config_file)
+    assert config.output is not None
+    assert config.output.fields == [
+        OutputField(name="co", attributes={"units": "kg m-2 s-1"}),
+        "nox",
+    ]
+
+    # Round-trips to the driver schema: shorthand stays a scalar.
+    round_trip = tmp_path / "round-trip.yaml"
+    config.to_yaml(round_trip)
+    dumped = yaml.safe_load(round_trip.read_text())
+    assert dumped["output"]["fields"] == [
+        {"name": "co", "attributes": {"units": "kg m-2 s-1"}},
+        "nox",
+    ]
+
+
 def test_unknown_nested_cece_config_key_rejected(
     tmp_path: Path, cece_config_path: Path
 ) -> None:
