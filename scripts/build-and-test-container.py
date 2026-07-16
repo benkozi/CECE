@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Build CECE and run its C++ tests in the dev container.
-
-The combo-test-runner suite is deliberately out of scope: run it separately
-on the host (uv run pytest in combo-test-runner/), where it orchestrates its
-own per-combo containers.
-
-Stdlib-only (argparse/subprocess/shutil): runs with any python3. The host repo
-root is derived from this file's location, never the cwd. setup.sh remains the
-interactive dev-environment entry point; this script is the C++ build/test
-loop, nothing more.
-"""
+"""Build CECE and run its C++ tests in the dev container."""
 
 from __future__ import annotations
 
@@ -88,16 +78,14 @@ def clean() -> None:
 
 def build(image: str, mount: str) -> None:
     logger.info("build phase: image=%s mount=%s", image, mount)
-    configure = f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
+    configure = (
+        f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
+    )
     # Default "all" target: the driver plus every registered test executable.
     run_in_container(image, mount, f"{configure} && cmake --build {mount}/build -j")
 
 
 def test(image: str, mount: str, test_filter: str | None) -> None:
-    # The full registered CECE test suite (gtest_discover_tests cases and other
-    # add_test entries) runs via ctest in the container, where the toolchain
-    # and netcdf-c live. The combo-test-runner suite is out of scope: run it
-    # separately on the host.
     logger.info("test phase: filter=%s", test_filter or "<none: full suite>")
     ctest_command = f"ctest --test-dir {mount}/build --output-on-failure"
     if test_filter:
