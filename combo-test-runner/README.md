@@ -59,9 +59,14 @@ NetCDF output count), `test_nc_filenames` (filenames match
 configured species; `exact: true` — the default — requires the dictionaries
 to match exactly, `exact: false` checks the expectation as a subset; per
 value, `null` asserts absence and `"__ignore__"` allows any value),
-and `test_descriptive_stats` (per-NetCDF statistics via distributed dask,
+`test_descriptive_stats` (per-NetCDF statistics via distributed dask,
 written to `<combo_id>-stats.csv`; all combos concatenated into
-`descriptive_stats.csv` at the output root when the session ends) — with the
+`descriptive_stats.csv` at the output root when the session ends), and
+`test_baseline_comparison` (nccmp-style comparison against a per-combination
+baseline when the suite's `baseline_comparison.baselines` maps the
+combination to a ULID under `CECE_BASELINE_ROOT_DIR`; structure and
+attributes exact, data bit-for-bit or within `atol`; unconfigured
+combinations skip) — with the
 driver running once per combination. If the driver run fails, its
 `test_driver_execution` fails and that combination's assertion tests are
 skipped with a `driver run failed: ...` reason.
@@ -99,6 +104,7 @@ failures point there; pytest keeps the last few runs under e.g.
     9004a4e23c1dd90a.yaml        # generated driver config
     9004a4e23c1dd90a.out         # captured driver stdout+stderr
     9004a4e23c1dd90a-stats.csv   # per-NetCDF descriptive statistics
+    9004a4e23c1dd90a-comparison.yaml  # baseline comparison record (when configured)
     plots/                       # spatial plot per NetCDF + per-variable GIF
     *.nc                         # driver NetCDF output
 ```
@@ -139,5 +145,7 @@ statistics (`count`, `sum`, `mean`, `std`, `min`, `max`, `median`).
 | `CECE_RUN_TIMEOUT_S`            | caps the suite `timeout_s` when smaller        | `300`                            |
 | `CECE_LOG_LEVEL`                | runner log level (`DEBUG`, `INFO`, ...)        | `INFO`                           |
 | `CECE_DASK_NWORKERS`            | dask workers for the stats cluster (int > 0)   | unset → all available cores      |
+| `CECE_BASELINE_ROOT_DIR`        | baselines live at `<root>/<ulid>/`             | unset → current working directory |
+| `CECE_ENABLE_BASELINE_COMPARISONS` | global switch; `false` skips comparison tests | `true`                           |
 | `CECE_CONFIG_SEARCH_PATH`       | prepended to relative `config_path` values     | unset                            |
 | `CECE_SUITE_CONFIG_SEARCH_PATH` | prepended to relative `--suite-config` values  | unset                            |

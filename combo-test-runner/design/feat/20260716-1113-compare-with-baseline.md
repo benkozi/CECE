@@ -45,9 +45,15 @@ class SuiteConfig(StrictModel):
 
 ### Setting and baseline layout
 
-| Setting             | Env var                  | Default                |
-|---------------------|--------------------------|------------------------|
-| `baseline_root_dir` | `CECE_BASELINE_ROOT_DIR` | `None` → cwd           |
+| Setting                       | Env var                             | Default      |
+|-------------------------------|-------------------------------------|--------------|
+| `baseline_root_dir`           | `CECE_BASELINE_ROOT_DIR`            | `None` → cwd |
+| `enable_baseline_comparisons` | `CECE_ENABLE_BASELINE_COMPARISONS`  | `true`       |
+
+`enable_baseline_comparisons` is the **global kill switch**: when `false`,
+every `test_baseline_comparison` skips with an explicit reason regardless of
+the suite's `baseline_comparison` block — an environment-level control (e.g.
+a machine without the baseline store) that never requires editing suites.
 
 A baseline lives at `<baseline_root_dir>/<ulid>/` and contains exactly the
 `*.nc` files of the combination run it was captured from (flat, same
@@ -113,9 +119,11 @@ files/variables/checks.
 
 A new unwrapped test on the shared fixture, standard skip ladder:
 
-- `test_baseline_comparison[<combo>]` — skips when the driver run failed;
-  skips with `no baseline configured for this combination` when the combo
-  has no `baselines` entry (or the block is absent); otherwise compares and
+- `test_baseline_comparison[<combo>]` — skip ladder, in order: driver run
+  failed; `baseline comparisons disabled by settings` when
+  `enable_baseline_comparisons` is false (the global switch trumps suite
+  config); `no baseline configured for this combination` when the combo has
+  no `baselines` entry (or the block is absent). Otherwise compares and
   asserts. Missing baseline directory → **failure** (see above).
 
 ### Initial baseline generation (implementation step)

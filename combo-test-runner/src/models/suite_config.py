@@ -125,6 +125,22 @@ class Analysis(StrictModel):
     )
 
 
+class BaselineComparison(StrictModel):
+    """Baseline comparison of combination NetCDF output, modeled on nccmp.
+    Pairing is per combination; combinations without a baselines entry skip
+    the comparison test."""
+
+    atol: float = Field(
+        0.0,
+        ge=0,
+        description="0 = bit-for-bit data comparison; > 0 = absolute tolerance (no scaling)",
+    )
+    baselines: dict[str, str] = Field(
+        default_factory=dict,
+        description="Combination name -> baseline ULID under baseline_root_dir",
+    )
+
+
 class Plotting(StrictModel):
     """Spatial-plot rendering at session end. The shared color scale derives
     from the descriptive statistics, so plotting requires the stats step."""
@@ -155,6 +171,10 @@ class SuiteConfig(StrictModel):
     plotting: Plotting = Field(
         default_factory=Plotting,
         description="Session-end spatial plotting; defaults apply when absent",
+    )
+    baseline_comparison: BaselineComparison | None = Field(
+        None,
+        description="Baseline comparison of combination output; None disables it entirely",
     )
 
     @model_validator(mode="after")

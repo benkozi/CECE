@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from analysis import RunContext, concatenate_stats_csvs
 from combos import Combo, build_config, enumerate_combos, write_combos_csv
+from comparison import validate_baseline_names
 from logs import configure_logging, get_logger
 from models.cece_config import CeceConfig
 from models.suite_config import Analysis, Assertions, RunManifest, SuiteConfig
@@ -117,6 +118,10 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     base_config = CeceConfig.from_yaml(suite.config_path)
     try:
         combos = enumerate_combos(suite.sweep, base_config)
+        if suite.baseline_comparison is not None:
+            validate_baseline_names(
+                suite.baseline_comparison.baselines, {combo.name for combo in combos}
+            )
     except ValueError as exc:
         raise pytest.UsageError(str(exc)) from exc
 

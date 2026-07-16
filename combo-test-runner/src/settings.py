@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     driver_path: str = "./build/cece_standalone_driver"
     run_timeout_s: int = 300
     log_level: str = "INFO"
+    baseline_root_dir: Path | None = Field(
+        None,
+        description="Directory holding baselines as <root>/<ulid>/; None means the current working directory",
+    )
+    enable_baseline_comparisons: bool = Field(
+        True,
+        description="Global switch for baseline comparisons; false skips every test_baseline_comparison regardless of suite config",
+    )
     # None -> LocalCluster sizes itself to all available cores.
     dask_nworkers: int | None = Field(None, gt=0)
     # When set, prepended to relative config paths (kept whole, so nested and

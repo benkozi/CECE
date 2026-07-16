@@ -17,8 +17,10 @@ analysis step computes descriptive statistics and spatial plots.
 - No standalone CLI — pytest's command line is the only entry point.
 - No dependency on existing CECE Python infrastructure; the runner lives in its
   own `uv`-managed environment under `combo-test-runner/`.
-- No baseline comparison of statistics yet — the stats CSVs are the artifacts
-  a future evaluation step will diff against baselines.
+- No online baseline retrieval or baseline manifest yet — baselines are
+  local directories keyed by ULID (see
+  `design/feat/20260716-1113-compare-with-baseline.md`); no stats-CSV
+  diffing (the comparison targets the NetCDF files themselves).
 
 ## Suite configuration
 
@@ -46,6 +48,10 @@ assertions:
 plotting:
   enabled: true                            # session-end spatial plots per NetCDF
   gif_enabled: true                        # per-variable animated GIF
+baseline_comparison:                       # optional; per-combination baselines
+  atol: 0.0                                # bit-for-bit; > 0 = absolute tolerance
+  baselines:                               # combination name -> baseline ULID
+    MACCITY.map-consd: 01KXNXCJ86E8Z2FKVAXRER5ND4
 sweep:
   cece_data:
     streams:
@@ -190,6 +196,7 @@ Layout under the output root is the same either way:
     9004a4e23c1dd90a.out       # captured driver stdout+stderr (".log" is
                                #   reserved for a future real driver log file)
     9004a4e23c1dd90a-stats.csv # per-NetCDF descriptive statistics
+    9004a4e23c1dd90a-comparison.yaml # baseline comparison record (when configured)
     plots/                     # session-end spatial plots + per-variable GIF
       co__cece_..._010000.png  #   (suite-wide exact min/max color scale,
       co.gif                   #    derived from the descriptive stats)
@@ -294,6 +301,8 @@ beyond the test runner.
 | `driver_path`    | `CECE_DRIVER_PATH`    | `./build/cece_standalone_driver` |
 | `run_timeout_s`  | `CECE_RUN_TIMEOUT_S`  | 300 — caps the suite's `timeout_s` when smaller |
 | `log_level`      | `CECE_LOG_LEVEL`      | `INFO`               |
+| `baseline_root_dir` | `CECE_BASELINE_ROOT_DIR` | unset → cwd; baselines at `<root>/<ulid>/` |
+| `enable_baseline_comparisons` | `CECE_ENABLE_BASELINE_COMPARISONS` | `true`; false skips all comparison tests |
 | `dask_nworkers`  | `CECE_DASK_NWORKERS`  | unset → all available; else int > 0 |
 | `config_search_path`       | `CECE_CONFIG_SEARCH_PATH`       | unset |
 | `suite_config_search_path` | `CECE_SUITE_CONFIG_SEARCH_PATH` | unset |
