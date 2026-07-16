@@ -52,6 +52,9 @@ class Dimension:
     field: str  # config field name, e.g. "mapalgo"
     tag: str  # short tag used in combination names, e.g. "map"
     apply: Callable[[CeceConfig, StrEnum], None]
+    group: str  # "stream" or "species": which sweep structure this came from
+    key: str  # stream name or species name (without the entry-index suffix)
+    index: int  # species entry index; always 0 for streams
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,9 @@ def _species_dimensions(
                                 field,
                                 tag,
                                 _apply_species_field(species, index, field),
+                                group="species",
+                                key=species,
+                                index=index,
                             ),
                             _sorted_values(values),
                         )
@@ -172,6 +178,9 @@ def _stream_dimensions(
                             field,
                             tag,
                             _apply_stream_field(stream_sweep.name, field),
+                            group="stream",
+                            key=stream_sweep.name,
+                            index=0,
                         ),
                         _sorted_values(values),
                     )

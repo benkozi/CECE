@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -125,19 +126,92 @@ class Analysis(StrictModel):
     )
 
 
-class BaselineComparison(StrictModel):
-    """Baseline comparison of combination NetCDF output, modeled on nccmp.
-    Pairing is per combination; combinations without a baselines entry skip
-    the comparison test."""
+def _valid_regex(value: str | None) -> str | None:
+    if value is not None:
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError(f"invalid regex {value!r}: {exc}") from exc
+    return value
 
+
+class StreamSweepSelector(StrictModel):
+    """Mirror of StreamSweep with regexes at the leaves: name selects the
+    stream target, sibling fields constrain that stream's swept values."""
+
+    name: str = Field(description="Regex (fullmatch) against the stream target's name")
+    taxmode: str | None = Field(
+        None, description="Regex (fullmatch) against the stream's swept taxmode value"
+    )
+    tintalgo: str | None = Field(
+        None, description="Regex (fullmatch) against the stream's swept tintalgo value"
+    )
+    mapalgo: str | None = Field(
+        None, description="Regex (fullmatch) against the stream's swept mapalgo value"
+    )
+
+    _regex = field_validator("name", "taxmode", "tintalgo", "mapalgo")(_valid_regex)
+
+
+class CeceDataSweepSelector(StrictModel):
+    streams: list[StreamSweepSelector] = Field(
+        min_length=1, description="Stream selector blocks; all must be satisfied"
+    )
+
+
+class SpeciesEntrySweepSelector(StrictModel):
+    """Mirror of SpeciesEntrySweep with regexes at the leaves; list position
+    selects the species entry index, as in the sweep."""
+
+    operation: str | None = Field(
+        None, description="Regex (fullmatch) against the entry's swept operation value"
+    )
+    category: str | None = Field(
+        None, description="Regex (fullmatch) against the entry's swept category value"
+    )
+    vdist_method: str | None = Field(
+        None,
+        description="Regex (fullmatch) against the entry's swept vdist_method value",
+    )
+
+    _regex = field_validator("operation", "category", "vdist_method")(_valid_regex)
+
+
+class SweepSelector(StrictModel):
+    """Mirror of Sweep: a structural pattern matched against a combination's
+    swept elements. Unspecified structure is unconstrained."""
+
+    cece_data: CeceDataSweepSelector | None = Field(
+        None, description="Stream selector blocks; None leaves streams unconstrained"
+    )
+    species: dict[str, list[SpeciesEntrySweepSelector]] | None = Field(
+        None,
+        description="Species-name regex -> positional entry selectors; None leaves species unconstrained",
+    )
+
+    @field_validator("species")
+    @classmethod
+    def _species_keys_are_regexes(
+        cls, species: dict[str, list[SpeciesEntrySweepSelector]] | None
+    ) -> dict[str, list[SpeciesEntrySweepSelector]] | None:
+        if species is not None:
+            for key in species:
+                _valid_regex(key)
+        return species
+
+
+class BaselineComparison(StrictModel):
+    """One baseline comparison: a sweep-mirroring selector pairing exactly one
+    combination with a baseline ULID, modeled on nccmp at comparison time."""
+
+    sweep_selector: SweepSelector = Field(
+        description="Structural pattern selecting exactly one enumerated combination"
+    )
+    ulid: str = Field(description="ULID of the baseline under baseline_root_dir")
     atol: float = Field(
         0.0,
         ge=0,
         description="0 = bit-for-bit data comparison; > 0 = absolute tolerance (no scaling)",
-    )
-    baselines: dict[str, str] = Field(
-        default_factory=dict,
-        description="Combination name -> baseline ULID under baseline_root_dir",
     )
 
 
@@ -172,9 +246,9 @@ class SuiteConfig(StrictModel):
         default_factory=Plotting,
         description="Session-end spatial plotting; defaults apply when absent",
     )
-    baseline_comparison: BaselineComparison | None = Field(
-        None,
-        description="Baseline comparison of combination output; None disables it entirely",
+    baseline_comparisons: list[BaselineComparison] = Field(
+        default_factory=list,
+        description="Per-combination baseline comparisons; empty/absent disables",
     )
 
     @model_validator(mode="after")

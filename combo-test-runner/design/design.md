@@ -48,10 +48,14 @@ assertions:
 plotting:
   enabled: true                            # session-end spatial plots per NetCDF
   gif_enabled: true                        # per-variable animated GIF
-baseline_comparison:                       # optional; per-combination baselines
-  atol: 0.0                                # bit-for-bit; > 0 = absolute tolerance
-  baselines:                               # combination name -> baseline ULID
-    MACCITY.map-consd: 01KXNXCJ86E8Z2FKVAXRER5ND4
+baseline_comparisons:                      # optional; each entry pairs one combination
+  - sweep_selector:                        # mirrors `sweep`; regexes (fullmatch) at leaves
+      cece_data:
+        streams:
+          - name: MACCITY
+            mapalgo: consd
+    ulid: 01KXNXCJ86E8Z2FKVAXRER5ND4       # baseline under CECE_BASELINE_ROOT_DIR
+    atol: 0.0                              # per entry; 0 = bit-for-bit (default)
 sweep:
   cece_data:
     streams:

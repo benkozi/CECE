@@ -76,30 +76,32 @@ def test_baseline_comparison(
         pytest.skip(f"driver run failed: {driver_run.error}")
     if not settings.enable_baseline_comparisons:
         pytest.skip("baseline comparisons disabled by settings")
-    baseline_comparison = request.config._combo_suite.baseline_comparison  # type: ignore[attr-defined]
-    if baseline_comparison is None or driver_run.combo.name not in baseline_comparison.baselines:
+    resolved = request.config._combo_baselines  # type: ignore[attr-defined]
+    entry = resolved.get(driver_run.combo.name)
+    if entry is None:
         pytest.skip("no baseline configured for this combination")
     # Lazy: only comparing runs pay dask cluster startup.
     request.getfixturevalue("dask_client")
 
-    baseline_ulid = baseline_comparison.baselines[driver_run.combo.name]
-    baseline_dir = (settings.baseline_root_dir or Path.cwd()) / baseline_ulid
+    baseline_dir = (settings.baseline_root_dir or Path.cwd()) / entry.ulid
     if not baseline_dir.is_dir():
         pytest.fail(
-            f"configured baseline {baseline_ulid} not found at {baseline_dir} "
+            f"configured baseline {entry.ulid} not found at {baseline_dir} "
             "(set CECE_BASELINE_ROOT_DIR)"
         )
 
     result = compare_with_baseline(
         driver_run.combo_dir,
         baseline_dir,
-        atol=baseline_comparison.atol,
+        atol=entry.atol,
         run_id=run_context.run_id,
         combo=driver_run.combo.name,
         combo_id=driver_run.combo.combo_id,
-        baseline_ulid=baseline_ulid,
+        baseline_ulid=entry.ulid,
     )
-    result.to_yaml(driver_run.combo_dir / f"{driver_run.combo.combo_id}-comparison.yaml")
+    result.to_yaml(
+        driver_run.combo_dir / f"{driver_run.combo.combo_id}-comparison.yaml"
+    )
     assert result.passed, f"baseline comparison failed: {result.failure_summary()}"
 
 

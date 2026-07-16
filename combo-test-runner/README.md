@@ -63,10 +63,11 @@ value, `null` asserts absence and `"__ignore__"` allows any value),
 written to `<combo_id>-stats.csv`; all combos concatenated into
 `descriptive_stats.csv` at the output root when the session ends), and
 `test_baseline_comparison` (nccmp-style comparison against a per-combination
-baseline when the suite's `baseline_comparison.baselines` maps the
-combination to a ULID under `CECE_BASELINE_ROOT_DIR`; structure and
-attributes exact, data bit-for-bit or within `atol`; unconfigured
-combinations skip) — with the
+baseline: each `baseline_comparisons` entry carries a `sweep_selector` —
+mirroring the sweep structure with regexes at the leaves — that must select
+exactly one combination, a baseline `ulid` under `CECE_BASELINE_ROOT_DIR`,
+and an optional per-entry `atol`; structure and attributes exact, data
+bit-for-bit or within `atol`; unselected combinations skip) — with the
 driver running once per combination. If the driver run fails, its
 `test_driver_execution` fails and that combination's assertion tests are
 skipped with a `driver run failed: ...` reason.

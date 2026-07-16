@@ -21,12 +21,28 @@ assertions:
           units: kg m-2 s-1
           long_name: carbon_monoxide_emission_flux
           coordinates: time lev lat lon
-baseline_comparison:
-  atol: 0.0  # bit-for-bit; > 0 = absolute tolerance (no scaling)
-  baselines:  # combination name -> baseline ULID under CECE_BASELINE_ROOT_DIR
-    MACCITY.map-bilinear: 01KXNXCJ858EE6R4FPF39BC8V2
-    MACCITY.map-consd: 01KXNXCJ86E8Z2FKVAXRER5ND4
-    MACCITY.map-passthrough: 01KXNXCJ87190QGHQZV2913JAW
+# Each entry's sweep_selector mirrors `sweep` with regexes (fullmatch) at the
+# leaves and must select exactly one combination; ulids live under
+# CECE_BASELINE_ROOT_DIR; atol is per entry (default 0.0 = bit-for-bit).
+baseline_comparisons:
+  - sweep_selector:
+      cece_data:
+        streams:
+          - name: MACCITY
+            mapalgo: bilinear
+    ulid: 01KXNXCJ858EE6R4FPF39BC8V2
+  - sweep_selector:
+      cece_data:
+        streams:
+          - name: MACCITY
+            mapalgo: consd
+    ulid: 01KXNXCJ86E8Z2FKVAXRER5ND4
+  - sweep_selector:
+      cece_data:
+        streams:
+          - name: MACCITY
+            mapalgo: passthrough
+    ulid: 01KXNXCJ87190QGHQZV2913JAW
 analysis:
   compute_descriptive_stats: true # default; false skips test_descriptive_stats
 plotting:

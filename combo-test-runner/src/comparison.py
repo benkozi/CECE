@@ -9,6 +9,7 @@ executed on the active distributed client.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import dask
@@ -31,13 +32,22 @@ class VariableComparison(StrictModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str = Field(description="Variable name")
-    dtype_match: bool = Field(description="Whether realization and baseline dtypes are identical")
-    data_match: bool = Field(description="Whether the data matched (bit-for-bit or within atol)")
-    attributes_match: bool = Field(description="Whether the variable attribute dictionaries are identical")
-    max_abs_diff: float | None = Field(
-        None, description="Maximum absolute elementwise difference; None when shapes/dtypes prevented comparison"
+    dtype_match: bool = Field(
+        description="Whether realization and baseline dtypes are identical"
     )
-    detail: str | None = Field(None, description="Human-readable mismatch detail; None when everything matched")
+    data_match: bool = Field(
+        description="Whether the data matched (bit-for-bit or within atol)"
+    )
+    attributes_match: bool = Field(
+        description="Whether the variable attribute dictionaries are identical"
+    )
+    max_abs_diff: float | None = Field(
+        None,
+        description="Maximum absolute elementwise difference; None when shapes/dtypes prevented comparison",
+    )
+    detail: str | None = Field(
+        None, description="Human-readable mismatch detail; None when everything matched"
+    )
 
     @property
     def passed(self) -> bool:
@@ -50,11 +60,21 @@ class FileComparison(StrictModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     file: str = Field(description="NetCDF filename (identical on both sides)")
-    format_match: bool = Field(description="Whether the NetCDF data models (e.g. NETCDF4) are identical")
-    dimensions_match: bool = Field(description="Whether dimension names and sizes are identical")
-    variables_match: bool = Field(description="Whether the variable name sets are identical")
-    global_attributes_match: bool = Field(description="Whether the global attribute dictionaries are identical")
-    variables: list[VariableComparison] = Field(description="Per-variable outcomes for the common variables")
+    format_match: bool = Field(
+        description="Whether the NetCDF data models (e.g. NETCDF4) are identical"
+    )
+    dimensions_match: bool = Field(
+        description="Whether dimension names and sizes are identical"
+    )
+    variables_match: bool = Field(
+        description="Whether the variable name sets are identical"
+    )
+    global_attributes_match: bool = Field(
+        description="Whether the global attribute dictionaries are identical"
+    )
+    variables: list[VariableComparison] = Field(
+        description="Per-variable outcomes for the common variables"
+    )
     passed: bool = Field(description="Whether every check for this file pair passed")
 
 
@@ -63,18 +83,29 @@ class BaselineComparisonResult(StrictModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    run_id: str = Field(description="Session ULID of the run that produced the realization")
+    run_id: str = Field(
+        description="Session ULID of the run that produced the realization"
+    )
     combo: str = Field(description="Canonical combination name")
     combo_id: str = Field(description="Content-hash combination id")
     baseline_ulid: str = Field(description="ULID identifying the baseline")
     atol: float = Field(description="Absolute data tolerance used (0 = bit-for-bit)")
-    file_names_match: bool = Field(description="Whether the NetCDF file name sets are identical")
-    files: list[FileComparison] = Field(description="Per-file outcomes for the common files")
+    file_names_match: bool = Field(
+        description="Whether the NetCDF file name sets are identical"
+    )
+    files: list[FileComparison] = Field(
+        description="Per-file outcomes for the common files"
+    )
     passed: bool = Field(description="Whether the whole comparison passed")
 
     def to_yaml(self, path: Path) -> None:
         with open(path, "w") as f:
-            yaml.dump(self.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
+            yaml.dump(
+                self.model_dump(mode="json"),
+                f,
+                default_flow_style=False,
+                sort_keys=False,
+            )
 
     def failure_summary(self) -> str:
         parts: list[str] = []
@@ -94,21 +125,124 @@ class BaselineComparisonResult(StrictModel):
                 if not flag
             ]
             checks += [
-                f"{variable.name} ({variable.detail})" for variable in file.variables if not variable.passed
+                f"{variable.name} ({variable.detail})"
+                for variable in file.variables
+                if not variable.passed
             ]
             parts.append(f"{file.file}: " + ", ".join(checks))
         return "; ".join(parts) or "passed"
 
 
-def validate_baseline_names(baselines: dict[str, str], combo_names: set[str]) -> None:
-    """Every baselines key must name an enumerated combination (fails before
-    any container runs, like sweep selectors)."""
-    unknown = sorted(set(baselines) - combo_names)
-    if unknown:
-        raise ValueError(
-            f"baseline_comparison.baselines names unknown combination(s) {unknown}; "
-            f"enumerated combinations: {sorted(combo_names)}"
+def _stream_block_matches(block, combo) -> bool:
+    """A streams selector block scopes its fields to one name-matched stream:
+    some swept stream must fullmatch `name` and satisfy every specified field."""
+    by_stream: dict[str, dict[str, str]] = {}
+    for dimension, value in combo.values:
+        if dimension.group == "stream":
+            by_stream.setdefault(dimension.key, {})[dimension.field] = value.value
+    criteria = {
+        field: pattern
+        for field, pattern in (
+            ("taxmode", block.taxmode),
+            ("tintalgo", block.tintalgo),
+            ("mapalgo", block.mapalgo),
         )
+        if pattern is not None
+    }
+    for stream_name, fields in by_stream.items():
+        if re.fullmatch(block.name, stream_name) is None:
+            continue
+        if all(
+            field in fields and re.fullmatch(pattern, fields[field]) is not None
+            for field, pattern in criteria.items()
+        ):
+            return True
+    return False
+
+
+def _species_entry_matches(key_pattern: str, index: int, entry_selector, combo) -> bool:
+    """A species entry selector requires a swept species whose name fullmatches
+    the dict key, with the selector's list position pinning the entry index."""
+    by_species: dict[tuple[str, int], dict[str, str]] = {}
+    for dimension, value in combo.values:
+        if dimension.group == "species":
+            by_species.setdefault((dimension.key, dimension.index), {})[
+                dimension.field
+            ] = value.value
+    criteria = {
+        field: pattern
+        for field, pattern in (
+            ("operation", entry_selector.operation),
+            ("category", entry_selector.category),
+            ("vdist_method", entry_selector.vdist_method),
+        )
+        if pattern is not None
+    }
+    if not criteria:
+        return True  # {} entry: no constraint at this index
+    for (species_name, entry_index), fields in by_species.items():
+        if entry_index != index or re.fullmatch(key_pattern, species_name) is None:
+            continue
+        if all(
+            field in fields and re.fullmatch(pattern, fields[field]) is not None
+            for field, pattern in criteria.items()
+        ):
+            return True
+    return False
+
+
+def _selector_matches(selector, combo) -> bool:
+    """Structural walk mirroring the sweep: every constrained element must be
+    satisfied; unspecified structure is unconstrained."""
+    if selector.cece_data is not None:
+        if not all(
+            _stream_block_matches(block, combo) for block in selector.cece_data.streams
+        ):
+            return False
+    if selector.species is not None:
+        for key_pattern, entries in selector.species.items():
+            for index, entry_selector in enumerate(entries):
+                if not _species_entry_matches(
+                    key_pattern, index, entry_selector, combo
+                ):
+                    return False
+    return True
+
+
+def resolve_baseline_comparisons(comparisons: list, combos: list) -> dict:
+    """Resolve each baseline_comparisons entry to exactly one combination.
+
+    Fails (ValueError) before any container runs when a selector matches no
+    combination, a selector matches more than one, or a combination is
+    claimed by multiple selectors — ambiguity is surfaced, never guessed.
+    Returns combination name -> BaselineComparison entry.
+    """
+    resolved: dict = {}
+    for position, entry in enumerate(comparisons):
+        selector_repr = entry.sweep_selector.model_dump(exclude_none=True)
+        matches = [
+            combo for combo in combos if _selector_matches(entry.sweep_selector, combo)
+        ]
+        if not matches:
+            raise ValueError(
+                f"baseline_comparisons[{position}] (ulid {entry.ulid}, selector {selector_repr}) "
+                "matches no combination"
+            )
+        if len(matches) > 1:
+            names = [combo.name for combo in matches]
+            raise ValueError(
+                f"baseline_comparisons[{position}] (ulid {entry.ulid}, selector {selector_repr}) "
+                f"is ambiguous: it matches {names}; refine the selector"
+            )
+        (combo,) = matches
+        if combo.name in resolved:
+            raise ValueError(
+                f"combination {combo.name!r} is claimed by multiple selectors "
+                f"(ulids {resolved[combo.name].ulid} and {entry.ulid})"
+            )
+        resolved[combo.name] = entry
+        logger.info("baseline %s resolved to combination %s", entry.ulid, combo.name)
+    return resolved
 
 
 def _stringified_attrs(attrs: dict) -> dict[str, str]:
@@ -143,7 +277,9 @@ def _compare_variable(
 
     real = dsa.asarray(realization.data)
     base = dsa.asarray(baseline.data)
-    if np.issubdtype(realization.dtype, np.floating) and np.issubdtype(baseline.dtype, np.floating):
+    if np.issubdtype(realization.dtype, np.floating) and np.issubdtype(
+        baseline.dtype, np.floating
+    ):
         nan_positions_equal = dsa.isnan(real) == dsa.isnan(base)
         both_nan = dsa.isnan(real) & dsa.isnan(base)
         if atol == 0.0:
@@ -153,7 +289,9 @@ def _compare_variable(
         equal_graph = (values_equal & nan_positions_equal).all()
         diff_graph = dsa.nanmax(abs(real - base))
     else:
-        equal_graph = (real == base).all() if atol == 0.0 else (abs(real - base) <= atol).all()
+        equal_graph = (
+            (real == base).all() if atol == 0.0 else (abs(real - base) <= atol).all()
+        )
         diff_graph = abs(real - base).max()
 
     equal, max_diff = dask.compute(equal_graph, diff_graph)
@@ -177,10 +315,16 @@ def _netcdf_data_model(path: Path) -> str:
         return str(ds.data_model)
 
 
-def _compare_file(realization_path: Path, baseline_path: Path, atol: float) -> FileComparison:
-    format_match = _netcdf_data_model(realization_path) == _netcdf_data_model(baseline_path)
+def _compare_file(
+    realization_path: Path, baseline_path: Path, atol: float
+) -> FileComparison:
+    format_match = _netcdf_data_model(realization_path) == _netcdf_data_model(
+        baseline_path
+    )
 
-    open_kwargs = dict(engine="netcdf4", chunks="auto", decode_cf=False, decode_coords=False)
+    open_kwargs = dict(
+        engine="netcdf4", chunks="auto", decode_cf=False, decode_coords=False
+    )
     with (
         xr.open_dataset(realization_path, **open_kwargs) as real,
         xr.open_dataset(baseline_path, **open_kwargs) as base,
@@ -189,7 +333,9 @@ def _compare_file(realization_path: Path, baseline_path: Path, atol: float) -> F
         real_vars = set(map(str, real.variables))
         base_vars = set(map(str, base.variables))
         variables_match = real_vars == base_vars
-        global_attributes_match = _stringified_attrs(real.attrs) == _stringified_attrs(base.attrs)
+        global_attributes_match = _stringified_attrs(real.attrs) == _stringified_attrs(
+            base.attrs
+        )
 
         variables = [
             _compare_variable(name, real[name], base[name], atol)
@@ -212,7 +358,9 @@ def _compare_file(realization_path: Path, baseline_path: Path, atol: float) -> F
         variables=variables,
         passed=passed,
     )
-    logger.info("compared %s: %s", realization_path.name, "passed" if passed else "FAILED")
+    logger.info(
+        "compared %s: %s", realization_path.name, "passed" if passed else "FAILED"
+    )
     return comparison
 
 
@@ -258,5 +406,7 @@ def compare_with_baseline(
     if passed:
         logger.info("comparison passed for combo %s", combo)
     else:
-        logger.error("comparison FAILED for combo %s: %s", combo, result.failure_summary())
+        logger.error(
+            "comparison FAILED for combo %s: %s", combo, result.failure_summary()
+        )
     return result
