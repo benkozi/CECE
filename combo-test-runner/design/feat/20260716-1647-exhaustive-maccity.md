@@ -20,7 +20,7 @@ Traced through `cece_config_parser.cpp`, `cece_config_validator.cpp`,
 | Enum | Driver-accepted values (standalone path) | Python enum today | Verdict |
 |---|---|---|---|
 | `Operation` | `add`, `replace` (validator-enforced) | add, replace | **complete** |
-| `Category` | **never validated** — free-form pass-through string | 6 values | complete (any string passes; see runtime note) |
+| `Category` | **never validated** — free-form pass-through string | 6 values (7 after this feature: `undefined` added) | complete (any string passes; see runtime note) |
 | `VdistMethod` | `single`, `range`, `pressure`, `height`, `pbl` — **lowercase** (parser-matched; see finding 3) | PBL, HEIGHT, PRESSURE (uppercase) | **missing `single`, `range`; existing values are the wrong case** |
 | `Taxmode` | **inert in standalone mode** (zero facade reads; flows only to TIDE/dagr in NUOPC mode, where dagr accepts `clamp`/`cycle`) | cycle, extend | complete for sweeping; both trivially pass |
 | `Tintalgo` | `linear`, `nearest` (facade; default nearest) | linear, nearest | **complete** |
@@ -61,6 +61,9 @@ Two findings beyond value lists:
 ## Runner model updates (prerequisite, TDD'd)
 
 - `Mapalgo`: add `cubic`, `conss`; remove `consf`, `redist` (finding 1).
+- `Category`: add `undefined` — category is a pure label the driver never
+  reads, so execution is identical for every value; `undefined` lets suites
+  that need the dimension without meaning pin it instead of sweeping it.
 - `VdistMethod`: add `single`, `range`; all values lowercase per finding 3
   (`single`, `range`, `pressure`, `height`, `pbl`). Combo name segments
   follow (`co.vd-height`), so vdist combo ids change — nothing checked-in
@@ -125,23 +128,23 @@ sweep:
   species:
     co:
       - operation: ".*"
-        category: ".*"
+        category: [undefined]   # driver-inert label: pinned, never swept
         vdist_method: ".*"
 ```
 
-**Size and runtime**: after the enum updates — 2 (op) × 6 (cat) × 5 (vd) ×
-2 (tax) × 2 (tint) × 6 (map) = **1,440 combinations** (the refine draft
-misstated 2,880; the product is 1,440); at the observed
-~6–7 s per driver run, **≈ 2.5–3 hours serial** as an upper bound — expected
-failures exit faster and hangs are capped at the 10 s timeout, so the real
-run will likely be shorter. This is an on-demand suite
-(`--suite-config=...exhaustive...`), never the default. Note: `category` is
-driver-inert (finding above), so sweeping it multiplies runtime ×6 for
-little signal — pinning `category: anthropogenic` cuts the suite to 240
-combos (~30 min) with identical driver coverage; the suite ships fully
-exhaustive per the requirement, with this trim documented as the obvious
-knob. Failures from inapplicable value combinations are expected and are
-the suite's data, not defects to fix here.
+**Size and runtime**: after the enum updates — 2 (op) × 1 (cat, pinned) ×
+5 (vd) × 2 (tax) × 2 (tint) × 6 (map) = **240 combinations**; at the
+observed ~6–7 s per driver run, **≈ 25–30 minutes serial** as an upper
+bound — expected failures exit faster and hangs are capped at the 10 s
+timeout, so the real run will likely be shorter. This is an on-demand suite
+(`--suite-config=...exhaustive...`), never the default. `category` is
+driver-inert (finding above): sweeping it would multiply runtime ×7 for
+identical execution, so it is **pinned to the new `undefined` label**
+rather than swept (the original design swept it — 1,440 combos — before
+this was trimmed); switching the pin back to `".*"` restores the full
+product if the label dimension ever gains driver semantics. Failures from
+inapplicable value combinations are expected and are the suite's data, not
+defects to fix here.
 
 ## `--dry-run`: everything up to the driver
 
@@ -170,7 +173,7 @@ pytest --dry-run --suite-config=.../exhaustive-maccity-run-only-suite.yaml src/t
   image.
 - `test-report.csv` **is still written**, with every combo-test row
   `skipped` — a dry run of the exhaustive suite validates the report
-  machinery at the full 1,440-combination scale in seconds.
+  machinery at the full 240-combination scale in seconds.
 - General feature, not exhaustive-specific: useful for validating any new
   suite yaml (ids, selector resolution, config generation) before paying
   for containers.
@@ -237,13 +240,13 @@ combo-parameterized test, and `pytest_sessionfinish` writes
 
 - Harness passes without docker, covering the matrix above (harness tests
   never require a driver call).
-- The exhaustive suite **collects 1,440 combinations** with only
+- The exhaustive suite **collects 240 combinations** with only
   `test_driver_execution` active per combo (the disabled assertion tests
   collect and skip).
 - **All real driver execution is deferred for this feature** — no smoke
   slice, no full run. Any attempted execution of the integration suite
   during implementation carries `--dry-run`. The full-scale validation is
-  a `--dry-run` of the exhaustive suite, completing in seconds: all 1,440
+  a `--dry-run` of the exhaustive suite, completing in seconds: all 240
   configs generated on disk, `test-report.csv` at the output root with one
   all-`skipped` row per combo-test — validating generation and report
   machinery at full scale without producing real data. The real run stays

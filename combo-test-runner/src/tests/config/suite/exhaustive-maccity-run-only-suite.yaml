@@ -29,5 +29,7 @@ sweep:
   species:
     co:
       - operation: ".*"
-        category: ".*"
+        # category is a pure label the driver never reads — sweeping it would
+        # multiply runtime for identical execution, so it is pinned instead.
+        category: [undefined]
         vdist_method: ".*"

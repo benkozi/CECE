@@ -37,8 +37,9 @@ uv run pytest src/tests/test_driver_combos.py  # integration only (real docker)
 # everything except driver execution (no docker needed); all combo tests skip
 uv run pytest src/tests/test_driver_combos.py --dry-run
 
-# the exhaustive run-only suite: every enum value on every dimension (1,440
-# combinations, on demand only — dry-run it first; the real run is hours)
+# the exhaustive run-only suite: every enum value on every driver-meaningful
+# dimension, the inert category label pinned to "undefined" (240 combinations,
+# on demand only — dry-run it first; the real run takes ~25-30 min)
 uv run pytest src/tests/test_driver_combos.py --dry-run \
   --suite-config=src/tests/config/suite/exhaustive-maccity-run-only-suite.yaml
 ```

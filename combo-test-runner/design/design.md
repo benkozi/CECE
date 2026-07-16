@@ -91,8 +91,10 @@ suite was written, and `run.yaml` records the expanded list (the run stays
 reproducible as enums grow). A regex matching nothing, like an invalid one,
 fails the load. See
 `design/feat/20260716-1647-exhaustive-maccity.md`, whose
-`exhaustive-maccity-run-only-suite.yaml` sweeps `".*"` on every dimension
-(1,440 combinations, run on demand — typically with `--dry-run` first).
+`exhaustive-maccity-run-only-suite.yaml` sweeps `".*"` on every
+driver-meaningful dimension and pins the inert `category` label to
+`undefined` (240 combinations, run on demand — typically with `--dry-run`
+first).
 
 Duplicate sweep values, duplicate stream names, and unknown keys are all
 rejected at load; sweep selectors (stream names, species keys, entry counts)
@@ -123,7 +125,7 @@ Each swept dimension attaches to an explicit target; the sweep says where:
 | Enum          | Values | Attaches to                                    |
 |---------------|--------|------------------------------------------------|
 | `Operation`   | 2      | a species entry (`species.<name>[<entry>]`)    |
-| `Category`    | 6      | a species entry                                |
+| `Category`    | 7      | a species entry                                |
 | `VdistMethod` | 5      | a species entry                                |
 | `Taxmode`     | 2      | a stream, selected by `name`                   |
 | `Tintalgo`    | 2      | a stream, selected by `name`                   |
@@ -136,7 +138,9 @@ consd` — unknown strings silently regrid with the default method, so no
 others may exist here) and `VdistMethod` holds the parser's lowercase
 strings (`single, range, pressure, height, pbl` — the uppercase validator
 whitelist is dead code in standalone mode, and unknown strings silently run
-as `single`).
+as `single`). `Category` is a pure label the driver never reads; its
+`undefined` value exists for suites that need the dimension without meaning
+(pinned instead of swept in the exhaustive suite).
 
 Sweeping `vdist_method` builds the **nested `vdist:` block** the driver
 parses (a `Vdist` sub-model on the species entry; flat `vdist_*` keys are a

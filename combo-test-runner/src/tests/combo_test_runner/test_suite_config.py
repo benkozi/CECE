@@ -6,7 +6,7 @@ import yaml
 from pydantic import ValidationError
 
 from combos import enumerate_combos
-from models.cece_config import CeceConfig, Mapalgo, VdistMethod
+from models.cece_config import Category, CeceConfig, Mapalgo, VdistMethod
 from models.suite_config import (
     Assertions,
     AttributesAssertion,
@@ -404,6 +404,12 @@ def test_validate_file_count_parses_false(
     assert suite.assertions.validate_file_count is False
 
 
+def test_category_has_inert_undefined_label() -> None:
+    # The driver never reads category (pure pass-through label); "undefined"
+    # exists so suites that don't care can pin it instead of sweeping.
+    assert Category.undefined.value == "undefined"
+
+
 def test_exhaustive_suite_enumerates_full_product(exhaustive_suite_path: Path) -> None:
     suite = SuiteConfig.from_yaml(exhaustive_suite_path)
     assert suite.name == "exhaustive-maccity-run-only"
@@ -413,11 +419,15 @@ def test_exhaustive_suite_enumerates_full_product(exhaustive_suite_path: Path) -
     assert suite.analysis.compute_descriptive_stats is False
     assert suite.plotting.enabled is False
     assert suite.baseline_comparisons == []
+    # category is a driver-inert label: pinned to "undefined", never swept.
+    assert suite.sweep.species is not None
+    assert suite.sweep.species["co"][0].category == [Category.undefined]
 
     base_config = CeceConfig.from_yaml(suite.config_path)
     combos = enumerate_combos(suite.sweep, base_config)
-    # op x cat x vd x tax x tint x map — every enum value via ".*" regexes.
-    assert len(combos) == 2 * 6 * 5 * 2 * 2 * 6
+    # op x vd x tax x tint x map — every enum value via ".*" regexes;
+    # category contributes a factor of 1.
+    assert len(combos) == 2 * 1 * 5 * 2 * 2 * 6
 
 
 def test_run_manifest_round_trips_through_yaml(

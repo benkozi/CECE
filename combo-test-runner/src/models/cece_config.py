@@ -66,6 +66,10 @@ class Mapalgo(StrEnum):
     conss = "conss"
 
 
+# A pure label: the driver passes category through without ever reading it,
+# so execution is identical for every value. "undefined" exists for suites
+# that need a category dimension without meaning (e.g. pinned instead of
+# swept in the exhaustive run-only suite).
 @unique
 class Category(StrEnum):
     anthropogenic = "anthropogenic"
@@ -74,6 +78,7 @@ class Category(StrEnum):
     energy = "energy"
     natural = "natural"
     biogenic = "biogenic"
+    undefined = "undefined"
 
 
 # Lowercase, exactly as the driver's parser matches them (its uppercase
