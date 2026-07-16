@@ -12,34 +12,108 @@ produces a YAML results artifact from a pydantic model.
 
 ## Design
 
-### Suite config: the `baseline_comparison` block
+### Suite config: the `baseline_comparison` block with combo selectors
+
+> Revised: the first cut mapped full combination names to ULIDs. Full names
+> grow with sweep dimensions and every name changes whenever a dimension is
+> added — the map was churn-prone scaffolding. It is replaced by **combo
+> selectors**: regex-style matches against the sweep combination *elements*
+> (targets and field values), explicit yet insulated from name/id churn.
+
+**Selectors mirror the `sweep` structure** — the same
+structure-over-flatness lesson as the sweep-attachment redesign, and for
+the same reason: generality. A selector walks the same paths a sweep does,
+with regexes at the leaves:
 
 ```yaml
 baseline_comparison:
-  atol: 0.0                                # default: bit-for-bit; > 0 = absolute tolerance
-  baselines:                               # combination name -> baseline ULID
-    MACCITY.map-bilinear: 01K0AAAAAAAAAAAAAAAAAAAAAA
-    MACCITY.map-consd:    01K0BBBBBBBBBBBBBBBBBBBBBB
+  atol: 0.0                     # default: bit-for-bit; > 0 = absolute tolerance
+  baselines:                    # list of selectors, each pairing one combination
+    - sweep_selector:
+        cece_data:
+          streams:
+            - name: MACC.*      # regex vs the stream target's name
+              mapalgo: bilinear # regex vs that stream's swept value
+      baseline_ulid: 01K0AAAAAAAAAAAAAAAAAAAAAA
+    - sweep_selector:
+        cece_data:
+          streams:
+            - name: MACC.*
+              mapalgo: consd
+      baseline_ulid: 01K0BBBBBBBBBBBBBBBBBBBBBB
 ```
 
+(As with the original sweep sketch, `name` and its sibling fields form one
+block per stream — `name` selects the stream, siblings constrain its swept
+values.)
+
 ```python
+class StreamSweepSelector(StrictModel):     # mirrors StreamSweep
+    name: str                               # regex, fullmatch vs the stream target
+    taxmode: str | None                     # regex, fullmatch vs the swept value ...
+    tintalgo: str | None
+    mapalgo: str | None
+
+class CeceDataSweepSelector(StrictModel):   # mirrors CeceDataSweep
+    streams: list[StreamSweepSelector]
+
+class SpeciesEntrySweepSelector(StrictModel):  # mirrors SpeciesEntrySweep
+    operation: str | None
+    category: str | None
+    vdist_method: str | None
+
+class SweepSelector(StrictModel):           # mirrors Sweep
+    cece_data: CeceDataSweepSelector | None
+    species: dict[str, list[SpeciesEntrySweepSelector]] | None  # key: regex vs species name; index -> entry
+
+class BaselineSelector(StrictModel):
+    sweep_selector: SweepSelector           # required; every field described
+    baseline_ulid: str
+
 class BaselineComparison(StrictModel):
     atol: float = Field(0.0, ge=0, description="0 = bit-for-bit; > 0 = absolute tolerance for data comparison")
-    baselines: dict[str, str] = Field(default_factory=dict, description="Combination name -> baseline ULID")
+    baselines: list[BaselineSelector] = Field(default_factory=list, description="Combo selectors pairing combinations with baseline ULIDs")
 
 class SuiteConfig(StrictModel):
     ...
     baseline_comparison: BaselineComparison | None = Field(None, description="Baseline comparison; None disables it entirely")
 ```
 
-- Keys are **combination names** (human-readable, deterministic, stable
-  across runs — the established cross-run join key). Validated at session
-  start against the enumerated combinations, like sweep selectors: an
-  unknown name fails before any container runs.
-- Combinations without an entry skip the comparison test (the "optional"
-  in the requirement); `baseline_comparison: null`/absent disables it for
-  the suite.
-- `atol` is suite-level for now (per-combination overrides are future work)
+**Matching semantics** (a structural walk, fullmatch at the leaves):
+
+- Every regex uses **`re.fullmatch`** — anchored both ends, no accidental
+  substring matches (`MACC.*` matches `MACCITY`; `consd` is effectively
+  exact). Invalid regexes fail at suite load (compiled in a validator).
+- A combination matches a selector iff **every constrained element is
+  satisfied**, following the sweep's own structure:
+  - each `streams` selector block requires a swept stream dimension group
+    whose target name fullmatches `name` **and** whose specified fields'
+    swept values fullmatch — the block scopes its fields to that one
+    stream, exactly as a `StreamSweep` block scopes its lists;
+  - each `species` selector entry requires a swept species whose *name*
+    fullmatches the dict key, with list position i constraining entry i
+    (mirroring the sweep's positional entry selection);
+  - multiple blocks/entries are ANDed.
+- Unspecified structure is unconstrained — that is the insulation: adding
+  a sweep dimension (or a whole new target) never invalidates a selector's
+  text. The structural mirror also means any future sweep extension (new
+  groups, new fields) extends the selector language mechanically, keeping
+  the feature general.
+
+**Resolution, validated at session start** (before any container runs):
+
+- Each selector must match **exactly one** enumerated combination. Zero
+  matches (stale/typo selector) is an error; more than one is an error
+  naming the matched combinations — which is exactly what happens when a
+  new sweep dimension multiplies a previously-unique selector, forcing the
+  author to refine it (e.g. add `taxmode: cycle`). Ambiguity is surfaced,
+  never guessed away.
+- A combination matched by **more than one selector** is an error (one
+  baseline per combination).
+- Combinations matched by no selector skip the comparison test (the
+  "optional" in the requirement); `baseline_comparison: null`/absent
+  disables it for the suite.
+- `atol` is suite-level for now (per-selector overrides are future work)
   and pydantic-validated `ge=0`. **Absolute** tolerance, deliberately: no
   tolerance scaling by the baseline's magnitude.
 
@@ -133,8 +207,11 @@ With the current fixed driver and checked-in config:
 1. Run the suite; for each of the three combinations, copy its `*.nc` into
    `/Users/bkoziol/Library/CloudStorage/Dropbox/rlps/rsandbox/cece-baselines/<new ULID>/`
    (one freshly generated ULID per combination).
-2. Wire those ULIDs into the checked-in suite's `baseline_comparison.baselines` and
-   set `CECE_BASELINE_ROOT_DIR` to the Dropbox path when running locally.
+2. Wire those ULIDs into the checked-in suite's
+   `baseline_comparison.baselines` as one `sweep_selector` per combination
+   (streams block: `name: MACCITY`, `mapalgo: bilinear|consd|passthrough`)
+   and set `CECE_BASELINE_ROOT_DIR` to the Dropbox path when running
+   locally.
 
 **Portability caveat, accepted**: the checked-in suite then references
 baselines that exist only where `CECE_BASELINE_ROOT_DIR` points at this
@@ -156,8 +233,16 @@ Harness tests against fabricated NetCDF pairs, written before
   fails naming the check
 - results YAML written on both pass and fail and round-trips through the
   model
-- suite parsing: `atol` validation (`-0.5` rejected), unknown baseline
-  combination name rejected at session start
+- selector resolution: single match resolves; zero matches rejected; a
+  selector matching two combinations rejected (the added-dimension
+  insulation scenario: a selector unique under a one-dimension sweep
+  becomes ambiguous when a second dimension is added — the error names
+  both matches); two selectors matching one combination rejected;
+  structural scoping (with two swept streams, a block pins its fields to
+  the name-matched stream only); species key regex + positional entries;
+  `re.fullmatch` anchoring (no substring surprises); invalid regex
+  rejected at load
+- suite parsing: `atol` validation (`-0.5` rejected)
 
 ## Ripples (standing process rules)
 
