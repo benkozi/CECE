@@ -1,0 +1,1 @@
+- [ ] run combo-test-runner under MPI and with more threads
