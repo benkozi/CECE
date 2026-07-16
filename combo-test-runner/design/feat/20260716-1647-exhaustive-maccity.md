@@ -114,7 +114,9 @@ sweep:
 
 **Size and runtime**: after the enum updates — 2 (op) × 6 (cat) × 5 (vd) ×
 2 (tax) × 2 (tint) × 6 (map) = **2,880 combinations**; at the observed
-~6–7 s per driver run, **≈ 5–6 hours serial**. This is an on-demand suite
+~6–7 s per driver run, **≈ 5–6 hours serial** as an upper bound — expected
+failures exit faster and hangs are capped at the 10 s timeout, so the real
+run will likely be shorter. This is an on-demand suite
 (`--suite-config=...exhaustive...`), never the default. Note: `category` is
 driver-inert (finding above), so sweeping it multiplies runtime ×6 for
 little signal — pinning `category: anthropogenic` cuts the suite to 480
@@ -122,6 +124,38 @@ combos (~1 h) with identical driver coverage; the suite ships fully
 exhaustive per the requirement, with this trim documented as the obvious
 knob. Failures from inapplicable value combinations are expected and are
 the suite's data, not defects to fix here.
+
+## `--dry-run`: everything up to the driver
+
+A new pytest option (registered alongside `--suite-config` in the combo
+group) that runs the **entire session except driver execution** — the
+exhaustive suite must be verifiable without producing hours of real data:
+
+```
+pytest --dry-run --suite-config=.../exhaustive-maccity-run-only-suite.yaml src/tests
+```
+
+- Everything before the container still happens for real: suite load, regex
+  expansion, combo enumeration and ids, selector/baseline resolution, output
+  root guard, `run.yaml`, `combos.csv`, and **every combination's generated
+  driver config** (`<combo_id>/<combo_id>.yaml`) — the `generated_combos`
+  fixture builds all configs up front, so a dry run exercises the full
+  generation path.
+- The `driver_run` fixture calls `pytest.skip("dry run: driver execution
+  skipped")` immediately before the docker invocation. Pytest caches the
+  session-fixture outcome per combination, so every dependent test skips
+  with that reason — nothing is reported as passed that didn't actually
+  run, and a skip-only session exits 0.
+- `pytest_sessionfinish` is naturally a no-op (no stats/comparison CSVs
+  exist to concatenate; no plots render); the lazy dask client never
+  starts; docker is never touched — dry runs work on hosts without the
+  image.
+- `test-report.csv` **is still written**, with every combo-test row
+  `skipped` — a dry run of the exhaustive suite validates the report
+  machinery at the full 2,880-combination scale in seconds.
+- General feature, not exhaustive-specific: useful for validating any new
+  suite yaml (ids, selector resolution, config generation) before paying
+  for containers.
 
 ## The report: `test-report.csv`
 
@@ -154,6 +188,11 @@ combo-parameterized test, and `pytest_sessionfinish` writes
   reason (mirroring the filenames flag tests).
 - Report: fabricated outcomes → CSV rows with the four columns; skipped
   and failed represented; non-combo tests absent.
+- `--dry-run`: a subprocess pytest run of the real integration suite
+  (simple-maccity, temp output root, no mocking) exits 0 with every test
+  skipped; `run.yaml`, `combos.csv`, every `<combo_id>/<combo_id>.yaml`,
+  and an all-`skipped` `test-report.csv` exist; **no** `.out` or `.nc`
+  files anywhere — proving docker was never invoked.
 - Suite parses; selector/resolution features unaffected.
 
 ## Ripples (standing process rules)
@@ -165,22 +204,28 @@ combo-parameterized test, and `pytest_sessionfinish` writes
   section.
 - **`README.md`**: `test-report.csv` in the results layout; the exhaustive
   suite mentioned as the on-demand example of `--suite-config`; regex
-  sweep values in the suite-option description.
+  sweep values in the suite-option description; `--dry-run` in the CLI
+  options with the exhaustive dry run as its example.
 - Driver-side: file the `docs/configuration.md` flat-vdist doc bug
   separately (out of runner scope).
 - Pydantic models with described fields; TDD red-green.
 
 ## Acceptance criteria
 
-- Harness passes without docker, covering the matrix above.
+- Harness passes without docker, covering the matrix above (harness tests
+  never require a driver call).
 - The exhaustive suite **collects 2,880 combinations** with only
-  `test_driver_execution` active per combo (others skipped/absent), and a
-  short smoke slice (e.g. `-k 'vd-SINGLE and map-cubic'`) runs real driver
-  containers exercising the previously unreachable values.
-- A full exhaustive run is executed on demand (expected multi-hour);
-  `test-report.csv` at the output root carries one row per executed
-  combo-test with pass/fail/skip truthfully recorded — failures analyzed
-  as findings, not fixed here.
+  `test_driver_execution` active per combo (others skipped/absent).
+- **All real driver execution is deferred for this feature** — no smoke
+  slice, no full run. Any attempted execution of the integration suite
+  during implementation carries `--dry-run`. The full-scale validation is
+  a `--dry-run` of the exhaustive suite, completing in seconds: all 2,880
+  configs generated on disk, `test-report.csv` at the output root with one
+  all-`skipped` row per combo-test — validating generation and report
+  machinery at full scale without producing real data. The real run stays
+  a deliberate, user-initiated step for later (and will likely undershoot
+  the serial estimate: inapplicable combinations that fail exit fast, and
+  hangs are capped at the 10 s timeout).
 - The regular `simple-maccity` suite keeps all current outcomes.
 
 ---

@@ -1,1 +1,1 @@
-- [ ] run combo-test-runner under MPI and with more threads
+- [ ] run combo-test-runner under MPI and more threads; need "execution_options" to test runner
