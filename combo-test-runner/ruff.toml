@@ -1,0 +1,5 @@
+# The runner requires Python >= 3.11 (see pyproject.toml); without this, ruff
+# infers py38 from the repo-root pyproject and rejects 3.9+ syntax such as
+# parenthesized context managers.
+extend = "../ruff.toml"
+target-version = "py311"
