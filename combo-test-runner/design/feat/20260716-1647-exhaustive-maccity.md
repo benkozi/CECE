@@ -136,7 +136,9 @@ sweep:
 5 (vd) × 2 (tax) × 2 (tint) × 6 (map) = **240 combinations**; at the
 observed ~6–7 s per driver run, **≈ 25–30 minutes serial** as an upper
 bound — expected failures exit faster and hangs are capped at the 10 s
-timeout, so the real run will likely be shorter. This is an on-demand suite
+timeout, so the real run will likely be shorter. (Measured afterward: the
+first real run — spike 20260716-1820 — averaged **0.51 s per combo, ~2 min
+total**; the 6–7 s observation was stale. Exhaustive real runs are cheap.) This is an on-demand suite
 (`--suite-config=...exhaustive...`), never the default. `category` is
 driver-inert (finding above): sweeping it would multiply runtime ×7 for
 identical execution, so it is **pinned to the new `undefined` label**
