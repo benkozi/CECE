@@ -9,5 +9,6 @@
 - use a test-driven development, red-green-refactor approach for all fixes and features (when possible)
 - maintain original `always do` and `requirements` sections when refining design docs
 - *all* suites should pass `--dry-run`
+  - run `simple-maccity-suite.yaml` without `--dry-run`
 
 # requirements
