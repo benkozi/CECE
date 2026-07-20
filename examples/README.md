@@ -1,90 +1,68 @@
 # CECE Configuration Examples
 
-This directory contains example YAML configuration files demonstrating various CECE capabilities and use cases.
+Example YAML configurations demonstrating CECE capabilities. This is the
+**single** example set (the former `scripts/examples/` copies used a schema
+the driver no longer reads and were removed). Every `cece_config_ex*.yaml`
+is expected to run green; they are exercised as regression tests by the
+[cece-combo-test-runner](https://github.com/benkozi/cece-combo-test-runner)
+via `pytest src/tests/test_examples.py --run-examples`.
 
-## Example Descriptions
+All input data is fetched from the public geos-chem S3 bucket by the
+matching script in `scripts/data_download/` (files land in `data/`; fetches
+are skipped when the target already exists).
 
-### cece_config_ex1.yaml
-**Basic Single Species Example**
-- Simple CO emissions from a single MACCITY stream
-- Global grid (4x4) with full longitude/latitude coverage
-- 3-hour simulation (2020-01-01 00:00:00 to 03:00:00)
-- Basic diagnostics output
-- Good starting point for new users
+## Running an example
 
-### cece_config_ex2.yaml
-**Regional Masking Example**
-- CO emissions with hierarchical data sources (MACCITY + EMEP)
-- European regional grid (8x6) focusing on Europe
-- 2-hour simulation (2020-01-01 00:00:00 to 02:00:00)
-- Demonstrates masking capability for regional overrides
-- Shows field hierarchy and replacement operations
-
-### cece_config_ex3.yaml
-**Minimal Testing Configuration**
-- Simplified CO emissions setup
-- Minimal grid (2x2) for fast testing
-- 1-hour simulation (2020-01-01 00:00:00 to 01:00:00)
-- Basic stream configuration without timing parameters
-- Useful for debugging and quick testing
-
-### cece_config_ex4.yaml
-**Physics Schemes Demonstration**
-- NO emissions with physics scheme processing
-- Demonstrates DayCycleAndSeasonVariation scheme
-- 24-hour simulation (2020-01-01 00:00:00 to 2020-01-02 00:00:00)
-- Shows physics scheme parameter configuration
-- Medium resolution grid (6x4)
-
-### cece_config_ex5.yaml
-**Multi-Timestep Execution**
-- Multi-species (CO + NO) emissions
-- Two distinct data streams with different temporal handling
-- 6-hour simulation (2020-01-01 00:00:00 to 06:00:00)
-- Regional grid configuration (-135° to 135°)
-- Production-ready configuration for multi-timestep runs
-
-### cece_config_ex6.yaml
-**Multi-Stream Emissions**
-- Multiple NO emission sources (EDGAR + CEDS)
-- Demonstrates additive emission operations
-- 4-hour simulation (2020-01-01 00:00:00 to 04:00:00)
-- Different data source temporal configurations
-- Regional grid matching ex5
-
-## Configuration Sections
-
-All examples include these configurable sections:
-
-### Driver Configuration (`driver:`)
-- `start_time`: Simulation start time (ISO8601 format, e.g. "2020-01-01T00:00:00")
-- `end_time`: Simulation end time (ISO8601 format)
-- `timestep_seconds`: Timestep in seconds (typically 3600 for 1-hour steps)
-
-### Grid Configuration (`driver.grid:`)
-- `nx`, `ny`: Grid dimensions
-- `lon_min`, `lon_max`: Longitude bounds
-- `lat_min`, `lat_max`: Latitude bounds
-
-Grid configuration must be nested under `driver:` to take effect.
-
-## Usage
-
-**Simplified Command (Recommended):**
 ```bash
-./setup.sh -c "cd /work && ./build/bin/cece_nuopc_app examples/cece_config_exN.yaml"
+# from the repo root; replace N with the example number
+./scripts/data_download/download_exN.sh
+docker run --rm -v "$PWD":/work -w /work \
+    -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
+    cece/cece-dev ./build/cece_standalone_driver examples/cece_config_exN.yaml
 ```
 
-**Legacy Command (Still Supported):**
-```bash
-./setup.sh -c "cd /work && ./build/bin/cece_nuopc_app driver.cfg examples/cece_config_exN.yaml"
-```
+## The examples
 
-Replace `N` with the example number (1-6).
+| Example | Lesson | Data |
+|---|---|---|
+| `ex1` | Multi-sector NO with hourly/weekly/monthly temporal scale factors | HTAPv3 2010 NO (sector variables TRA/SHP/RCO/IND/ENE) + CAMS-TEMPO v3.1 weights (*no public source yet — currently fails*) |
+| `ex2` | Regional masking: hierarchy + mask-scoped `replace` | MACCity CO, CEDS 1970 CO, mask file |
+| `ex3` | Minimal smoke test (2x2 grid, 1 step) | MACCity CO |
+| `ex4` | High-resolution (0.1°) inventory regridded to a coarse grid, 24 steps | HTAPv3 2018 shipping NO |
+| `ex5` | Two species, two streams, monthly diagnostics cadence | MACCity CO + NOx |
+| `ex6` | Multi-stream additive NO from two inventories | EDGAR v4.3 NOx POW, CEDS 1970 ALK4 (agr sector) |
+| `ex7` | ex1 + explicit stream `cadence` handling + `amio_worker_threads` | as ex1 (*currently fails with ex1*) |
+| `advanced`, `megan3` | Physics schemes (megan, sea_salt, bdsnp, megan3) with met inputs — not part of the automated example gate | see file headers |
 
-## Notes
+Data provenance: ex1/ex7 originally used EDGAR-HTAP v2015-03 sector files
+and ex2 used EMEP, neither publicly downloadable; sector data now comes
+from HTAPv3 (HTAP's successor, in the public bucket) and ex2 uses CEDS.
 
-- **Fully configurable** - Both timing and grid parameters read from YAML
-- **Examples are self-contained** - Just specify the YAML file
-- **Flexible timing** - Each example has different simulation durations for different use cases
-- **No `.cfg` files needed** - All configuration in YAML format
+**Known gap — ex1/ex7 currently FAIL**: their CAMS-TEMPO v3.1 temporal
+weights are kept deliberately (no dataset substitution) but have no public
+download source yet. The download scripts' CAMS fetches point at
+aspirational geos-chem-bucket keys (`HEMCO/CAMS-TEMPO/v3.1-2021/…`) and
+fail with 404 until the data is published there; the examples then fail on
+the missing `/work/data/CAMS-*.nc` inputs. A public source is being
+sought. The `--run-examples` green set is currently ex2–ex6.
+
+Known driver issue (2026-07-20): `amio_worker_threads` >= 2 segfaults
+during stream ingest (ex7 pins it to 1 with a comment).
+
+## Configuration sections
+
+- `driver:` — `start_time` / `end_time` (ISO-8601), `timestep_seconds`,
+  optional `log_file` and `amio_worker_threads`, and the nested `grid:`
+  (either `grid_name` or `nx`/`ny` with lon/lat bounds).
+- `species:` — per-species entry list: `field` (import name), `operation`
+  (`add`/`replace`), optional `scale`, `scale_fields`, `mask`,
+  `hierarchy`, `category`, `diurnal_cycle`.
+- `cece_data.streams:` — one block per input stream: `file` (container
+  path under `/work`), year window (`yearFirst`/`yearLast`/`yearAlign`),
+  `taxmode`, `tintalgo`, `mapalgo`, optional `cadence`
+  (`hourly`/`weekly`/`monthly`; absent = legacy cycling), and the
+  file-variable → model-field `variables` mapping.
+- `output:` — directory, `filename_pattern`, `frequency_steps`, `fields`.
+- `diagnostics:`, `temporal_profiles:`, `meteorology:`,
+  `physics_schemes:` — see `cece_config_advanced.yaml` /
+  `cece_config_megan3.yaml` for physics usage.

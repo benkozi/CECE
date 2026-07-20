@@ -1,4 +1,10 @@
 #!/bin/bash
-mkdir -p data
-./scripts/download_hemco_data.py HEMCO/MACCITY/v2014-07/MACCity_4x5.nc -o data/$(basename HEMCO/MACCITY/v2014-07/MACCity_4x5.nc)
-./scripts/download_hemco_data.py HEMCO/GFED4/v2015-10/1997/GFED4_gen.025x025.199701.nc -o data/$(basename HEMCO/GFED4/v2015-10/1997/GFED4_gen.025x025.199701.nc)
+# Data for examples/cece_config_ex4.yaml (physics schemes).
+# Fetches are skipped when the target already exists in data/.
+set -euo pipefail
+cd "$(dirname "$0")/../.."  # CECE repo root
+fetch() {
+  local key="$1" target="data/$(basename "$1")"
+  if [ ! -f "$target" ]; then ./scripts/download_hemco_data.py "$key" -o "$target"; fi
+}
+fetch HEMCO/HTAPv3/v2022-12/2018/HTAPv3_NO_0.1x0.1_2018.nc

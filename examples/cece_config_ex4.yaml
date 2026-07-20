@@ -1,4 +1,11 @@
-# Physics schemes demonstration example
+# High-resolution inventory example: 0.1-degree HTAPv3 shipping NO
+# regridded to a coarse grid over a full day.
+#
+# Note: this example previously declared physics_schemes "GFED" and
+# "DayCycleAndSeasonVariation", neither of which is a registered scheme —
+# the driver aborted on them. Physics-scheme demonstrations live in
+# cece_config_advanced.yaml and cece_config_megan3.yaml, which use real
+# registered schemes with the met inputs they require.
 driver:
   start_time: "2020-01-01T00:00:00"
   end_time: "2020-01-02T00:00:00"
@@ -15,18 +22,6 @@ species:
   no:
     - field: "HTAP_NO"
       operation: "add"
-
-physics_schemes:
-  - name: "GFED"
-    language: "cpp"
-    options:
-      version: "GFED4"
-  - name: "DayCycleAndSeasonVariation"
-    options:
-      amplitude_diurnal: 0.5
-      phase_diurnal_hours: 14.0
-      amplitude_seasonal: 0.3
-      phase_seasonal_days: 180.0
 
 cece_data:
   streams:

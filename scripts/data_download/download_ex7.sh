@@ -1,5 +1,5 @@
 #!/bin/bash
-# Data for examples/cece_config_ex1.yaml (multi-sector NO + temporal scale factors).
+# Data for examples/cece_config_ex7.yaml (cadence-aware temporal scale factors).
 # Fetches are skipped when the target already exists in data/.
 #
 # NOTE: the CAMS-TEMPO fetches at the bottom are EXPECTED TO FAIL for now —

@@ -1,4 +1,17 @@
-# Basic single species example with small grid
+# Basic multi-sector species example with temporal scale factors.
+#
+# Data note: sector emissions come from HTAPv3 (the successor to the
+# EDGAR-HTAP v2015-03 files this example originally used, which are not
+# publicly downloadable). HTAPv3 packs the sectors as variables of one
+# monthly file per year, so all five sector streams read
+# /work/data/HTAPv3_NO_0.1x0.1_2010.nc (fetched by
+# scripts/data_download/download_ex1.sh from the public geos-chem bucket).
+#
+# The CAMS-TEMPO v3.1 temporal weights are NOT yet publicly downloadable:
+# the download script's CAMS fetches point at aspirational geos-chem-bucket
+# keys and are EXPECTED TO FAIL until a public source is found, so this
+# example currently fails on the missing /work/data/CAMS-*.nc inputs.
+# The datasets are deliberately not substituted.
 driver:
   start_time: "2010-01-01T00:00:00"
   end_time: "2010-01-01T23:00:00"
@@ -64,68 +77,73 @@ species:
 
 cece_data:
   streams:
+    # All five sector streams read the same HTAPv3 file; the sectors are
+    # variables (NO_TRA, NO_SHP, NO_RCO, NO_IND, NO_ENE) of its 12 monthly
+    # records.
     - name: "HTAP_NO_TRANSPORT"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_TRANSPORT.generic.01x01.nc"
-      yearFirst: 2000
+      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
+      yearFirst: 2010
       yearLast: 2010
-      yearAlign: 2020
+      yearAlign: 2010
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "emi_no"
+        - file: "NO_TRA"
           model: "HTAP_TRANSPORT_NO"
     - name: "HTAP_NO_SHIPS"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_SHIPS.generic.01x01.nc"
-      yearFirst: 2000
+      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
+      yearFirst: 2010
       yearLast: 2010
-      yearAlign: 2020
+      yearAlign: 2010
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "emi_no"
+        - file: "NO_SHP"
           model: "HTAP_SHIPS_NO"
     - name: "HTAP_NO_RESIDENTIAL"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_RESIDENTIAL.generic.01x01.nc"
-      yearFirst: 2000
+      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
+      yearFirst: 2010
       yearLast: 2010
-      yearAlign: 2020
+      yearAlign: 2010
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "emi_no"
+        - file: "NO_RCO"
           model: "HTAP_RESIDENTIAL_NO"
     - name: "HTAP_NO_INDUSTRY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_INDUSTRY.generic.01x01.nc"
-      yearFirst: 2000
+      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
+      yearFirst: 2010
       yearLast: 2010
-      yearAlign: 2020
+      yearAlign: 2010
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "emi_no"
+        - file: "NO_IND"
           model: "HTAP_INDUSTRY_NO"
     - name: "HTAP_NO_ENERGY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_ENERGY.generic.01x01.nc"
-      yearFirst: 2000
+      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
+      yearFirst: 2010
       yearLast: 2010
-      yearAlign: 2020
+      yearAlign: 2010
       taxmode: "cycle"
       tintalgo: "linear"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "emi_no"
+        - file: "NO_ENE"
           model: "HTAP_ENERGY_NO"
+    # CAMS-TEMPO weights: not publicly downloadable yet (see header note);
+    # these streams keep the original dataset and fail until data exists.
     - name: "CAMS_HOURLY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly_fixtime.nc"
+      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly_fixtime.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
@@ -137,7 +155,7 @@ cece_data:
         - file: "FH_weekday_tro"
           model: "CAMS_HOURLY"
     - name: "CAMS_WEEKLY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc"
+      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
@@ -149,7 +167,7 @@ cece_data:
         - file: "FW_tro"
           model: "CAMS_WEEKLY"
     - name: "CAMS_MONTHLY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
+      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
@@ -161,7 +179,7 @@ cece_data:
         - file: "FM_tro"
           model: "CAMS_MONTHLY"
     - name: "CAMS_MONTHLY_ind"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
+      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
