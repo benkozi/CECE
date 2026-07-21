@@ -39,12 +39,19 @@ and ex2 used EMEP, neither publicly downloadable; sector data now comes
 from HTAPv3 (HTAP's successor, in the public bucket) and ex2 uses CEDS.
 
 **Known gap — ex1/ex7 currently FAIL**: their CAMS-TEMPO v3.1 temporal
-weights are kept deliberately (no dataset substitution) but have no public
-download source yet. The download scripts' CAMS fetches point at
-aspirational geos-chem-bucket keys (`HEMCO/CAMS-TEMPO/v3.1-2021/…`) and
-fail with 404 until the data is published there; the examples then fail on
-the missing `/work/data/CAMS-*.nc` inputs. A public source is being
-sought. The `--run-examples` green set is currently ex2–ex6.
+weights are kept deliberately (no dataset substitution). The weights have
+no *public* download source yet — the download scripts' CAMS fetches
+point at aspirational geos-chem-bucket keys
+(`HEMCO/CAMS-TEMPO/v3.1-2021/…`) and 404 until the data is published
+there — but local copies in `data/` are honored. With local copies
+present, the examples still fail on a **driver limitation**: AMIO's
+staging pool is hardcoded (8 × 256 MB buffers, 30 s timeout) and the 0.1°
+hourly/monthly weight variables (~622 MB / ~311 MB uncompressed) exceed a
+buffer, so reads die with `AMIO_ERR_STAGING_BACKPRESSURE`. Resolving
+requires a driver change (configurable staging pool or per-record
+staging). The `--run-examples` green set is currently ex3–ex6; ex2 is
+intermittently failing on a post-merge driver race (segfault during
+stream ingest at default thread count) under investigation.
 
 Known driver issue (2026-07-20): `amio_worker_threads` >= 2 segfaults
 during stream ingest (ex7 pins it to 1 with a comment).
