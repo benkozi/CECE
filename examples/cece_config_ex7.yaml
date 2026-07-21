@@ -155,7 +155,7 @@ cece_data:
     # CAMS-TEMPO weights: not publicly downloadable yet (see header note);
     # these streams keep the original dataset and fail until data exists.
     - name: "CAMS_HOURLY"
-      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly_fixtime_utc.nc"
+      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021

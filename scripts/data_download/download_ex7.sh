@@ -13,6 +13,6 @@ fetch() {
   if [ ! -f "$target" ]; then ./scripts/download_hemco_data.py "$key" -o "$target"; fi
 }
 fetch HEMCO/HTAPv3/v2022-12/2010/HTAPv3_NO_0.1x0.1_2010.nc
-fetch HEMCO/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly_fixtime_utc.nc
+fetch HEMCO/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly.nc
 fetch HEMCO/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc
 fetch HEMCO/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc

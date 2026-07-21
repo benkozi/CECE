@@ -25,33 +25,31 @@ docker run --rm -v "$PWD":/work -w /work \
 
 | Example | Lesson | Data |
 |---|---|---|
-| `ex1` | Multi-sector NO with hourly/weekly/monthly temporal scale factors | HTAPv3 2010 NO (sector variables TRA/SHP/RCO/IND/ENE) + CAMS-TEMPO v3.1 weights (*no public source yet — currently fails*) |
+| `ex1` | Multi-sector NO with hourly/weekly/monthly temporal scale factors | HTAPv3 2010 NO (sector variables TRA/SHP/RCO/IND/ENE) + CAMS-TEMPO v3.1 weights (*local copies; no public download source yet*) |
 | `ex2` | Regional masking: hierarchy + mask-scoped `replace` | MACCity CO, CEDS 1970 CO, mask file |
 | `ex3` | Minimal smoke test (2x2 grid, 1 step) | MACCity CO |
 | `ex4` | High-resolution (0.1°) inventory regridded to a coarse grid, 24 steps | HTAPv3 2018 shipping NO |
 | `ex5` | Two species, two streams, monthly diagnostics cadence | MACCity CO + NOx |
 | `ex6` | Multi-stream additive NO from two inventories | EDGAR v4.3 NOx POW, CEDS 1970 ALK4 (agr sector) |
-| `ex7` | ex1 + explicit stream `cadence` handling + `amio_worker_threads` | as ex1 (*currently fails with ex1*) |
+| `ex7` | ex1 + explicit stream `cadence` handling + `amio_worker_threads` | as ex1 |
 | `advanced`, `megan3` | Physics schemes (megan, sea_salt, bdsnp, megan3) with met inputs — not part of the automated example gate | see file headers |
 
 Data provenance: ex1/ex7 originally used EDGAR-HTAP v2015-03 sector files
 and ex2 used EMEP, neither publicly downloadable; sector data now comes
 from HTAPv3 (HTAP's successor, in the public bucket) and ex2 uses CEDS.
 
-**Known gap — ex1/ex7 currently FAIL**: their CAMS-TEMPO v3.1 temporal
-weights are kept deliberately (no dataset substitution). The weights have
-no *public* download source yet — the download scripts' CAMS fetches
-point at aspirational geos-chem-bucket keys
-(`HEMCO/CAMS-TEMPO/v3.1-2021/…`) and 404 until the data is published
-there — but local copies in `data/` are honored. With local copies
-present, the examples still fail on a **driver limitation**: AMIO's
-staging pool is hardcoded (8 × 256 MB buffers, 30 s timeout) and the 0.1°
-hourly/monthly weight variables (~622 MB / ~311 MB uncompressed) exceed a
-buffer, so reads die with `AMIO_ERR_STAGING_BACKPRESSURE`. Resolving
-requires a driver change (configurable staging pool or per-record
-staging). The `--run-examples` green set is currently ex3–ex6; ex2 is
-intermittently failing on a post-merge driver race (segfault during
-stream ingest at default thread count) under investigation.
+**Known gap — CAMS-TEMPO has no public download source yet**: ex1/ex7's
+v3.1 temporal weights are kept deliberately (no dataset substitution)
+and **run green from local copies in `data/`** — all seven examples
+pass. The download scripts' CAMS fetches point at aspirational
+geos-chem-bucket keys (`HEMCO/CAMS-TEMPO/v3.1-2021/…`) and 404 until the
+data is published there, so a download-then-run from a *fresh* machine
+fails for ex1/ex7 until then. Note the hourly file must be the
+`(time, latitude, longitude)`-ordered variant — a dimensionally
+mis-ordered copy makes AMIO fail with a misleading
+`AMIO_ERR_STAGING_BACKPRESSURE`. One residual flake: ex2 can
+intermittently segfault during stream ingest (post-merge driver race,
+under investigation).
 
 Known driver issue (2026-07-20): `amio_worker_threads` >= 2 segfaults
 during stream ingest (ex7 pins it to 1 with a comment).
