@@ -65,7 +65,7 @@ species:
 cece_data:
   streams:
     - name: "MACCITY_CO"
-      file: "/work/data/MACCity_4x5.nc"
+      file: "data/MACCity_4x5.nc"
       yearFirst: 2000
       yearLast: 2010
       yearAlign: 2020
@@ -76,7 +76,7 @@ cece_data:
         - file: "MACCity"
           model: "MACCITY_CO"
     - name: "CEDS_CO"
-      file: "/work/data/CO-em-total-anthro_CEDS_1970.nc"
+      file: "data/CO-em-total-anthro_CEDS_1970.nc"
       yearFirst: 1970
       yearLast: 1970
       yearAlign: 2020
@@ -87,7 +87,7 @@ cece_data:
         - file: "CO_ene"
           model: "CEDS_CO"
     - name: "MASK_EUROPE"
-      file: "/work/data/Canada_mask.gen.1x1.nc"
+      file: "data/Canada_mask.gen.1x1.nc"
       yearFirst: 2000
       yearLast: 2010
       yearAlign: 2020

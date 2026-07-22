@@ -26,7 +26,7 @@ species:
 cece_data:
   streams:
     - name: "HTAP_NO"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2018.nc"
+      file: "data/HTAPv3_NO_0.1x0.1_2018.nc"
       yearFirst: 2018
       yearLast: 2018
       yearAlign: 2020

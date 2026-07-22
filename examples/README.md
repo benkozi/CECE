@@ -1,23 +1,35 @@
 # CECE Configuration Examples
 
-Example YAML configurations demonstrating CECE capabilities. This is the
-**single** example set (the former `scripts/examples/` copies used a schema
-the driver no longer reads and were removed). Every `cece_config_ex*.yaml`
-is expected to run green.
+Example YAML configurations demonstrating CECE capabilities, living in
+`examples/config/`. Every `cece_config_ex*.yaml` is expected to run green.
 
-All input data is fetched from public S3 buckets (`geos-chem`, and
-`noaa-ufs-srw-pds` for the EDGAR-HTAP sector files) by the matching script
-in `scripts/data_download/` (files land in `data/`; fetches are skipped
-when the target already exists).
+Two stdlib-Python entrypoints drive everything; both accept
+`--example <id[,id...]>` (ids like `ex1` or `megan3`), `--all`, and
+`--dst-dir <path>` (default `data/`, created if missing). The example →
+data mapping lives in `examples/common.py`; input data comes from
+public S3 buckets (`geos-chem`, and `noaa-ufs-srw-pds` for the EDGAR-HTAP
+sector files) into `data/`, skipping files that are already present and
+non-empty.
 
 ## Running an example
 
+`run-example.py` downloads any missing data, then **executes the driver
+binary directly — no docker is spawned**, so the same command works inside
+the dev container and natively (e.g. HPC platforms without docker; set
+`CECE_EXAMPLES_DRIVER_PATH` if the driver is not at
+`build/cece_standalone_driver`).
+
 ```bash
-# from the repo root; replace N with the example number
-./scripts/data_download/download_exN.sh
+# natively, from the repo root (driver built, python3 >= 3.11):
+python3 examples/run-example.py --example ex3
+
+# or inside the dev container:
 docker run --rm -v "$PWD":/work -w /work \
-    -e OMPI_ALLOW_RUN_AS_ROOT=1 -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
-    cece/cece-dev ./build/cece_standalone_driver examples/cece_config_exN.yaml
+    cece/cece-dev python3 examples/run-example.py --example ex3
+
+# download data only (e.g. to prefetch several examples):
+python3 examples/download-example-data.py --example ex1,ex7
+python3 examples/download-example-data.py --all
 ```
 
 ## The examples
@@ -41,7 +53,7 @@ publicly available; it uses CEDS instead.
 **Known gap — CAMS-TEMPO has no public download source yet**: ex1/ex7's
 v3.1 temporal weights are kept deliberately (no dataset substitution)
 and **run green from local copies in `data/`** — all seven examples
-pass. The download scripts' CAMS fetches point at aspirational
+pass. The CAMS entries in the data mapping point at aspirational
 geos-chem-bucket keys (`HEMCO/CAMS-TEMPO/v3.1-2021/…`) and 404 until the
 data is published there, so a download-then-run from a *fresh* machine
 fails for ex1/ex7 until then. Note the hourly file must be the
@@ -62,8 +74,9 @@ during stream ingest (ex7 pins it to 1 with a comment).
 - `species:` — per-species entry list: `field` (import name), `operation`
   (`add`/`replace`), optional `scale`, `scale_fields`, `mask`,
   `hierarchy`, `category`, `diurnal_cycle`.
-- `cece_data.streams:` — one block per input stream: `file` (container
-  path under `/work`), year window (`yearFirst`/`yearLast`/`yearAlign`),
+- `cece_data.streams:` — one block per input stream: `file` (relative
+  `data/…` path, resolved against the repo-root working directory in any
+  environment), year window (`yearFirst`/`yearLast`/`yearAlign`),
   `taxmode`, `tintalgo`, `mapalgo`, optional `cadence`
   (`hourly`/`weekly`/`monthly`; absent = legacy cycling), and the
   file-variable → model-field `variables` mapping.

@@ -11,7 +11,7 @@
 # The CAMS-TEMPO v3.1 temporal weights are NOT yet publicly downloadable:
 # the download script's CAMS fetches point at aspirational geos-chem-bucket
 # keys and are EXPECTED TO FAIL until a public source is found, so this
-# example currently fails on the missing /work/data/CAMS-*.nc inputs.
+# example currently fails on the missing data/CAMS-*.nc inputs.
 # The datasets are deliberately not substituted.
 driver:
   start_time: "2010-01-01T00:00:00"
@@ -84,7 +84,7 @@ cece_data:
     # One EDGAR-HTAP v2015-03 file per sector, each carrying `emi_no`
     # (36 monthly records, 2008-2010) — hence the explicit monthly cadence.
     - name: "HTAP_NO_TRANSPORT"
-      file: "/work/data/EDGAR_HTAP_NO_TRANSPORT.generic.01x01.nc"
+      file: "data/EDGAR_HTAP_NO_TRANSPORT.generic.01x01.nc"
       yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
@@ -97,7 +97,7 @@ cece_data:
         - file: "emi_no"
           model: "HTAP_TRANSPORT_NO"
     - name: "HTAP_NO_SHIPS"
-      file: "/work/data/EDGAR_HTAP_NO_SHIPS.generic.01x01.nc"
+      file: "data/EDGAR_HTAP_NO_SHIPS.generic.01x01.nc"
       yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
@@ -110,7 +110,7 @@ cece_data:
         - file: "emi_no"
           model: "HTAP_SHIPS_NO"
     - name: "HTAP_NO_RESIDENTIAL"
-      file: "/work/data/EDGAR_HTAP_NO_RESIDENTIAL.generic.01x01.nc"
+      file: "data/EDGAR_HTAP_NO_RESIDENTIAL.generic.01x01.nc"
       yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
@@ -123,7 +123,7 @@ cece_data:
         - file: "emi_no"
           model: "HTAP_RESIDENTIAL_NO"
     - name: "HTAP_NO_INDUSTRY"
-      file: "/work/data/EDGAR_HTAP_NO_INDUSTRY.generic.01x01.nc"
+      file: "data/EDGAR_HTAP_NO_INDUSTRY.generic.01x01.nc"
       yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
@@ -136,7 +136,7 @@ cece_data:
         - file: "emi_no"
           model: "HTAP_INDUSTRY_NO"
     - name: "HTAP_NO_ENERGY"
-      file: "/work/data/EDGAR_HTAP_NO_ENERGY.generic.01x01.nc"
+      file: "data/EDGAR_HTAP_NO_ENERGY.generic.01x01.nc"
       yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
@@ -151,7 +151,7 @@ cece_data:
     # CAMS-TEMPO weights: not publicly downloadable yet (see header note);
     # these streams keep the original dataset and fail until data exists.
     - name: "CAMS_HOURLY"
-      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
@@ -167,7 +167,7 @@ cece_data:
         - file: "FH_weekday_tro"
           model: "CAMS_HOURLY"
     - name: "CAMS_WEEKLY"
-      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
@@ -182,7 +182,7 @@ cece_data:
         - file: "FW_tro"
           model: "CAMS_WEEKLY"
     - name: "CAMS_MONTHLY"
-      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
@@ -198,7 +198,7 @@ cece_data:
         - file: "FM_tro"
           model: "CAMS_MONTHLY"
     - name: "CAMS_MONTHLY_ind"
-      file: "/work/data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
