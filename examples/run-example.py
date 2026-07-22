@@ -19,6 +19,7 @@ from common import (  # noqa: E402
     build_parser,
     configure_logging,
     download,
+    logger,
     resolve_examples,
     run_example,
 )
@@ -38,10 +39,15 @@ def main() -> int:
     failures: list[str] = []
     for example in examples:
         returncode = run_example(example)
-        status = "PASS" if returncode == 0 else f"FAIL (exit {returncode})"
-        print(f"{example.value}: {status}")
-        if returncode != 0:
+        if returncode == 0:
+            logger.info("%s: PASS", example.value)
+        else:
+            logger.error("%s: FAIL (exit %s)", example.value, returncode)
             failures.append(example.value)
+    if failures:
+        logger.error("failed examples: %s", ", ".join(failures))
+    else:
+        logger.info("all %s selected example(s) passed", len(examples))
     return 1 if failures else 0
 
 

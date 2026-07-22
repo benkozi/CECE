@@ -15,6 +15,7 @@ from common import (  # noqa: E402
     build_parser,
     configure_logging,
     download,
+    logger,
     resolve_examples,
 )
 
@@ -30,7 +31,9 @@ def main() -> int:
     outcomes = download(files, args.dst_dir)
     failed = [outcome for outcome in outcomes if not outcome.ok]
     for outcome in failed:
-        print(f"FAILED: {outcome.file.url} ({outcome.detail})", file=sys.stderr)
+        logger.error("FAILED: %s (%s)", outcome.file.url, outcome.detail)
+    if not failed:
+        logger.info("all %s file(s) present", len(outcomes))
     return 1 if failed else 0
 
 
