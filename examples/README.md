@@ -7,9 +7,10 @@ is expected to run green; they are exercised as regression tests by the
 [cece-combo-test-runner](https://github.com/benkozi/cece-combo-test-runner)
 via `pytest src/tests/test_examples.py --run-examples`.
 
-All input data is fetched from the public geos-chem S3 bucket by the
-matching script in `scripts/data_download/` (files land in `data/`; fetches
-are skipped when the target already exists).
+All input data is fetched from public S3 buckets (`geos-chem`, and
+`noaa-ufs-srw-pds` for the EDGAR-HTAP sector files) by the matching script
+in `scripts/data_download/` (files land in `data/`; fetches are skipped
+when the target already exists).
 
 ## Running an example
 
@@ -25,7 +26,7 @@ docker run --rm -v "$PWD":/work -w /work \
 
 | Example | Lesson | Data |
 |---|---|---|
-| `ex1` | Multi-sector NO with hourly/weekly/monthly temporal scale factors | HTAPv3 2010 NO (sector variables TRA/SHP/RCO/IND/ENE) + CAMS-TEMPO v3.1 weights (*local copies; no public download source yet*) |
+| `ex1` | Multi-sector NO with hourly/weekly/monthly temporal scale factors | EDGAR-HTAP v2015-03 per-sector NO files (TRANSPORT/SHIPS/RESIDENTIAL/INDUSTRY/ENERGY) + CAMS-TEMPO v3.1 weights (*local copies; no public download source yet*) |
 | `ex2` | Regional masking: hierarchy + mask-scoped `replace` | MACCity CO, CEDS 1970 CO, mask file |
 | `ex3` | Minimal smoke test (2x2 grid, 1 step) | MACCity CO |
 | `ex4` | High-resolution (0.1°) inventory regridded to a coarse grid, 24 steps | HTAPv3 2018 shipping NO |
@@ -34,9 +35,10 @@ docker run --rm -v "$PWD":/work -w /work \
 | `ex7` | ex1 + explicit stream `cadence` handling + `amio_worker_threads` | as ex1 |
 | `advanced`, `megan3` | Physics schemes (megan, sea_salt, bdsnp, megan3) with met inputs — not part of the automated example gate | see file headers |
 
-Data provenance: ex1/ex7 originally used EDGAR-HTAP v2015-03 sector files
-and ex2 used EMEP, neither publicly downloadable; sector data now comes
-from HTAPv3 (HTAP's successor, in the public bucket) and ex2 uses CEDS.
+Data provenance: ex1/ex7 use their **original** EDGAR-HTAP v2015-03
+sector files, publicly fetched from the `noaa-ufs-srw-pds` bucket
+(`…/fix/fix_emis/HTAP/v2015-03/NO/`). ex2's original EMEP data is not
+publicly available; it uses CEDS instead.
 
 **Known gap — CAMS-TEMPO has no public download source yet**: ex1/ex7's
 v3.1 temporal weights are kept deliberately (no dataset substitution)

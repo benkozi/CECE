@@ -3,12 +3,10 @@
 # Like ex1 (multi-sector NO with temporal scale factors) but demonstrating
 # explicit stream `cadence` handling and `amio_worker_threads`.
 #
-# Data note: sector emissions come from HTAPv3 (the successor to the
-# EDGAR-HTAP v2015-03 files this example originally used, which are not
-# publicly downloadable). HTAPv3 packs the sectors as variables of one
-# monthly file per year, so all five sector streams read
-# /work/data/HTAPv3_NO_0.1x0.1_2010.nc (fetched by
-# scripts/data_download/download_ex7.sh) and carry the monthly cadence.
+# Data note: sector emissions are the original EDGAR-HTAP v2015-03 per-sector
+# files (monthly records, 2008-2010 — hence the monthly cadence), fetched by
+# scripts/data_download/download_ex7.sh from the public noaa-ufs-srw-pds
+# bucket (fix_emis/HTAP/v2015-03/NO).
 #
 # The CAMS-TEMPO v3.1 temporal weights are NOT yet publicly downloadable:
 # the download script's CAMS fetches point at aspirational geos-chem-bucket
@@ -84,73 +82,72 @@ species:
 
 cece_data:
   streams:
-    # All five sector streams read the same HTAPv3 file; the sectors are
-    # variables (NO_TRA, NO_SHP, NO_RCO, NO_IND, NO_ENE) of its 12 monthly
-    # records — hence the explicit monthly cadence.
+    # One EDGAR-HTAP v2015-03 file per sector, each carrying `emi_no`
+    # (36 monthly records, 2008-2010) — hence the explicit monthly cadence.
     - name: "HTAP_NO_TRANSPORT"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
-      yearFirst: 2010
+      file: "/work/data/EDGAR_HTAP_NO_TRANSPORT.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
-      yearAlign: 2010
+      yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
       cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "NO_TRA"
+        - file: "emi_no"
           model: "HTAP_TRANSPORT_NO"
     - name: "HTAP_NO_SHIPS"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
-      yearFirst: 2010
+      file: "/work/data/EDGAR_HTAP_NO_SHIPS.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
-      yearAlign: 2010
+      yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
       cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "NO_SHP"
+        - file: "emi_no"
           model: "HTAP_SHIPS_NO"
     - name: "HTAP_NO_RESIDENTIAL"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
-      yearFirst: 2010
+      file: "/work/data/EDGAR_HTAP_NO_RESIDENTIAL.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
-      yearAlign: 2010
+      yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
       cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "NO_RCO"
+        - file: "emi_no"
           model: "HTAP_RESIDENTIAL_NO"
     - name: "HTAP_NO_INDUSTRY"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
-      yearFirst: 2010
+      file: "/work/data/EDGAR_HTAP_NO_INDUSTRY.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
-      yearAlign: 2010
+      yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
       cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "NO_IND"
+        - file: "emi_no"
           model: "HTAP_INDUSTRY_NO"
     - name: "HTAP_NO_ENERGY"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2010.nc"
-      yearFirst: 2010
+      file: "/work/data/EDGAR_HTAP_NO_ENERGY.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
-      yearAlign: 2010
+      yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
       cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
-        - file: "NO_ENE"
+        - file: "emi_no"
           model: "HTAP_ENERGY_NO"
     # CAMS-TEMPO weights: not publicly downloadable yet (see header note);
     # these streams keep the original dataset and fail until data exists.
