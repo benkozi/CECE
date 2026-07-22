@@ -3,9 +3,7 @@
 Example YAML configurations demonstrating CECE capabilities. This is the
 **single** example set (the former `scripts/examples/` copies used a schema
 the driver no longer reads and were removed). Every `cece_config_ex*.yaml`
-is expected to run green; they are exercised as regression tests by the
-[cece-combo-test-runner](https://github.com/benkozi/cece-combo-test-runner)
-via `pytest src/tests/test_examples.py --run-examples`.
+is expected to run green.
 
 All input data is fetched from public S3 buckets (`geos-chem`, and
 `noaa-ufs-srw-pds` for the EDGAR-HTAP sector files) by the matching script

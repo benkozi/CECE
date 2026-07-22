@@ -20,9 +20,8 @@ driver:
   # Optional: write run output to this log file instead of using `> cece.log`.
   # Output is tee'd, so it also still appears on the console.
   log_file: "cece.log"
-  # KNOWN DRIVER BUG (2026-07-20, unfixed here — no src changes): any value
-  # >= 2 segfaults during stream ingest on this example; 1 runs correctly.
-  # Reported in the combo-test-runner examples report.
+  # KNOWN DRIVER BUG (2026-07-20): any value >= 2 segfaults during stream
+  # ingest on this example; 1 runs correctly.
   amio_worker_threads: 1
   grid:
     grid_name: "F360"
