@@ -18,11 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "examples"))
 
 from common import (  # noqa: E402
-    EXAMPLE_DATA,
+    CONFIG,
     Bucket,
     Example,
     build_parser,
-    config_path,
     download,
     needs_fetch,
     resolve_examples,
@@ -34,12 +33,12 @@ KNOWN_MISSING_SUBSTRING = "CAMS-TEMPO"
 
 def test_every_example_has_mapping_and_config():
     for example in Example:
-        assert example in EXAMPLE_DATA
-        assert config_path(example).is_file(), f"missing config for {example}"
+        assert example in CONFIG.example_data
+        assert CONFIG.config_path(example).is_file(), f"missing config for {example}"
 
 
 def test_mapping_keys_well_formed():
-    for files in EXAMPLE_DATA.values():
+    for files in CONFIG.example_data.values():
         for file in files:
             assert isinstance(file.bucket, Bucket)
             assert file.key and not file.key.startswith("/")
@@ -77,7 +76,7 @@ def test_cache_guard_skips_only_non_empty(tmp_path):
 
 
 def test_download_skips_cached_files(tmp_path):
-    file = EXAMPLE_DATA[Example.EX3][0]
+    file = CONFIG.example_data[Example.EX3][0]
     (tmp_path / file.filename).write_bytes(b"cached")
     (outcome,) = download((file,), tmp_path)
     assert outcome.ok and outcome.detail == "cached"
@@ -90,7 +89,7 @@ def test_download_skips_cached_files(tmp_path):
 def test_mapped_keys_exist_in_s3_except_known_missing():
     """Every mapped key HEADs 200, except the documented CAMS gaps."""
     seen: set[str] = set()
-    for files in EXAMPLE_DATA.values():
+    for files in CONFIG.example_data.values():
         for file in files:
             if file.url in seen:
                 continue

@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (  # noqa: E402
-    EXAMPLE_DATA,
+    CONFIG,
     build_parser,
     configure_logging,
     download,
@@ -31,7 +31,7 @@ def main() -> int:
     examples = resolve_examples(parser, args)
 
     files = tuple(
-        file for example in examples for file in EXAMPLE_DATA[example]
+        file for example in examples for file in CONFIG.example_data[example]
     )
     download(files, args.dst_dir)  # cache-aware; failures surface in the run
 

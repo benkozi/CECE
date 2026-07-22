@@ -1,9 +1,10 @@
 """Shared machinery for the example entrypoints (stdlib only).
 
-Holds the example/bucket enums, the example -> data-file mapping, the
-blocking download machinery, direct driver execution (no docker — the
-entrypoints run unchanged inside the dev container or natively, e.g. on
-HPC), and logging configuration.
+Holds the example/bucket enums, one frozen ExamplesConfig dataclass (paths,
+tunables, and the example -> data-file mapping) exposed as the single CONFIG
+instance, the blocking download machinery, direct driver execution (no
+docker — the entrypoints run unchanged inside the dev container or
+natively, e.g. on HPC), and logging configuration.
 """
 
 from __future__ import annotations
@@ -14,28 +15,11 @@ import os
 import subprocess
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum, unique
 from pathlib import Path
 
 logger = logging.getLogger("cece.examples")
-
-# examples/common.py -> repo root is one level above examples/.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_DIR = REPO_ROOT / "examples" / "config"
-DEFAULT_DST_DIR = REPO_ROOT / "data"
-_CHUNK_BYTES = 1024 * 1024
-_DRIVER_PATH_ENV = "CECE_EXAMPLES_DRIVER_PATH"
-_LOG_LEVEL_ENV = "CECE_EXAMPLES_LOG_LEVEL"
-
-
-def configure_logging() -> None:
-    """Basic stdlib logging for the entrypoints; level via
-    CECE_EXAMPLES_LOG_LEVEL (default INFO)."""
-    logging.basicConfig(
-        level=os.environ.get(_LOG_LEVEL_ENV, "INFO").upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
 
 
 @unique
@@ -90,58 +74,118 @@ class DownloadOutcome:
     detail: str
 
 
-_MACCITY = DataFile(Bucket.GEOS_CHEM, "HEMCO/MACCITY/v2014-07/MACCity_4x5.nc")
-_NOAA_HTAP = "experiment-user-cases/release-public-v3.0.0/fix/fix_emis/HTAP/v2015-03/NO"
-_HTAP_SECTORS = tuple(
-    DataFile(Bucket.NOAA_UFS_SRW_PDS, f"{_NOAA_HTAP}/EDGAR_HTAP_NO_{sector}.generic.01x01.nc")
-    for sector in ("TRANSPORT", "SHIPS", "RESIDENTIAL", "INDUSTRY", "ENERGY")
-)
-# CAMS-TEMPO has no public download source yet: these geos-chem keys are
-# aspirational and EXPECTED TO FAIL (404) until the data is published there.
-# Local copies in data/ are honored (the cache guard skips present files).
-_CAMS_WEIGHTS = tuple(
-    DataFile(
-        Bucket.GEOS_CHEM,
-        f"HEMCO/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_{kind}.nc",
+def _repo_root() -> Path:
+    # examples/common.py -> repo root is one level above examples/.
+    return Path(__file__).resolve().parents[1]
+
+
+def _example_data() -> dict[Example, tuple[DataFile, ...]]:
+    maccity = DataFile(Bucket.GEOS_CHEM, "HEMCO/MACCITY/v2014-07/MACCity_4x5.nc")
+    noaa_htap = (
+        "experiment-user-cases/release-public-v3.0.0/fix/fix_emis/HTAP/v2015-03/NO"
     )
-    for kind in ("hourly", "weekly", "monthly")
-)
-
-EXAMPLE_DATA: dict[Example, tuple[DataFile, ...]] = {
-    Example.EX1: _HTAP_SECTORS + _CAMS_WEIGHTS,
-    Example.EX2: (
-        _MACCITY,
-        DataFile(Bucket.GEOS_CHEM, "HEMCO/CEDS/v2020-08/1970/CO-em-total-anthro_CEDS_1970.nc"),
-        DataFile(Bucket.GEOS_CHEM, "HEMCO/MASKS/v2014-07/Canada_mask.gen.1x1.nc"),
-    ),
-    Example.EX3: (_MACCITY,),
-    Example.EX4: (
-        DataFile(Bucket.GEOS_CHEM, "HEMCO/HTAPv3/v2022-12/2018/HTAPv3_NO_0.1x0.1_2018.nc"),
-    ),
-    Example.EX5: (
-        _MACCITY,
+    htap_sectors = tuple(
+        DataFile(
+            Bucket.NOAA_UFS_SRW_PDS,
+            f"{noaa_htap}/EDGAR_HTAP_NO_{sector}.generic.01x01.nc",
+        )
+        for sector in ("TRANSPORT", "SHIPS", "RESIDENTIAL", "INDUSTRY", "ENERGY")
+    )
+    # CAMS-TEMPO has no public download source yet: these geos-chem keys are
+    # aspirational and EXPECTED TO FAIL (404) until the data is published
+    # there. Local copies in data/ are honored (the cache guard skips
+    # present files).
+    cams_weights = tuple(
         DataFile(
             Bucket.GEOS_CHEM,
-            "HEMCO/MACCITY/v2014-07/MACCity_anthro_NOx_2000-2010_16080.nc",
+            "HEMCO/CAMS-TEMPO/v3.1-2021/"
+            f"CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_{kind}.nc",
+        )
+        for kind in ("hourly", "weekly", "monthly")
+    )
+    return {
+        Example.EX1: htap_sectors + cams_weights,
+        Example.EX2: (
+            maccity,
+            DataFile(
+                Bucket.GEOS_CHEM,
+                "HEMCO/CEDS/v2020-08/1970/CO-em-total-anthro_CEDS_1970.nc",
+            ),
+            DataFile(Bucket.GEOS_CHEM, "HEMCO/MASKS/v2014-07/Canada_mask.gen.1x1.nc"),
         ),
-    ),
-    Example.EX6: (
-        DataFile(Bucket.GEOS_CHEM, "HEMCO/EDGARv43/v2016-11/EDGAR_v43.NOx.POW.0.1x0.1.nc"),
-        DataFile(
-            Bucket.GEOS_CHEM,
-            "HEMCO/CEDS/v2020-08/1970/ALK4_butanes-em-total-anthro_CEDS_1970.nc",
+        Example.EX3: (maccity,),
+        Example.EX4: (
+            DataFile(
+                Bucket.GEOS_CHEM, "HEMCO/HTAPv3/v2022-12/2018/HTAPv3_NO_0.1x0.1_2018.nc"
+            ),
         ),
-    ),
-    Example.EX7: _HTAP_SECTORS + _CAMS_WEIGHTS,
-    # advanced/megan3 reference /data/inventories/... paths with no public
-    # S3 mapping; nothing to download until sources are identified.
-    Example.ADVANCED: (),
-    Example.MEGAN3: (),
-}
+        Example.EX5: (
+            maccity,
+            DataFile(
+                Bucket.GEOS_CHEM,
+                "HEMCO/MACCITY/v2014-07/MACCity_anthro_NOx_2000-2010_16080.nc",
+            ),
+        ),
+        Example.EX6: (
+            DataFile(
+                Bucket.GEOS_CHEM, "HEMCO/EDGARv43/v2016-11/EDGAR_v43.NOx.POW.0.1x0.1.nc"
+            ),
+            DataFile(
+                Bucket.GEOS_CHEM,
+                "HEMCO/CEDS/v2020-08/1970/ALK4_butanes-em-total-anthro_CEDS_1970.nc",
+            ),
+        ),
+        Example.EX7: htap_sectors + cams_weights,
+        # advanced/megan3 reference /data/inventories/... paths with no public
+        # S3 mapping; nothing to download until sources are identified.
+        Example.ADVANCED: (),
+        Example.MEGAN3: (),
+    }
 
 
-def config_path(example: Example) -> Path:
-    return CONFIG_DIR / f"cece_config_{example.value}.yaml"
+@dataclass(frozen=True)
+class ExamplesConfig:
+    """All example-tooling configuration in one place; functions read the
+    module-level CONFIG instance rather than scattered globals."""
+
+    repo_root: Path = field(default_factory=_repo_root)
+    chunk_bytes: int = 1024 * 1024
+    driver_path_env: str = "CECE_EXAMPLES_DRIVER_PATH"
+    log_level_env: str = "CECE_EXAMPLES_LOG_LEVEL"
+    example_data: dict[Example, tuple[DataFile, ...]] = field(
+        default_factory=_example_data
+    )
+
+    @property
+    def config_dir(self) -> Path:
+        return self.repo_root / "examples" / "config"
+
+    @property
+    def default_dst_dir(self) -> Path:
+        return self.repo_root / "data"
+
+    def config_path(self, example: Example) -> Path:
+        return self.config_dir / f"cece_config_{example.value}.yaml"
+
+    def driver_path(self) -> Path:
+        return self.repo_root / os.environ.get(
+            self.driver_path_env, "build/cece_standalone_driver"
+        )
+
+    def log_level(self) -> str:
+        return os.environ.get(self.log_level_env, "INFO").upper()
+
+
+CONFIG = ExamplesConfig()
+
+
+def configure_logging() -> None:
+    """Basic stdlib logging for the entrypoints; level via
+    CONFIG.log_level_env (default INFO)."""
+    logging.basicConfig(
+        level=CONFIG.log_level(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 
 def build_parser(description: str) -> argparse.ArgumentParser:
@@ -154,19 +198,19 @@ def build_parser(description: str) -> argparse.ArgumentParser:
             f"({', '.join(member.value for member in Example)})"
         ),
     )
-    parser.add_argument(
-        "--all", action="store_true", help="Select every example."
-    )
+    parser.add_argument("--all", action="store_true", help="Select every example.")
     parser.add_argument(
         "--dst-dir",
         type=Path,
-        default=DEFAULT_DST_DIR,
-        help=f"Data directory, created if missing (default: {DEFAULT_DST_DIR}).",
+        default=CONFIG.default_dst_dir,
+        help=f"Data directory, created if missing (default: {CONFIG.default_dst_dir}).",
     )
     return parser
 
 
-def resolve_examples(parser: argparse.ArgumentParser, args: argparse.Namespace) -> list[Example]:
+def resolve_examples(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> list[Example]:
     """Validated selection from --example/--all (exactly one required)."""
     if args.all == bool(args.example):
         parser.error("provide exactly one of --example or --all")
@@ -193,7 +237,7 @@ def needs_fetch(target: Path) -> bool:
 
 def _fetch(url: str, target: Path) -> None:
     with urllib.request.urlopen(url) as response, open(target, "wb") as sink:
-        while chunk := response.read(_CHUNK_BYTES):
+        while chunk := response.read(CONFIG.chunk_bytes):
             sink.write(chunk)
 
 
@@ -226,16 +270,18 @@ def download(files: tuple[DataFile, ...], dst_dir: Path) -> list[DownloadOutcome
     return outcomes
 
 
-def run_example(example: Example, repo_root: Path = REPO_ROOT) -> int:
+def run_example(example: Example) -> int:
     """Execute one example by running the driver binary directly (never
     docker — this works inside the dev container and natively, e.g. HPC).
     Returns the driver's exit code."""
-    driver = repo_root / os.environ.get(
-        _DRIVER_PATH_ENV, "build/cece_standalone_driver"
-    )
-    config = config_path(example)
+    driver = CONFIG.driver_path()
+    config = CONFIG.config_path(example)
     if not driver.is_file():
-        logger.error("driver not found at %s (override with %s)", driver, _DRIVER_PATH_ENV)
+        logger.error(
+            "driver not found at %s (override with %s)",
+            driver,
+            CONFIG.driver_path_env,
+        )
         return 1
     if not config.is_file():
         logger.error("config not found at %s", config)
@@ -245,9 +291,9 @@ def run_example(example: Example, repo_root: Path = REPO_ROOT) -> int:
         "OMPI_ALLOW_RUN_AS_ROOT": "1",
         "OMPI_ALLOW_RUN_AS_ROOT_CONFIRM": "1",
     }
-    relative_config = config.relative_to(repo_root)
+    relative_config = config.relative_to(CONFIG.repo_root)
     logger.info("running %s: %s %s", example.value, driver, relative_config)
     completed = subprocess.run(
-        [str(driver), str(relative_config)], cwd=repo_root, env=env
+        [str(driver), str(relative_config)], cwd=CONFIG.repo_root, env=env
     )
     return completed.returncode
