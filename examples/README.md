@@ -59,12 +59,14 @@ data is published there, so a download-then-run from a *fresh* machine
 fails for ex1/ex7 until then. Note the hourly file must be the
 `(time, latitude, longitude)`-ordered variant — a dimensionally
 mis-ordered copy makes AMIO fail with a misleading
-`AMIO_ERR_STAGING_BACKPRESSURE`. One residual flake: ex2 can
-intermittently segfault during stream ingest (post-merge driver race,
-under investigation).
+`AMIO_ERR_STAGING_BACKPRESSURE`.
 
-Known driver issue (2026-07-20): `amio_worker_threads` >= 2 segfaults
-during stream ingest (ex7 pins it to 1 with a comment).
+Historical note (resolved 2026-07-23): `amio_worker_threads` >= 2 used to
+crash, and ex2 could intermittently segfault — both caused by one
+unserialized netCDF metadata path in AMIO's driver
+(`describe_variable`) racing concurrent reads; fixed by completing the
+driver's mutex discipline. ex7 now runs with `amio_worker_threads: 2`
+as the regression check.
 
 ## Configuration sections
 
