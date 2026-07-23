@@ -25,9 +25,7 @@ def main() -> int:
     parser = build_parser("Download the input data for CECE examples.")
     args = parser.parse_args()
     examples = resolve_examples(parser, args)
-    files = tuple(
-        file for example in examples for file in CONFIG.example_data[example]
-    )
+    files = tuple(file for example in examples for file in CONFIG.example_data[example])
     outcomes = download(files, args.dst_dir)
     failed = [outcome for outcome in outcomes if not outcome.ok]
     for outcome in failed:

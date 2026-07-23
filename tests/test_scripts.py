@@ -101,7 +101,9 @@ def test_mapped_keys_exist_in_s3_except_known_missing():
             except urllib.error.HTTPError as exc:
                 status = exc.code
             if KNOWN_MISSING_SUBSTRING in file.key:
-                assert status == 404, f"{file.key}: expected known-missing, got {status}"
+                assert status == 404, (
+                    f"{file.key}: expected known-missing, got {status}"
+                )
             else:
                 assert status == 200, f"{file.key}: expected available, got {status}"
 

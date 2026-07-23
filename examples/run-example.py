@@ -31,9 +31,7 @@ def main() -> int:
     args = parser.parse_args()
     examples = resolve_examples(parser, args)
 
-    files = tuple(
-        file for example in examples for file in CONFIG.example_data[example]
-    )
+    files = tuple(file for example in examples for file in CONFIG.example_data[example])
     download(files, args.dst_dir)  # cache-aware; failures surface in the run
 
     failures: list[str] = []
