@@ -221,18 +221,35 @@ if(TARGET yaml-cpp::yaml-cpp)
     add_library(yaml-cpp INTERFACE IMPORTED GLOBAL)
     target_link_libraries(yaml-cpp INTERFACE yaml-cpp::yaml-cpp)
   endif()
-elseif(CECE_FETCH_DEPS)
-  FetchContent_Declare(yaml-cpp GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git GIT_TAG 0.8.0)
+else()
+  # In-tree build: prefer the vendored submodule (no network), then the GitHub
+  # fetch. Both feed through FetchContent so HELM CONF's own
+  # FetchContent_MakeAvailable(yaml-cpp) remains a no-op (the name is already
+  # populated here); a plain add_subdirectory would leave CONF trying its own
+  # network clone on top of duplicate targets.
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/yaml-cpp/CMakeLists.txt")
+    FetchContent_Declare(yaml-cpp SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/yaml-cpp")
+    set(_cece_yaml_cpp_provider "submodule (extern/yaml-cpp)")
+  elseif(CECE_FETCH_DEPS)
+    # Keep the tag in sync with the extern/yaml-cpp submodule pin (the submodule
+    # is the source of truth if they drift).
+    FetchContent_Declare(
+      yaml-cpp
+      GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+      GIT_TAG 0.8.0
+    )
+    set(_cece_yaml_cpp_provider "FetchContent (0.8.0)")
+  else()
+    message(
+      FATAL_ERROR
+      "yaml-cpp not found via find_package(), the extern/yaml-cpp submodule is not populated, and CECE_FETCH_DEPS=OFF. Run `git submodule update --init extern/yaml-cpp`, install yaml-cpp >= 0.8, or re-enable the FetchContent fallback."
+    )
+  endif()
   FetchContent_MakeAvailable(yaml-cpp)
   if(NOT TARGET yaml-cpp::yaml-cpp)
     add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
   endif()
-  cece_register_dep("yaml-cpp" "FetchContent (0.8.0)")
-else()
-  message(
-    FATAL_ERROR
-    "yaml-cpp not found via find_package() and CECE_FETCH_DEPS=OFF. Install yaml-cpp >= 0.8 or re-enable the FetchContent fallback."
-  )
+  cece_register_dep("yaml-cpp" "${_cece_yaml_cpp_provider}")
 endif()
 
 # HELM Ingestion (subdirectories added individually because HELM has no root CMakeLists)
