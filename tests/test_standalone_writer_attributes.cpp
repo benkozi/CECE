@@ -5,6 +5,7 @@
 #include <netcdf.h>
 
 #include <Kokkos_Core.hpp>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -156,14 +157,85 @@ TEST_F(StandaloneWriterAttributesTest, ConfiguredFieldAttributesReachTheOutput) 
 
 }  // namespace
 
-// Custom main: AMIO requires an initialized MPI environment, and the writer
-// uses Kokkos views — both are process-wide lifecycles owned here.
+// Custom GTest Environment to manage Kokkos & MPI lifecycle globally —
+// mirrors the KokkosMpiEnvironment pattern in test_cece_utils.cpp. AMIO
+// requires an initialized MPI environment and the writer uses Kokkos views,
+// but neither may initialize during `--gtest_list_tests`: CMake's POST_BUILD
+// test discovery runs this binary on login nodes, where MPI_Init aborts
+// (no PMI job context).
+class KokkosMpiEnvironment : public ::testing::Environment {
+   private:
+    int argc_;
+    char** argv_;
+
+   public:
+    KokkosMpiEnvironment(int argc, char** argv) : argc_(argc), argv_(argv) {}
+
+    void SetUp() override {
+        // Initialize MPI first
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (!mpi_initialized) {
+            int provided = 0;
+            MPI_Init_thread(&argc_, &argv_, MPI_THREAD_MULTIPLE, &provided);
+        }
+
+        // Initialize Kokkos
+        if (!Kokkos::is_initialized()) {
+            Kokkos::initialize(argc_, argv_);
+        }
+    }
+    void TearDown() override {
+        // Finalize Kokkos
+        if (Kokkos::is_initialized()) {
+            Kokkos::finalize();
+        }
+
+        // Finalize MPI
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (mpi_initialized) {
+            MPI_Finalize();
+        }
+    }
+};
+
 int main(int argc, char** argv) {
+    bool is_discovery = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--gtest_list_tests") {
+            is_discovery = true;
+            break;
+        }
+    }
+
+    if (!is_discovery) {
+        // Prevent Intel MPI from detecting Slurm and attempting PMI/PMIX process manager bootstrap during unit tests
+        unsetenv("SLURM_JOB_ID");
+        unsetenv("SLURM_STEP_ID");
+        unsetenv("PMI_RANK");
+        unsetenv("PMI_SIZE");
+
+        // Configure Intel MPI to allow standalone, local-only execution on login nodes (prevent PMI2/Hydra aborts)
+        setenv("I_MPI_HYDRA_BOOTSTRAP", "none", 0);
+        setenv("I_MPI_SHM", "disable", 0);
+
+        // Initialize MPI to check rank and prevent parallel duplicate execution conflicts of local unit tests
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (!mpi_initialized) {
+            int provided = 0;
+            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+        }
+        int rank = 0;
+        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+        if (rank > 0) {
+            MPI_Finalize();
+            return 0;
+        }
+    }
+
     ::testing::InitGoogleTest(&argc, argv);
-    MPI_Init(&argc, &argv);
-    Kokkos::initialize(argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    Kokkos::finalize();
-    MPI_Finalize();
-    return rc;
+    ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment(argc, argv));
+    return RUN_ALL_TESTS();
 }
