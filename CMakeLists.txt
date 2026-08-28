@@ -701,6 +701,10 @@ if(CECE_BUILD_TESTING)
   # CCPP Readiness and Core Link Isolation Test
   add_executable(test_ccpp_readiness tests/test_ccpp_readiness.cpp)
   target_link_libraries(test_ccpp_readiness PRIVATE cece_core GTest::gtest_main)
+  target_compile_definitions(
+    test_ccpp_readiness
+    PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 
   # Unit tests for field creation (Requirement R4) FENGSHA Dust Scheme Property
   # Tests
@@ -806,6 +810,55 @@ if(CECE_BUILD_TESTING)
       )
     endif()
 
+    # Python packages the pytest-based tests need — single source of truth for
+    # the configure-time prefetch and the install_python_deps fixture test.
+    set(CECE_PYTHON_TEST_DEPS pytest PyYAML matplotlib numpy)
+
+    # Prefetch the venv + packages at configure time: configure typically runs
+    # where the network is available (e.g. HPC login nodes) while ctest may run
+    # where it is not (compute nodes). pip install is an offline no-op once the
+    # requirements are satisfied, so the fixture tests below then pass without
+    # network. Best-effort by design — an offline configure warns and defers to
+    # the fixture tests, never fails.
+    option(
+      CECE_PREFETCH_PYTHON_TEST_DEPS
+      "Install python test deps into the build-tree venv at configure time"
+      ON
+    )
+    if(CECE_PREFETCH_PYTHON_TEST_DEPS)
+      execute_process(
+        COMMAND
+          ${CMAKE_COMMAND} -E env ${CECE_PIP_TEST_ENV} ${Python3_EXECUTABLE} -m venv
+          ${CECE_PYTHON_VENV_DIR}
+        RESULT_VARIABLE _cece_venv_rc
+        OUTPUT_QUIET
+        ERROR_QUIET
+      )
+      set(_cece_prefetch_rc 1)
+      if(_cece_venv_rc EQUAL 0)
+        execute_process(
+          COMMAND
+            ${CMAKE_COMMAND} -E env ${CECE_PIP_TEST_ENV} ${VENV_PYTHON} -I -m pip install
+            ${CECE_PYTHON_TEST_DEPS}
+          RESULT_VARIABLE _cece_prefetch_rc
+          OUTPUT_QUIET
+          ERROR_QUIET
+          TIMEOUT 300
+        )
+      endif()
+      if(_cece_prefetch_rc EQUAL 0)
+        cece_register_dep("python-test-deps" "prefetched at configure (${CECE_PYTHON_VENV_DIR})")
+      else()
+        message(
+          WARNING
+          "Could not prefetch python test deps into ${CECE_PYTHON_VENV_DIR} (offline configure?). The install_python_deps test will retry at test time."
+        )
+        cece_register_dep("python-test-deps" "deferred to test time (prefetch failed)")
+      endif()
+    else()
+      cece_register_dep("python-test-deps" "deferred to test time (prefetch disabled)")
+    endif()
+
     add_test(NAME create_python_venv COMMAND ${Python3_EXECUTABLE} -m venv ${CECE_PYTHON_VENV_DIR})
     add_test(
       NAME ensure_pip_in_venv
@@ -826,7 +879,7 @@ if(CECE_BUILD_TESTING)
 
     add_test(
       NAME install_python_deps
-      COMMAND ${VENV_PYTHON} -I -m pip install pytest PyYAML matplotlib numpy
+      COMMAND ${VENV_PYTHON} -I -m pip install ${CECE_PYTHON_TEST_DEPS}
     )
     set_tests_properties(
       install_python_deps
