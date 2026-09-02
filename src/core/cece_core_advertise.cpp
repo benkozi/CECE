@@ -27,8 +27,8 @@ extern "C" {
  * list of fields that CECE will export. The Fortran cap handles the actual
  * NUOPC field advertisement.
  *
- * This is an ESMF-free function that only logs what fields will be available.
- * The Fortran cap retrieves the species count and names separately.
+ * This is a framework-free function that only logs what fields will be available.
+ * The driver cap retrieves the species count and names separately.
  *
  * @param rc Return code (0 = success, non-zero = error)
  *

@@ -215,7 +215,7 @@ bool CeceDataIngestor::HasCachedField(const std::string& name) const {
 std::string CeceDataIngestor::SerializeStreamESMFConfig(const CeceDataConfig& config) {
     std::ostringstream oss;
 
-    // ESMF RC file header
+    // RC file header
     oss << "file_id: \"streams\"\n";
     oss << "file_version: 1.0\n";
     oss << "stream_info: " << config.streams.size() << "\n";
@@ -225,7 +225,7 @@ std::string CeceDataIngestor::SerializeStreamESMFConfig(const CeceDataConfig& co
     for (const auto& stream : config.streams) {
         std::string idx = (stream_idx < 10 ? "0" : "") + std::to_string(stream_idx);
 
-        // Required ESMF RC parameters with stream index
+        // Required stream parameters with stream index
         oss << "taxmode" << idx << ": " << stream.taxmode << "\n";
         oss << "tInterpAlgo" << idx << ": " << stream.tintalgo << "\n";
         oss << "readMode" << idx << ": single\n";
@@ -245,7 +245,7 @@ std::string CeceDataIngestor::SerializeStreamESMFConfig(const CeceDataConfig& co
         // Required stream_mesh_file parameter (dummy value for grid-based data)
         oss << "stream_mesh_file" << idx << ": " << (stream.meshfile.empty() ? "none" : stream.meshfile) << "\n";
 
-        // Data files (ESMF format: comma-separated values)
+        // Data files (comma-separated values)
         oss << "stream_data_files" << idx << ": ";
         for (size_t i = 0; i < stream.file_paths.size(); ++i) {
             if (i > 0) oss << ", ";
@@ -253,7 +253,7 @@ std::string CeceDataIngestor::SerializeStreamESMFConfig(const CeceDataConfig& co
         }
         oss << "\n";
 
-        // Data variables (ESMF format: comma-separated pairs)
+        // Data variables (comma-separated pairs)
         oss << "stream_data_variables" << idx << ": ";
         for (size_t i = 0; i < stream.variables.size(); ++i) {
             if (i > 0) oss << ", ";

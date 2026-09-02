@@ -18,7 +18,7 @@ This architecture split physically reorganizes and decouples the codebase into t
 
 ## 2. Directory & Target Reorganization
 
-To enforce compile-time physical isolation and prevent accidental header or symbol leakage, the codebase has been structured into physical subdirectories under `src/`:
+To enforce compile-time physical isolation and prevent accidental header or symbol leakage, the codebase has been structured into separate subdirectories under `src/`:
 
 ```text
 src/

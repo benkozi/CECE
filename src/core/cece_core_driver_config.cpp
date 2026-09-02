@@ -1,6 +1,6 @@
 /**
  * @file cece_core_driver_config.cpp
- * @brief C interface to access driver configuration from ESMF config file.
+ * @brief C interface to access driver configuration from config file.
  *
  * This module provides validation for driver configuration parameters:
  * - Validates timestep_seconds > 0 (Requirement 3.3)
@@ -24,7 +24,7 @@
 extern "C" {
 
 /**
- * @brief Parse ESMF config file format (simple key: value pairs)
+ * @brief Parse config file format (simple key: value pairs)
  *
  * Reads a simple config file with format:
  *   key: value
@@ -79,9 +79,9 @@ static int parse_esmf_config_file(const std::string& config_file, std::map<std::
 }
 
 /**
- * @brief Get driver configuration values from ESMF config file.
+ * @brief Get driver configuration values from config file.
  *
- * @param config_file Path to the ESMF config file.
+ * @param config_file Path to the config file.
  * @param config_file_len Length of the config_file string.
  * @param start_time Output buffer for start time (ISO 8601 format).
  * @param start_time_len Length of the start_time buffer.
@@ -114,7 +114,7 @@ void cece_core_get_driver_config(const char* config_file, int config_file_len, c
         // Convert C string to std::string
         std::string config_path(config_file, config_file_len);
 
-        // Parse the ESMF config file
+        // Parse the config file
         std::map<std::string, std::string> config;
         int parse_rc = parse_esmf_config_file(config_path, config);
         if (parse_rc != 0) {
@@ -245,8 +245,8 @@ void cece_core_get_driver_config(const char* config_file, int config_file_len, c
             return;
         }
 
-        // Note: start_time < end_time validation is performed in the Fortran driver
-        // after parsing ISO8601 strings to ESMF_Time objects, as string comparison
+        // Note: start_time < end_time validation is performed in the driver
+        // after parsing ISO8601 strings to time objects, as string comparison
         // is not reliable for datetime validation.
 
         std::cout << "INFO: [cece_core_get_driver_config] Successfully read driver config:\n";

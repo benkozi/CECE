@@ -17,6 +17,7 @@
 #include "cece/cece_fatal.hpp"
 #include "cece/cece_helm_graph.hpp"
 #include "cece/cece_internal.hpp"
+#include "cece/cece_logger.hpp"
 #include "cece/cece_regridder_utils.hpp"
 #include "cece/cece_standalone_writer.hpp"
 
@@ -163,15 +164,24 @@ RecordBracket cadence_record_bracket(const std::string& cadence, const std::stri
 
 }  // namespace
 
-CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords,
-                                               const double* lat_coords, MPI_Comm comm_c)
+CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len,
+                                               const double* lat_coords, int lat_len, MPI_Comm comm_c)
     : config_file_(config_file),
       nx_(nx),
       ny_(ny),
       nz_(nz),
-      target_lons_(lon_coords, lon_coords + nx),
-      target_lats_(lat_coords, lat_coords + ny),
+      target_lons_(lon_coords, lon_coords + lon_len),
+      target_lats_(lat_coords, lat_coords + lat_len),
       comm_c_(comm_c) {
+    try {
+        YAML::Node config = YAML::LoadFile(config_file_);
+        if (config["driver"] && config["driver"]["gridspec_file"]) {
+            gridspec_file_ = config["driver"]["gridspec_file"].as<std::string>();
+        }
+    } catch (const YAML::Exception& e) {
+        gridspec_file_ = "";
+    }
+
     cece_io_ = std::make_unique<io::CeceIO>();
     cece_io_->Initialize(config_file_, nx_, ny_, nz_);
     CompileHelmGraph(config_file_, dagr_, *cece_io_, comm_c_);
@@ -226,12 +236,12 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         auto stream_view = cece_io_->GetFieldView(var_name);
 
         // Parse input file path and variable name dynamically from YAML config cece_data block
-        std::string input_file_path = "../scripts/data/MACCity_4x5.nc";  // default fallback
-        std::string input_var_name = "MACCity";                          // default fallback
-        std::string mapalgo = "consd";                                   // default fallback
-        std::string stream_data_model = "enhanced";                      // default AMIO data model
-        std::string cadence;                                             // temporal cadence: hourly|weekly|monthly ("" -> legacy cycling)
-        std::string tintalgo = "nearest";                                // time-interp algorithm: linear|nearest
+        std::string input_file_path = "";
+        std::string input_var_name = "";
+        std::string mapalgo = "consd";               // default fallback
+        std::string stream_data_model = "enhanced";  // default AMIO data model
+        std::string cadence;                         // temporal cadence: hourly|weekly|monthly ("" -> legacy cycling)
+        std::string tintalgo = "nearest";            // time-interp algorithm: linear|nearest
         bool stream_data_model_explicit = false;
         if (config["cece_data"] && config["cece_data"]["streams"]) {
             for (const auto& stream : config["cece_data"]["streams"]) {
@@ -264,8 +274,8 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                                 stream_data_model = "enhanced";
                                 stream_data_model_explicit = false;
                             } else {
-                                std::cout << "[DRIVER WARNING] Invalid stream data_model='" << requested_model << "' for stream variable '"
-                                          << var_name << "'; using default auto behavior (enhanced then classic fallback)." << std::endl;
+                                CECE_LOG_WARNING("[DRIVER] Invalid stream data_model='" + requested_model + "' for stream variable '" + var_name +
+                                                 "'; using default auto behavior (enhanced then classic fallback).");
                             }
                         }
                         found_var = true;
@@ -276,13 +286,21 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             }
         }
 
+        if (input_file_path.empty()) {
+            LogFatal("[DRIVER FATAL] Input file path not specified for stream variable '" + var_name + "' in configuration!");
+            return false;
+        }
+        if (input_var_name.empty()) {
+            input_var_name = var_name;
+        }
+
         // Verify if the input file path exists and is accessible from this compute/login node
         std::error_code fs_ec;
         if (!fs::exists(input_file_path, fs_ec)) {
             LogFatal("[DRIVER FATAL] File '" + input_file_path + "' does not exist or is unreadable on this node! (System error: " + fs_ec.message() +
                      ")");
         } else {
-            std::cout << "[DRIVER DEBUG] Input file '" << input_file_path << "' successfully verified on local filesystem." << std::endl;
+            CECE_LOG_DEBUG("[DRIVER] Input file '" + input_file_path + "' successfully verified on local filesystem.");
         }
 
         bool read_success = false;
@@ -328,6 +346,10 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             if (rank == 0) {
                 // Write input manifest YAML (Rank 0 only to prevent parallel write conflicts)
                 std::ofstream m_file(read_manifest_path);
+                if (!m_file) {
+                    LogFatal("[DRIVER FATAL] Failed to create AMIO manifest YAML file '" + read_manifest_path + "'");
+                    return false;
+                }
                 m_file << "backend: netcdf4\n"
                        << "path: " << input_file_path << "\n"
                        << "data_model: " << candidate_model << "\n"
@@ -345,17 +367,27 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
 
             // Wait for Rank 0 to finish writing the manifest before other ranks load it.
             if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
-                MPI_Barrier(comm_c_);
+                int barrier_rc = MPI_Barrier(comm_c_);
+                if (barrier_rc != MPI_SUCCESS) {
+                    CECE_LOG_WARNING("[DRIVER] MPI_Barrier failed with error code " + std::to_string(barrier_rc));
+                }
             }
 
-            // Temporarily force serial nc_open read fallback to improve portability.
+            // Force serial I/O fallback for reading offline datasets to prevent MPI multithreading deadlocks.
             if (mpi_initialized) {
                 amio_set_parent_communicator(MPI_Comm_c2f(MPI_COMM_SELF));
             }
 
             amio_rc = amio_init(read_manifest_path.c_str(), &read_core);
-            if (amio_rc == AMIO_OK) {
+            if (amio_rc != AMIO_OK) {
+                failure_detail = std::string("amio_init failed for manifest '") + read_manifest_path + "': rc=" + std::to_string(amio_rc) + " (" +
+                                 amio_strerror(amio_rc) + ")";
+            } else {
                 amio_rc = amio_open_dataset(read_core, read_manifest_path.c_str(), AMIO_MODE_READ, &read_dataset);
+                if (amio_rc != AMIO_OK) {
+                    failure_detail = std::string("amio_open_dataset failed for '") + input_file_path + "': rc=" + std::to_string(amio_rc) + " (" +
+                                     amio_strerror(amio_rc) + ")";
+                }
             }
 
             // Restore parent communicator for downstream operations.
@@ -367,8 +399,8 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                 break;
             }
 
-            std::cout << "[DRIVER DEBUG] AMIO open attempt failed (data_model='" << candidate_model << "') with rc = " << amio_rc << " ("
-                      << amio_strerror(amio_rc) << ")" << std::endl;
+            CECE_LOG_DEBUG("[DRIVER] AMIO open attempt failed (data_model='" + candidate_model + "') with rc = " + std::to_string(amio_rc) + " (" +
+                           amio_strerror(amio_rc) + ")");
 
             if (read_dataset) {
                 amio_close(read_dataset);
@@ -381,12 +413,11 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         }
 
         if (amio_rc != AMIO_OK) {
-            std::cout << "[DRIVER DEBUG] amio_open_dataset failed for " << input_file_path << " with rc = " << amio_rc << " ("
-                      << amio_strerror(amio_rc) << ") after trying data_model='" << active_data_model << "'" << std::endl;
+            CECE_LOG_DEBUG("[DRIVER] amio_open_dataset failed for " + input_file_path + " with rc = " + std::to_string(amio_rc) + " (" +
+                           amio_strerror(amio_rc) + ") after trying data_model='" + active_data_model + "'");
         } else {
             if (!stream_data_model_explicit && active_data_model != "enhanced") {
-                std::cout << "[DRIVER INFO] AMIO read manifest auto-fell back to data_model='" << active_data_model << "' for " << input_file_path
-                          << std::endl;
+                CECE_LOG_INFO("[DRIVER] AMIO read manifest auto-fell back to data_model='" + active_data_model + "' for " + input_file_path);
             }
 
             // Determine this rank's contiguous destination latitude band [j0, j1)
@@ -440,8 +471,8 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             auto plan_it = regrid_plans_.find(var_name);
             if (plan_it == regrid_plans_.end() || !plan_it->second.built) {
                 cece::io::RegridPlan plan;
-                if (!cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, plan)) {
-                    std::cout << "[DRIVER DEBUG] build_regrid_plan failed for '" << var_name << "'" << std::endl;
+                if (!cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, gridspec_file_, plan)) {
+                    CECE_LOG_DEBUG("[DRIVER] build_regrid_plan failed for '" + var_name + "'");
                     failure_detail = "regrid plan construction failed (could not read source grid coordinates)";
                 } else {
                     plan_it = regrid_plans_.emplace(var_name, std::move(plan)).first;
@@ -469,6 +500,18 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     bracket.weight = 0.0;
                 }
 
+                // Diagnostic: report which time slice(s) are being read from the file.
+                if (bracket.i0 == bracket.i1 || bracket.weight == 0.0) {
+                    CECE_LOG_INFO("[DRIVER] Reading time slice " + std::to_string(bracket.i0) + "/" + std::to_string(file_nt - 1) + " from '" +
+                                  input_file_path + "' for field '" + var_name + "'" +
+                                  (cadence.empty() ? " (cycling, step=" + std::to_string(step_index_) + ")"
+                                                   : " (cadence=" + cadence + ", time=" + time_iso8601 + ")"));
+                } else {
+                    CECE_LOG_INFO("[DRIVER] Interpolating time slices " + std::to_string(bracket.i0) + " & " + std::to_string(bracket.i1) + "/" +
+                                  std::to_string(file_nt - 1) + " (w=" + std::to_string(bracket.weight) + ") from '" + input_file_path +
+                                  "' for field '" + var_name + "' (cadence=" + cadence + ", tintalgo=" + tintalgo + ", time=" + time_iso8601 + ")");
+                }
+
                 int file_nx = 0;
                 int file_ny = 0;
 
@@ -481,7 +524,8 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     amio_status_t rc = amio_read(read_dataset, input_var_name.c_str(), t_idx, nullptr, &slab_view);
                     if (rc != AMIO_OK) {
                         amio_rc = rc;
-                        std::cout << "[DRIVER DEBUG] amio_read('" << input_var_name << "', t=" << t_idx << ") failed with rc = " << rc << std::endl;
+                        CECE_LOG_DEBUG("[DRIVER] amio_read('" + input_var_name + "', t=" + std::to_string(t_idx) +
+                                       ") failed with rc = " + std::to_string(rc));
                         failure_detail =
                             std::string("amio_read('") + input_var_name + "') failed: rc=" + std::to_string(rc) + " (" + amio_strerror(rc) + ")";
                         return false;
@@ -524,6 +568,8 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     file_nx = fnx;
                     file_ny = fny;
                     amio_release_view(slab_view);
+                    CECE_LOG_DEBUG("[DRIVER] Read slab t=" + std::to_string(t_idx) + " for '" + input_var_name + "': " + std::to_string(fny) + "x" +
+                                   std::to_string(fnx) + " (" + std::to_string(spatial) + " elements, " + (is_float ? "float32" : "float64") + ")");
                     return true;
                 };
 
@@ -568,9 +614,34 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                             }
                         }
                         Kokkos::deep_copy(stream_view, h_view);
+
+                        // Also directly populate the C++ Core's import state fields to guarantee
+                        // parallel-safe and synchronized import states across the driver facade and compute core!
+                        auto* d = static_cast<cece::CeceInternalData*>(cece_core_data_ptr);
+                        auto it_core = d->import_state.fields.find(var_name);
+                        if (it_core == d->import_state.fields.end()) {
+                            // Dynamically allocate the import field DualView inside the core
+                            cece::DualView3D dv(var_name, nx_, ny_, nz_);
+                            d->import_state.fields[var_name] = dv;
+                            it_core = d->import_state.fields.find(var_name);
+                        }
+
+                        if (it_core != d->import_state.fields.end()) {
+                            auto& core_field = it_core->second;
+                            auto h_view_core = Kokkos::create_mirror_view(core_field.view_device());
+                            for (int j = 0; j < ny_; ++j) {
+                                for (int i = 0; i < nx_; ++i) {
+                                    h_view_core(i, j, 0) = full_dst[static_cast<size_t>(j) * nx_ + i];
+                                }
+                            }
+                            Kokkos::deep_copy(core_field.view_device(), h_view_core);
+                            core_field.modify_device();
+                            core_field.sync_host();
+                        }
+
                         read_success = true;
                     } else {
-                        std::cout << "[DRIVER DEBUG] apply_regrid_plan returned false!" << std::endl;
+                        CECE_LOG_DEBUG("[DRIVER] apply_regrid_plan returned false!");
                         failure_detail = "regrid weight application failed";
                     }
                 }
@@ -581,10 +652,17 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
 
         // Wait for all ranks to finalize their AMIO sessions before deleting the manifest file
         if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
-            MPI_Barrier(comm_c_);
+            int barrier_rc = MPI_Barrier(comm_c_);
+            if (barrier_rc != MPI_SUCCESS) {
+                CECE_LOG_WARNING("[DRIVER] MPI_Barrier failed with error code " + std::to_string(barrier_rc));
+            }
         }
         if (rank == 0) {
-            std::remove(read_manifest_path.c_str());
+            std::error_code rm_ec;
+            fs::remove(read_manifest_path, rm_ec);
+            if (rm_ec) {
+                CECE_LOG_WARNING("[DRIVER] Failed to remove manifest file '" + read_manifest_path + "': " + rm_ec.message());
+            }
         }
 
         // Throw a fatal error on AMIO read failures
@@ -595,8 +673,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                      ". Idealized fallback is disabled!");
             return false;
         } else {
-            std::cout << "[DRIVER DEBUG] AMIO read succeeded for field '" << var_name << "' - loaded real data from " << input_file_path << "!"
-                      << std::endl;
+            CECE_LOG_INFO("[DRIVER] AMIO read succeeded for field '" + var_name + "' - loaded real data from " + input_file_path);
         }
 
         // Ingest raw data pointer of stream view into CECE's ingestor cache
@@ -605,6 +682,10 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                                 nz_,        // n_lev
                                 nx_ * ny_,  // n_elem
                                 &bridge_rc);
+        if (bridge_rc != 0) {
+            LogFatal("[DRIVER FATAL] cece_ingestor_set_field failed for variable '" + var_name + "' with rc=" + std::to_string(bridge_rc));
+            return false;
+        }
     }
 
     step_index_++;
@@ -616,8 +697,8 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
 extern "C" {
 void amio_set_parent_communicator(MPI_Fint comm);
 
-void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, const double* lat_coords,
-                        int mpi_comm_f, void** driver_ptr_out, int* rc) {
+void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
+                        int lat_len, int mpi_comm_f, void** driver_ptr_out, int* rc) {
     if (rc) *rc = 0;
     try {
         std::string path(yaml_path, path_len);
@@ -629,7 +710,7 @@ void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int
         MPI_Comm comm_c = MPI_Comm_f2c(static_cast<MPI_Fint>(mpi_comm_f));
 
         // 3. Create orchestrator using the custom communicator
-        auto* driver = new cece::CeceDriverOrchestrator(path, nx, ny, nz, lon_coords, lat_coords, comm_c);
+        auto* driver = new cece::CeceDriverOrchestrator(path, nx, ny, nz, lon_coords, lon_len, lat_coords, lat_len, comm_c);
         *driver_ptr_out = static_cast<void*>(driver);
     } catch (const std::exception& e) {
         std::cerr << "ERROR: cece_driver_create: " << e.what() << std::endl;

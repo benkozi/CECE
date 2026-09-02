@@ -21,10 +21,10 @@
 
 #include "cece/physics/cece_speciation_config.hpp"
 
-#include <sys/stat.h>
 #include <yaml-cpp/yaml.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -34,13 +34,12 @@ namespace cece {
 
 SpeciationConfig SpeciationConfigLoader::Load(const std::string& mechanism_path, const std::string& mapping_path, const std::string& dataset) {
     // Check mechanism file existence
-    struct stat buffer;
-    if (stat(mechanism_path.c_str(), &buffer) != 0) {
+    if (!std::filesystem::exists(mechanism_path)) {
         throw std::runtime_error("Mechanism file not found: " + mechanism_path);
     }
 
     // Check mapping file existence
-    if (stat(mapping_path.c_str(), &buffer) != 0) {
+    if (!std::filesystem::exists(mapping_path)) {
         throw std::runtime_error("Mapping file not found: " + mapping_path);
     }
 
@@ -99,18 +98,23 @@ SpeciationConfig SpeciationConfigLoader::ParseMechanism(const YAML::Node& node) 
 }
 
 void SpeciationConfigLoader::ParseMapping(const YAML::Node& node, SpeciationConfig& config, const std::string& dataset) {
+    auto KeyToString = [](const YAML::Node& key_node, const std::string& context) -> std::string {
+        if (!key_node.IsDefined() || key_node.Type() == YAML::NodeType::Null) {
+            throw std::invalid_argument("Invalid null key in " + context);
+        }
+        if (!key_node.IsScalar()) {
+            throw std::invalid_argument("Invalid non-scalar key in " + context);
+        }
+        return key_node.as<std::string>();
+    };
+
     // Validate 'mechanism' key — use iterator to avoid operator[] side effects
     bool has_mechanism = false;
     bool has_datasets = false;
     YAML::Node datasets_node;
 
     for (auto it = node.begin(); it != node.end(); ++it) {
-        std::string key;
-        try {
-            key = it->first.as<std::string>();
-        } catch (...) {
-            key = it->first.Scalar();
-        }
+        std::string key = KeyToString(it->first, "mapping root");
 
         if (key == "mechanism") {
             has_mechanism = true;
@@ -131,12 +135,7 @@ void SpeciationConfigLoader::ParseMapping(const YAML::Node& node, SpeciationConf
     YAML::Node dataset_node;
     bool found_dataset = false;
     for (auto ds_it = datasets_node.begin(); ds_it != datasets_node.end(); ++ds_it) {
-        std::string ds_name;
-        try {
-            ds_name = ds_it->first.as<std::string>();
-        } catch (...) {
-            ds_name = ds_it->first.Scalar();
-        }
+        std::string ds_name = KeyToString(ds_it->first, "datasets section");
         if (ds_name == dataset) {
             dataset_node = YAML::Clone(ds_it->second);
             found_dataset = true;
@@ -158,12 +157,7 @@ void SpeciationConfigLoader::ParseMapping(const YAML::Node& node, SpeciationConf
     for (auto mech_it = dataset_node.begin(); mech_it != dataset_node.end(); ++mech_it) {
         if (mech_it->first.Type() == YAML::NodeType::Null) continue;
 
-        std::string mechanism_species;
-        try {
-            mechanism_species = mech_it->first.as<std::string>();
-        } catch (...) {
-            mechanism_species = mech_it->first.Scalar();
-        }
+        std::string mechanism_species = KeyToString(mech_it->first, "dataset '" + dataset + "'");
 
         YAML::Node class_map = YAML::Clone(mech_it->second);
 

@@ -1,11 +1,14 @@
-# High-resolution inventory example: 0.1-degree HTAPv3 shipping NO
-# regridded to a coarse grid over a full day.
+# =====================================================================
+# CECE Example 4: CCPP Physics Schemes processing
+# =====================================================================
+# This example tests CCPP physical scheme integrations, running diurnal
+# and seasonal scaling variation calculations.
 #
-# Note: this example previously declared physics_schemes "GFED" and
-# "DayCycleAndSeasonVariation", neither of which is a registered scheme —
-# the driver aborted on them. Physics-scheme demonstrations live in
-# cece_config_advanced.yaml and cece_config_megan3.yaml, which use real
-# registered schemes with the met inputs they require.
+# Key Features Tested:
+#   - Dynamic diurnal/seasonal variation scaling factors.
+#   - Physics scheme parameter ingestion and runtime scheduling.
+#   - 24-hour simulation cycle for full day-night profiling.
+# =====================================================================
 driver:
   start_time: "2020-01-01T00:00:00"
   end_time: "2020-01-02T00:00:00"

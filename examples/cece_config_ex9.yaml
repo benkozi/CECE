@@ -1,25 +1,23 @@
 # =====================================================================
-# CECE Example 5: Production Multi-Timestep Ingestion
+# CECE Example 9: Curvilinear (FV3 Cubed Sphere) Mesh Simulation
 # =====================================================================
-# This example tests multi-timestep emissions processing for multiple
-# species (CO + NO) with diverse data source configurations.
+# This example tests 2-D curvilinear mesh simulation capabilities
+# with physical center coordinate variables (96x96 or 192x192 centers)
+# conforming to the standard FV3 cubed-sphere tiles and CF-1.9 Conventions.
 #
 # Key Features Tested:
-#   - Dynamic multi-stream remapping and temporal alignment.
-#   - Medium-resolution global-scale rectilinear grid (270x135).
-#   - High-throughput parallel NetCDF output file generation.
+#   - Ingestion and remapping on dynamic 2-D curvilinear structured grids.
+#   - Dynamic 2-D curvilinear coordinates (lon/lat) loading.
+#   - Curvilinear 3-D cell boundaries (lon_bnds/lat_bnds) shapes of (ny, nx, 4).
 # =====================================================================
 driver:
   start_time: "2020-01-01T00:00:00"
   end_time: "2020-01-01T06:00:00"
   timestep_seconds: 3600
+  gridspec_file: "data/C96_grid_spec.tile1.nc"
   grid:
-    nx: 270
-    ny: 135
-    lon_min: -135.0
-    lon_max: 135.0
-    lat_min: -67.5
-    lat_max: 67.5
+    nx: 96
+    ny: 96
 
 species:
   co:
@@ -32,7 +30,7 @@ species:
 cece_data:
   streams:
     - name: "MACCITY_CO"
-      file: "data/MACCity_4x5.nc"
+      file: "/work/data/MACCity_4x5.nc"
       yearFirst: 2000
       yearLast: 2010
       yearAlign: 2020
@@ -43,7 +41,7 @@ cece_data:
         - file: "MACCity"
           model: "MACCITY_CO"
     - name: "MACCITY_NO"
-      file: "data/MACCity_anthro_NOx_2000-2010_16080.nc"
+      file: "/work/data/MACCity_anthro_NOx_2000-2010_16080.nc"
       yearFirst: 2000
       yearLast: 2010
       yearAlign: 2020
@@ -55,17 +53,23 @@ cece_data:
           model: "MACCITY_NO"
 
 diagnostics:
-  output_interval_seconds: 2592000
+  output_interval_seconds: 3600
   variables: ["co", "no"]
 
 output:
   enabled: true
   directory: ./cece_output
-  filename_pattern: "cece_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
+  filename_pattern: "cece_c96_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
   frequency_steps: 1
+  global_attributes:
+    title: "My Custom C96 Emission Simulation Run"
+    institution: "National Oceanic and Atmospheric Administration (NOAA)"
   fields:
     - name: co
       attributes:
         units: "kg m-2 s-1"
         long_name: "carbon_monoxide_emission_flux"
-    - "no" # scalar shorthand: written with no configured attributes
+    - name: "no"
+      attributes:
+        units: "kg m-2 s-1"
+        long_name: "nitric_oxide_emission_flux"

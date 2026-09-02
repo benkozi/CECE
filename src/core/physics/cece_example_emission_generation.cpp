@@ -110,7 +110,7 @@ void ExampleEmissionGeneration::Run(CeceImportState& import_state, CeceExportSta
     Kokkos::fence();
 
     // Signal that the emissions field has been updated on the device
-    // This ensures proper device-to-host synchronization before ESMF accesses the data
+    // This ensures proper device-to-host synchronization before the host accesses the data
     MarkModified("emissions", export_state);
 }
 

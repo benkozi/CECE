@@ -4,7 +4,7 @@
  *
  * Manages per-component refresh intervals using integer-second arithmetic.
  * Validates all intervals at construction and determines which components
- * are due for execution at each timestep. Pure C++ with no ESMF dependency.
+ * are due for execution at each timestep. Pure C++ with no external framework dependency.
  *
  * @author CECE Team
  * @date 2024

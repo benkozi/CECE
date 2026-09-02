@@ -343,7 +343,7 @@ species:
 
 ### Mass Conservation
 
-All vertical distribution methods ensure strict mass conservation through normalization. The total 3D emissions at each grid column always equal the original 2D input:
+All vertical distribution methods ensure strict mass conservation through normalization. The total 3D emissions within each grid column always equal the original 2D input:
 
 ```
 ∑(k=1 to nz) emissions_3d[i,j,k] = emissions_2d[i,j]  ∀ i,j

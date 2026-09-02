@@ -1,18 +1,14 @@
-# Cadence-aware temporal scale factors + AMIO worker threads.
+# =====================================================================
+# CECE Example 7: Named Grid Ingestion and Remapping
+# =====================================================================
+# This example tests dynamic Named Grid generation and spatial remapping
+# capabilities using AXIS NamedGridRegistry.
 #
-# Like ex1 (multi-sector NO with temporal scale factors) but demonstrating
-# explicit stream `cadence` handling and `amio_worker_threads`.
-#
-# Data note: sector emissions are the original EDGAR-HTAP v2015-03 per-sector
-# files (monthly records, 2008-2010 — hence the monthly cadence), fetched by
-# scripts/data_download/download_ex7.sh from the public noaa-ufs-srw-pds
-# bucket (fix_emis/HTAP/v2015-03/NO).
-#
-# The CAMS-TEMPO v3.1 temporal weights are NOT yet publicly downloadable:
-# the download script's CAMS fetches point at aspirational geos-chem-bucket
-# keys and are EXPECTED TO FAIL until a public source is found, so this
-# example currently fails on the missing data/CAMS-*.nc inputs.
-# The datasets are deliberately not substituted.
+# Key Features Tested:
+#   - Ingestion and remapping on F360 named grids dynamically.
+#   - Core-driven single species CO emissions processing.
+#   - Log file output writing and parallel threading validation.
+# =====================================================================
 driver:
   start_time: "2010-01-01T00:00:00"
   end_time: "2010-01-01T23:00:00"

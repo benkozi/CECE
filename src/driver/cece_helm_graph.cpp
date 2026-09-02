@@ -43,7 +43,7 @@ void CompileHelmGraph(const std::string& config_file, std::unique_ptr<dagr::Grap
     }
 
     // Instantiating GraphOrchestrator requires world communicator.
-    // Wrap custom MPI communicator in halo::Communicator safely (duplicating to prevent RAII destruction of ESMF's handle)
+    // Wrap custom MPI communicator in halo::Communicator safely (duplicating to prevent RAII destruction of the caller's handle)
     MPI_Comm comm_to_wrap = comm_c;
     if (comm_c != MPI_COMM_NULL && comm_c != MPI_COMM_WORLD && comm_c != MPI_COMM_SELF) {
         MPI_Comm_dup(comm_c, &comm_to_wrap);

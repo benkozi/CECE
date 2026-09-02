@@ -1,21 +1,13 @@
 # =====================================================================
-# CECE Example 3: Minimal Fast Testing Configuration
-# =====================================================================
-# This example tests the fast standalone core cycle with a minimal,
-# low-overhead rectilinear spatial layout.
-#
-# Key Features Tested:
-#   - Fast startup, minimal timing sequence, and debugging loop.
-#   - Rectilinear minimal grid (2x2) for instant linter and unit tests.
-#   - Basic stream ingestion without timing parameter constraints.
+# CECE Control Mock Testing Configuration
 # =====================================================================
 driver:
-  start_time: "2020-01-01T00:00:00"
-  end_time: "2020-01-01T01:00:00"
+  start_time: "2010-01-01T00:00:00"
+  end_time: "2010-01-01T06:00:00"
   timestep_seconds: 3600
   grid:
-    nx: 2
-    ny: 2
+    nx: 72
+    ny: 46
     lon_min: -180.0
     lon_max: 180.0
     lat_min: -90.0
@@ -24,8 +16,9 @@ driver:
 species:
   co:
     - field: "MACCITY_CO"
-      category: "anthropogenic"
-      hierarchy: 1
+      operation: "add"
+  no:
+    - field: "MACCITY_NO"
       operation: "add"
 
 cece_data:
@@ -41,18 +34,33 @@ cece_data:
       variables:
         - file: "MACCity"
           model: "MACCITY_CO"
+    - name: "MACCITY_NO"
+      file: "data/MACCity_anthro_NOx_2000-2010_16080.nc"
+      yearFirst: 2000
+      yearLast: 2010
+      yearAlign: 2020
+      taxmode: "cycle"
+      tintalgo: "linear"
+      mapalgo: "consd"
+      variables:
+        - file: "MACCity"
+          model: "MACCITY_NO"
 
 diagnostics:
   output_interval_seconds: 3600
-  variables: ["co"]
+  variables: ["co", "no"]
 
 output:
   enabled: true
   directory: ./cece_output
-  filename_pattern: "cece_ex3_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
+  filename_pattern: "cece_c96_{YYYY}{MM}{DD}_{HH}{mm}{ss}.nc"
   frequency_steps: 1
   fields:
     - name: co
       attributes:
         units: "kg m-2 s-1"
         long_name: "carbon_monoxide_emission_flux"
+    - name: "no"
+      attributes:
+        units: "kg m-2 s-1"
+        long_name: "nitric_oxide_emission_flux"

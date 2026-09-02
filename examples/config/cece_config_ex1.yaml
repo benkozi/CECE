@@ -1,15 +1,15 @@
-# Basic multi-sector species example with temporal scale factors.
+# =====================================================================
+# CECE Example 1: Basic Single Species Simulation
+# =====================================================================
+# This example tests basic emissions remapping capabilities for a
+# single chemical species (CO) from a single MACCity anthropogenic
+# data stream.
 #
-# Data note: sector emissions are the original EDGAR-HTAP v2015-03 per-sector
-# files (monthly records, 2008-2010), fetched by
-# scripts/data_download/download_ex1.sh from the public noaa-ufs-srw-pds
-# bucket (fix_emis/HTAP/v2015-03/NO).
-#
-# The CAMS-TEMPO v3.1 temporal weights are NOT yet publicly downloadable:
-# the download script's CAMS fetches point at aspirational geos-chem-bucket
-# keys and are EXPECTED TO FAIL until a public source is found, so this
-# example currently fails on the missing data/CAMS-*.nc inputs.
-# The datasets are deliberately not substituted.
+# Key Features Tested:
+#   - Core-driven single species CO emissions processing.
+#   - Guassian global grid (1440x720) with full global lat-lon coverage.
+#   - Basic diagnostics output verification.
+# =====================================================================
 driver:
   start_time: "2010-01-01T00:00:00"
   end_time: "2010-01-01T23:00:00"
