@@ -1,13 +1,14 @@
 # =====================================================================
-# CECE Example 7: Named Grid Ingestion and Remapping
+# CECE Example 1: Basic Single Species Simulation
 # =====================================================================
-# This example tests dynamic Named Grid generation and spatial remapping
-# capabilities using AXIS NamedGridRegistry.
+# This example tests basic emissions remapping capabilities for a
+# single chemical species (CO) from a single MACCity anthropogenic
+# data stream.
 #
 # Key Features Tested:
-#   - Ingestion and remapping on F360 named grids dynamically.
 #   - Core-driven single species CO emissions processing.
-#   - Log file output writing and parallel threading validation.
+#   - Guassian global grid (1440x720) with full global lat-lon coverage.
+#   - Basic diagnostics output verification.
 # =====================================================================
 driver:
   start_time: "2010-01-01T00:00:00"
@@ -16,7 +17,6 @@ driver:
   # Optional: write run output to this log file instead of using `> cece.log`.
   # Output is tee'd, so it also still appears on the console.
   log_file: "cece.log"
-  amio_worker_threads: 2
   grid:
     grid_name: "F360"
     lon_min: -180.0
@@ -75,112 +75,100 @@ species:
 
 cece_data:
   streams:
+    # One EDGAR-HTAP v2015-03 file per sector, each carrying `emi_no`
+    # (36 monthly records, 2008-2010).
     - name: "HTAP_NO_TRANSPORT"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_TRANSPORT.generic.01x01.nc"
-      yearFirst: 2000
+      file: "data/EDGAR_HTAP_NO_TRANSPORT.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
-      cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
         - file: "emi_no"
           model: "HTAP_TRANSPORT_NO"
     - name: "HTAP_NO_SHIPS"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_SHIPS.generic.01x01.nc"
-      yearFirst: 2000
+      file: "data/EDGAR_HTAP_NO_SHIPS.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
-      cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
         - file: "emi_no"
           model: "HTAP_SHIPS_NO"
     - name: "HTAP_NO_RESIDENTIAL"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_RESIDENTIAL.generic.01x01.nc"
-      yearFirst: 2000
+      file: "data/EDGAR_HTAP_NO_RESIDENTIAL.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
-      cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
         - file: "emi_no"
           model: "HTAP_RESIDENTIAL_NO"
     - name: "HTAP_NO_INDUSTRY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_INDUSTRY.generic.01x01.nc"
-      yearFirst: 2000
+      file: "data/EDGAR_HTAP_NO_INDUSTRY.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
-      cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
         - file: "emi_no"
           model: "HTAP_INDUSTRY_NO"
     - name: "HTAP_NO_ENERGY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/HTAP/v2015-03/NO/EDGAR_HTAP_NO_ENERGY.generic.01x01.nc"
-      yearFirst: 2000
+      file: "data/EDGAR_HTAP_NO_ENERGY.generic.01x01.nc"
+      yearFirst: 2008
       yearLast: 2010
       yearAlign: 2020
       taxmode: "cycle"
       tintalgo: "linear"
-      cadence: "monthly"
       mapalgo: "consd"
       data_model: "classic"
       variables:
         - file: "emi_no"
           model: "HTAP_ENERGY_NO"
+    # CAMS-TEMPO weights: not publicly downloadable yet (see header note);
+    # these streams keep the original dataset and fail until data exists.
     - name: "CAMS_HOURLY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly_fixtime.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_hourly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
       taxmode: "cycle"
-      # Discrete hour-of-day profile (24 records): pick the record matching the
-      # current simulation hour. Interpolation is not meaningful for of-day
-      # weights, so nearest is used regardless of tintalgo.
-      cadence: "hourly"
-      tintalgo: "nearest"
+      tintalgo: "linear"
       mapalgo: "bilinear"
       data_model: "classic"
       variables:
         - file: "FH_weekday_tro"
           model: "CAMS_HOURLY"
     - name: "CAMS_WEEKLY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_weekly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
       taxmode: "cycle"
-      # Discrete day-of-week profile (7 records): pick the record matching the
-      # current simulation day of week. Always nearest.
-      cadence: "weekly"
-      tintalgo: "nearest"
+      tintalgo: "linear"
       mapalgo: "bilinear"
       data_model: "classic"
       variables:
         - file: "FW_tro"
           model: "CAMS_WEEKLY"
     - name: "CAMS_MONTHLY"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
       taxmode: "cycle"
-      # Continuous monthly climatology (12 records). With tintalgo=linear the
-      # value is interpolated to the current day using the mid-month convention
-      # (e.g. Jan 1 blends the Dec and Jan records).
-      cadence: "monthly"
       tintalgo: "linear"
       mapalgo: "bilinear"
       data_model: "classic"
@@ -188,12 +176,11 @@ cece_data:
         - file: "FM_tro"
           model: "CAMS_MONTHLY"
     - name: "CAMS_MONTHLY_ind"
-      file: "/gpfs/f6/bil-fire3/world-shared/Emissions/nexus/CAMS-TEMPO/v3.1-2021/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
+      file: "data/CAMS-GLOB-TEMPO_Glb_0.1x0.1_tmp_weights_v3.1_monthly.nc"
       yearFirst: 2021
       yearLast: 2021
       yearAlign: 2021
       taxmode: "cycle"
-      cadence: "monthly"
       tintalgo: "linear"
       mapalgo: "bilinear"
       data_model: "classic"

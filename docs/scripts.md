@@ -2,24 +2,28 @@
 
 CECE provides several Python scripts to facilitate data management, configuration migration, and visualization of the emission stacking process.
 
-## Data Management
+## Example Data Management
 
-### `download_hemco_data.py`
-Downloads required emission inventories from the public GEOS-Chem S3 bucket.
+Example data download and execution live under `examples/` (see
+`examples/README.md` for details). Both entrypoints are stdlib-only Python
+and share `--example <id[,id...]>` / `--all` / `--dst-dir <path>` arguments;
+the example → data mapping lives in `examples/common.py`.
+
+### `examples/download-example-data.py`
+Downloads the input data for one or more examples from public S3 buckets
+into `data/` (cached; non-empty existing files are skipped).
 ```bash
-python scripts/download_hemco_data.py --config cece_config.yaml --dest data/
+python3 examples/download-example-data.py --example ex1,ex7
+python3 examples/download-example-data.py --all
 ```
 
-### `verify_hemco_data.py`
-Validates the integrity of downloaded NetCDF files and ensures all required variables are present.
+### `examples/run-example.py`
+Downloads (cache-aware) and runs one or more examples by executing the
+driver binary directly — no docker required, so it also works on HPC
+platforms (`CECE_EXAMPLES_DRIVER_PATH` overrides the default
+`build/cece_standalone_driver` location).
 ```bash
-python scripts/verify_hemco_data.py --config cece_config.yaml --data-dir data/
-```
-
-### `setup_hemco_examples.sh`
-Automates the creation of example CECE configuration files and generates download scripts for the associated data.
-```bash
-./scripts/setup_hemco_examples.sh
+python3 examples/run-example.py --example ex3
 ```
 
 ---

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,27 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--no-build", action="store_true", help="skip the build phase")
     parser.add_argument("--no-test", action="store_true", help="skip the test phase")
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help=(
+            "build only this CMake target (repeatable, e.g. "
+            "--target cece_standalone_driver skips the whole test stack); "
+            "default: the 'all' target"
+        ),
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=os.cpu_count(),
+        metavar="N",
+        help=(
+            "parallel build jobs; bounded by default — an unbounded -j "
+            "thrashes memory on small machines (default: %(default)s)"
+        ),
+    )
     parser.add_argument(
         "--test-filter",
         default=None,
@@ -76,13 +98,24 @@ def clean() -> None:
             shutil.rmtree(target)
 
 
-def build(image: str, mount: str) -> None:
-    logger.info("build phase: image=%s mount=%s", image, mount)
+def build(image: str, mount: str, targets: list[str] | None, jobs: int | None) -> None:
+    logger.info(
+        "build phase: image=%s mount=%s targets=%s jobs=%s",
+        image,
+        mount,
+        targets or ["<all>"],
+        jobs,
+    )
     configure = (
         f"[ -f {mount}/build/CMakeCache.txt ] || cmake -S {mount} -B {mount}/build"
     )
     # Default "all" target: the driver plus every registered test executable.
-    run_in_container(image, mount, f"{configure} && cmake --build {mount}/build -j")
+    # --target subsets that (e.g. cece_standalone_driver alone never compiles
+    # the googletest/rapidcheck test stack).
+    build_command = f"cmake --build {mount}/build -j {jobs}"
+    for target in targets or []:
+        build_command += f" --target {target}"
+    run_in_container(image, mount, f"{configure} && {build_command}")
 
 
 def test(image: str, mount: str, test_filter: str | None) -> None:
@@ -98,7 +131,7 @@ def main() -> int:
     if args.clean:
         clean()
     if not args.no_build:
-        build(args.image, args.mount)
+        build(args.image, args.mount, args.target, args.jobs)
     if not args.no_test:
         test(args.image, args.mount, args.test_filter)
     logger.info("done")

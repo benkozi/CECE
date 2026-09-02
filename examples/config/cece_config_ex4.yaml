@@ -26,22 +26,10 @@ species:
     - field: "HTAP_NO"
       operation: "add"
 
-physics_schemes:
-  - name: "GFED"
-    language: "cpp"
-    options:
-      version: "GFED4"
-  - name: "DayCycleAndSeasonVariation"
-    options:
-      amplitude_diurnal: 0.5
-      phase_diurnal_hours: 14.0
-      amplitude_seasonal: 0.3
-      phase_seasonal_days: 180.0
-
 cece_data:
   streams:
     - name: "HTAP_NO"
-      file: "/work/data/HTAPv3_NO_0.1x0.1_2018.nc"
+      file: "data/HTAPv3_NO_0.1x0.1_2018.nc"
       yearFirst: 2018
       yearLast: 2018
       yearAlign: 2020
