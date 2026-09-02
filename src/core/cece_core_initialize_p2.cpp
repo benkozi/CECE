@@ -15,9 +15,9 @@
  * - All export fields have been created by Fortran cap
  * - Field data pointers are passed from Fortran
  *
- * @note This is a C++ bridge function called from the Fortran NUOPC cap.
- * @note NO ESMF C API calls - all field management is in Fortran.
- * @note Receives field data pointers and grid dimensions from Fortran.
+ * @note This is a C++ bridge function called from the driver.
+ * @note No framework-specific API calls - all field management is in the driver.
+ * @note Receives field data pointers and grid dimensions from the driver.
  *
  * Requirements: 4.7-4.10, 4.18, 4.19
  */
@@ -36,7 +36,7 @@ extern "C" {
  * @brief Initialize Phase 2 (IPDv00p2) implementation for CECE.
  *
  * This function performs field binding and data stream initialization.
- * All field creation and ESMF state management is handled by the Fortran cap.
+ * All field creation and state management is handled by the driver.
  *
  * Operations Performed:
  * 1. Validate that Phase 1 completed (internal_data exists)
@@ -51,7 +51,7 @@ extern "C" {
  * @param nz Grid dimension (z)
  * @param rc Return code (0 = success, non-zero = error)
  *
- * @note Grid dimensions are passed from Fortran (extracted from ESMF fields).
+ * @note Grid dimensions are passed from the driver.
  * @note The default mask is allocated as a Kokkos::View filled with 1.0.
  * @note Field data pointers are stored in internal_data by Fortran cap.
  *
@@ -151,7 +151,7 @@ void cece_core_initialize_p2(void* data_ptr, int* nx, int* ny, int* nz, int* rc)
     // 5. Cache field metadata for efficient runtime queries
     std::cout << "INFO: Caching field metadata" << std::endl;
 
-    // Cache import field names (external names from ESMF)
+    // Cache import field names (external names from the host model)
     for (const auto& [internal_name, external_name] : internal_data->config.met_mapping) {
         internal_data->external_esmf_fields.push_back(external_name);
         internal_data->esmf_fields.push_back(internal_name);

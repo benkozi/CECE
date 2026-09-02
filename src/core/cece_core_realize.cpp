@@ -1,16 +1,16 @@
 /**
  * @file cece_core_realize.cpp
- * @brief Implementation of the NUOPC Realize Phase for CECE.
+ * @brief Implementation of the Realize Phase for CECE.
  *
- * The Realize Phase is the second NUOPC phase where components create and
+ * The Realize Phase is the second initialization phase where components create and
  * allocate their export fields. This implementation focuses on CECE-specific
- * initialization that doesn't depend on ESMF field management.
+ * initialization that doesn't depend on external field management.
  *
- * ESMF field creation is handled by the C++ cap using the ESMF C API,
- * keeping the CECE core clean and independent of framework details.
+ * Field creation is handled by the driver cap, keeping the CECE core clean
+ * and independent of framework details.
  *
- * @note This is a C++ bridge function called from the Fortran NUOPC cap.
- * @note The cap handles all ESMF field creation and state management.
+ * @note This is a C++ bridge function called from the driver.
+ * @note The driver handles all field creation and state management.
  */
 
 #include <iostream>
@@ -29,8 +29,7 @@ extern "C" {
  * the grid being available. It validates configuration and prepares
  * internal data structures for field binding.
  *
- * Note: ESMF field creation is now handled by the Fortran cap using
- * the ESMF Fortran API, which has better integration with NUOPC.
+ * Note: Field creation is handled by the driver cap.
  *
  * Operations Performed:
  * - Validate configuration
@@ -40,8 +39,8 @@ extern "C" {
  * @param data_ptr Pointer to CeceInternalData structure
  * @param rc Return code (0 = success, non-zero = error)
  *
- * @note This function does NOT create ESMF fields
- * @note Field creation is handled by the Fortran cap
+ * @note This function does NOT create external fields
+ * @note Field creation is handled by the driver
  *
  * Requirements: 4.5, 4.6
  */
@@ -95,7 +94,7 @@ void cece_core_realize_impl(void* data_ptr, int* rc) {
         std::cout << "INFO: Expecting " << config.mask_mapping.size() << " mask import fields" << std::endl;
     }
 
-    std::cout << "INFO: CECE Realize Phase complete - ESMF fields managed by Fortran cap" << std::endl;
+    std::cout << "INFO: CECE Realize Phase complete - fields managed by driver" << std::endl;
 
     if (rc != nullptr) {
         *rc = 0;

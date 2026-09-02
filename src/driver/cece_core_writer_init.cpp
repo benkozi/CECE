@@ -16,6 +16,30 @@ class CeceStandaloneWriter;
 }
 extern std::unique_ptr<cece::CeceStandaloneWriter> g_standalone_writer;
 
+namespace {
+
+void EnsureStandaloneWriter(cece::CeceInternalData* internal_data, int mpi_comm_f) {
+    if (!g_standalone_writer) {
+        auto output_config = internal_data->config.output_config;
+        if (output_config.amio_worker_threads == -1) {
+            output_config.amio_worker_threads = internal_data->config.driver_config.amio_worker_threads;
+        }
+        MPI_Comm comm = MPI_COMM_SELF;
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (mpi_initialized) {
+            MPI_Comm temp_comm = MPI_Comm_f2c(static_cast<MPI_Fint>(mpi_comm_f));
+            if (temp_comm != MPI_COMM_NULL) {
+                comm = temp_comm;
+            }
+        }
+        g_standalone_writer = std::make_unique<cece::CeceStandaloneWriter>(output_config, comm);
+        std::atexit([]() { g_standalone_writer.reset(); });
+    }
+}
+
+}  // namespace
+
 extern "C" {
 
 /**
@@ -32,8 +56,8 @@ extern "C" {
  * @param mpi_comm_f Fortran MPI communicator handle.
  * @param rc Return code (0 on success).
  */
-void cece_core_writer_initialize_with_coords(void* data_ptr, int nx, int ny, int nz, const double* lon_coords, const double* lat_coords,
-                                             const char* start_time_iso8601, int start_time_len, int mpi_comm_f, int* rc) {
+void cece_core_writer_initialize_with_coords(void* data_ptr, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
+                                             int lat_len, const char* start_time_iso8601, int start_time_len, int mpi_comm_f, int* rc) {
     *rc = 0;
 
     if (data_ptr == nullptr) {
@@ -56,39 +80,23 @@ void cece_core_writer_initialize_with_coords(void* data_ptr, int nx, int ny, int
 
     try {
         auto* internal_data = static_cast<cece::CeceInternalData*>(data_ptr);
-
-        if (!g_standalone_writer) {
-            auto output_config = internal_data->config.output_config;
-            if (output_config.amio_worker_threads == -1) {
-                output_config.amio_worker_threads = internal_data->config.driver_config.amio_worker_threads;
-            }
-            MPI_Comm comm = MPI_COMM_SELF;
-            int mpi_initialized = 0;
-            MPI_Initialized(&mpi_initialized);
-            if (mpi_initialized) {
-                MPI_Comm temp_comm = MPI_Comm_f2c(static_cast<MPI_Fint>(mpi_comm_f));
-                if (temp_comm != MPI_COMM_NULL) {
-                    comm = temp_comm;
-                }
-            }
-            g_standalone_writer = std::make_unique<cece::CeceStandaloneWriter>(output_config, comm);
-            std::atexit([]() { g_standalone_writer.reset(); });
-        }
+        EnsureStandaloneWriter(internal_data, mpi_comm_f);
 
         // Convert C string to std::string
         std::string start_time(start_time_iso8601, start_time_len);
 
         // Convert C arrays to std::vectors
-        std::vector<double> lon_vec(lon_coords, lon_coords + nx);
-        std::vector<double> lat_vec(lat_coords, lat_coords + ny);
+        std::vector<double> lon_vec(lon_coords, lon_coords + lon_len);
+        std::vector<double> lat_vec(lat_coords, lat_coords + lat_len);
 
         std::cout << "INFO: Initializing standalone writer with coordinates: " << nx << "x" << ny << "x" << nz << " start_time=" << start_time
                   << "\n";
-        std::cout << "INFO: Longitude range: " << lon_vec[0] << " to " << lon_vec[nx - 1] << "\n";
-        std::cout << "INFO: Latitude range: " << lat_vec[0] << " to " << lat_vec[ny - 1] << "\n";
+        std::cout << "INFO: Longitude range: " << lon_vec[0] << " to " << lon_vec[lon_len - 1] << "\n";
+        std::cout << "INFO: Latitude range: " << lat_vec[0] << " to " << lat_vec[lat_len - 1] << "\n";
 
-        // Initialize the writer with coordinates
-        int writer_rc = g_standalone_writer->InitializeWithCoords(start_time, nx, ny, nz, lon_vec, lat_vec);
+        // Initialize the writer with coordinates and gridspec file path
+        int writer_rc =
+            g_standalone_writer->InitializeWithCoords(start_time, nx, ny, nz, lon_vec, lat_vec, internal_data->config.driver_config.gridspec_file);
 
         if (writer_rc != 0) {
             std::cerr << "ERROR: cece_core_writer_initialize_with_coords - writer initialization "
@@ -137,24 +145,7 @@ void cece_core_writer_initialize(void* data_ptr, int nx, int ny, int nz, const c
 
     try {
         auto* internal_data = static_cast<cece::CeceInternalData*>(data_ptr);
-
-        if (!g_standalone_writer) {
-            auto output_config = internal_data->config.output_config;
-            if (output_config.amio_worker_threads == -1) {
-                output_config.amio_worker_threads = internal_data->config.driver_config.amio_worker_threads;
-            }
-            MPI_Comm comm = MPI_COMM_SELF;
-            int mpi_initialized = 0;
-            MPI_Initialized(&mpi_initialized);
-            if (mpi_initialized) {
-                MPI_Comm temp_comm = MPI_Comm_f2c(static_cast<MPI_Fint>(mpi_comm_f));
-                if (temp_comm != MPI_COMM_NULL) {
-                    comm = temp_comm;
-                }
-            }
-            g_standalone_writer = std::make_unique<cece::CeceStandaloneWriter>(output_config, comm);
-            std::atexit([]() { g_standalone_writer.reset(); });
-        }
+        EnsureStandaloneWriter(internal_data, mpi_comm_f);
 
         // Convert C string to std::string
         std::string start_time(start_time_iso8601, start_time_len);

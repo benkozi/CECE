@@ -12,11 +12,10 @@
  *
  * This phase does NOT:
  * - Initialize TIDE (happens in Phase 2)
- * - Bind to ESMF fields (happens in Phase 2)
+ * - Bind to external fields (happens in Phase 2)
  * - Access import/export states (happens in Phase 2)
  *
- * @note This is a C++ bridge function called from the Fortran NUOPC cap.
- * @note Uses ESMF C API for state management.
+ * @note This is a C++ bridge function called from the driver.
  * @note The CeceInternalData pointer is returned and must be passed to Phase 2.
  *
  * Requirements: 4.7-4.10, 4.18, 4.19

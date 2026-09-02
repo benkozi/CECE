@@ -527,8 +527,8 @@ void cece_core_get_ingestor_streams_path(void* data_ptr, char* streams_path, int
  * streams are configured.  Delegates to CeceDataIngestor::IngestEmissionsInline
  *
  * @param data_ptr  Pointer to CeceInternalData.
- * @param c_clock   Opaque pointer to ESMF Clock handle.
- * @param c_mesh    Opaque pointer to ESMF Mesh (target mesh).
+ * @param c_clock   Opaque pointer to clock handle.
+ * @param c_mesh    Opaque pointer to mesh (target mesh).
  * @param rc        Return code (0 = success, non-zero = error).
  */
 void cece_ingestor_init(void* data_ptr, void* c_clock, void* c_mesh, int* rc) {
@@ -546,10 +546,10 @@ void cece_ingestor_init(void* data_ptr, void* c_clock, void* c_mesh, int* rc) {
 }
 
 /**
- * @brief Register an ESMF export field data pointer in the internal field map.
+ * @brief Register an export field data pointer in the internal field map.
  *
- * Called from the Fortran cap during CECE_InitializeRealize after
- * ESMF_FieldGet(farrayPtr=fptr) for each species.
+ * Called from the driver cap during realize after obtaining the field array
+ * pointer for each species.
  *
  * @param data_ptr   Pointer to CeceInternalData.
  * @param name       Species name (not null-terminated; use name_len).
@@ -584,7 +584,7 @@ void cece_core_set_export_field(void* data_ptr, const char* name, int name_len, 
     auto* internal_data = static_cast<cece::CeceInternalData*>(data_ptr);
     std::string name_str(name, static_cast<size_t>(name_len));
 
-    // Wrap the ESMF-owned memory as an unmanaged host view (zero-copy)
+    // Wrap the externally-owned memory as an unmanaged host view (zero-copy)
     using UnmanagedHost = Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
     UnmanagedHost h_view(field_data, nx, ny, nz);
 
@@ -597,6 +597,7 @@ void cece_core_set_export_field(void* data_ptr, const char* name, int name_len, 
     dv.sync_device();
 
     internal_data->export_state.fields[name_str] = dv;
+    internal_data->persistent_export_ptrs[name_str] = field_data;
 
     std::cout << "INFO: cece_core_set_export_field - registered field '" << name_str << "' (" << nx << "x" << ny << "x" << nz << ")" << std::endl;
 
@@ -802,10 +803,10 @@ void cece_core_get_stream_field_name(void* data_ptr, int* index, char* name, int
 }
 
 /**
- * @brief Get the number of external ESMF fields required by CECE.
+ * @brief Get the number of external fields required by CECE.
  *
  * @param data_ptr Pointer to CeceInternalData
- * @param count Output: number of external ESMF fields
+ * @param count Output: number of external fields
  * @param rc Return code (0 = success, non-zero = error)
  */
 void cece_core_get_external_field_count(void* data_ptr, int* count, int* rc) {
@@ -838,7 +839,7 @@ void cece_core_get_external_field_count(void* data_ptr, int* count, int* rc) {
 }
 
 /**
- * @brief Get the name of an external ESMF field by index.
+ * @brief Get the name of an external field by index.
  *
  * @param data_ptr Pointer to CeceInternalData
  * @param index Zero-based index of the field

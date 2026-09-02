@@ -104,7 +104,7 @@ void cece_core_finalize(void* data_ptr, int* rc) {
             Kokkos::finalize();
         }
     } else {
-        std::cout << "INFO: Skipping Kokkos finalization (owned by ESMF)\n";
+        std::cout << "INFO: Skipping Kokkos finalization (owned by host framework)\n";
     }
     std::cout << "INFO: CECE Finalize completed successfully\n";
 

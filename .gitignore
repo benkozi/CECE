@@ -24,6 +24,10 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
+# Python venv
+venv*/
+.venv*/
+
 # Temporary files
 *.tmp
 *.temp
@@ -46,3 +50,12 @@ amio_read_manifest_facade_*.yaml
 amio_coord_manifest.yaml
 core.*
 GRA2PESv2.0_config_test1.yaml
+
+# --- AI Files ---
+specify/
+.specify/
+.gemini/
+.github/agents/
+.github/prompts/
+docs/superpowers/
+specs/

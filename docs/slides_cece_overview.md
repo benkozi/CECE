@@ -306,7 +306,7 @@ physics_schemes:
 - Independent timing for each component
 - Fast schemes (biogenics) run every few minutes
 - Slow data streams ingest hourly
-- Reduces unnecessary computatio
+- Reduces unnecessary computation
 
 ### Diagnostics
 - Integrated NetCDF output
