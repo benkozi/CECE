@@ -20,6 +20,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -207,7 +208,15 @@ CeceConfig ParseConfig(const std::string& filename) {
                 scheme.language = scheme_node["language"].as<std::string>();
             }
             if (scheme_node["options"]) {
-                scheme.options = scheme_node["options"];
+                scheme.options = YAML::Clone(scheme_node["options"]);
+            }
+            // Shipped examples and documentation place these entries at the
+            // scheme level, while BasePhysicsScheme reads them from the node
+            // passed to Initialize(). Support both layouts.
+            for (const char* key : {"input_mapping", "output_mapping", "diagnostics"}) {
+                if (scheme_node[key] && !scheme.options[key]) {
+                    scheme.options[key] = YAML::Clone(scheme_node[key]);
+                }
             }
             if (scheme_node["refresh_interval_seconds"]) {
                 scheme.refresh_interval_seconds = scheme_node["refresh_interval_seconds"].as<int>();
@@ -424,8 +433,7 @@ CeceConfig ParseConfig(const std::string& filename) {
         if (out_node["amio_worker_threads"]) {
             int threads = out_node["amio_worker_threads"].as<int>();
             if (threads < 1) {
-                std::cerr << "WARNING: Invalid output amio_worker_threads: " << threads << ". Must be >= 1. Defaulting to 1.\n";
-                threads = 1;
+                throw std::invalid_argument("output.amio_worker_threads must be >= 1; got " + std::to_string(threads) + ".");
             }
             config.output_config.amio_worker_threads = threads;
         }
@@ -495,10 +503,16 @@ CeceConfig ParseConfig(const std::string& filename) {
         if (driver_node["amio_worker_threads"]) {
             int threads = driver_node["amio_worker_threads"].as<int>();
             if (threads < 1) {
-                std::cerr << "WARNING: Invalid amio_worker_threads: " << threads << ". Must be >= 1. Defaulting to 1.\n";
-                threads = 1;
+                throw std::invalid_argument("driver.amio_worker_threads must be >= 1; got " + std::to_string(threads) + ".");
             }
             config.driver_config.amio_worker_threads = threads;
+        }
+        if (driver_node["amio_staging_buffer_count"]) {
+            int count = driver_node["amio_staging_buffer_count"].as<int>();
+            if (count < 1) {
+                throw std::invalid_argument("driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(count) + ".");
+            }
+            config.driver_config.amio_staging_buffer_count = count;
         }
     }
 
