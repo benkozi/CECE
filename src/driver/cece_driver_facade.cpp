@@ -1,19 +1,21 @@
 #include "cece/cece_driver_facade.hpp"
 
 #include <amio/amio.h>
-#include <yaml-cpp/yaml.h>
 
 #include <Kokkos_Core.hpp>
 #include <algorithm>
 #include <axis/axis.hpp>
+#include <cctype>
+#include <conf/conf.hpp>
 #include <dagr/logging.hpp>
 #include <filesystem>
 #include <fstream>
-#include <stdexcept>
+#include <iostream>
 #include <string>
 #include <tick/tick.hpp>
 #include <vector>
 
+#include "cece/cece_fatal.hpp"
 #include "cece/cece_helm_graph.hpp"
 #include "cece/cece_internal.hpp"
 #include "cece/cece_logger.hpp"
@@ -161,59 +163,6 @@ RecordBracket cadence_record_bracket(const std::string& cadence, const std::stri
     return br;
 }
 
-bool collective_all_ready(MPI_Comm comm, bool local_ready, const std::string& context, std::string& failure_detail) {
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    if (!mpi_initialized || comm == MPI_COMM_NULL) {
-        if (!local_ready && failure_detail.empty()) failure_detail = context;
-        return local_ready;
-    }
-
-    int mpi_size = 1;
-    MPI_Comm_size(comm, &mpi_size);
-    if (mpi_size <= 1) {
-        if (!local_ready && failure_detail.empty()) failure_detail = context;
-        return local_ready;
-    }
-
-    const int local_value = local_ready ? 1 : 0;
-    int global_value = 0;
-    const int rc = MPI_Allreduce(&local_value, &global_value, 1, MPI_INT, MPI_MIN, comm);
-    if (rc != MPI_SUCCESS) {
-        failure_detail = "MPI_Allreduce failed while synchronizing " + context + " (error code " + std::to_string(rc) + ")";
-        return false;
-    }
-    if (global_value != 1) {
-        if (failure_detail.empty()) failure_detail = context + " failed on one or more ranks";
-        return false;
-    }
-    return true;
-}
-
-bool collective_int_matches(MPI_Comm comm, int local_value, const std::string& name, std::string& failure_detail) {
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    if (!mpi_initialized || comm == MPI_COMM_NULL) return true;
-
-    int mpi_size = 1;
-    MPI_Comm_size(comm, &mpi_size);
-    if (mpi_size <= 1) return true;
-
-    int minimum = 0;
-    int maximum = 0;
-    const int min_rc = MPI_Allreduce(&local_value, &minimum, 1, MPI_INT, MPI_MIN, comm);
-    const int max_rc = MPI_Allreduce(&local_value, &maximum, 1, MPI_INT, MPI_MAX, comm);
-    if (min_rc != MPI_SUCCESS || max_rc != MPI_SUCCESS) {
-        failure_detail = "MPI_Allreduce failed while comparing " + name + " across ranks";
-        return false;
-    }
-    if (minimum != maximum) {
-        failure_detail = name + " differs across ranks (minimum " + std::to_string(minimum) + ", maximum " + std::to_string(maximum) + ")";
-        return false;
-    }
-    return true;
-}
-
 }  // namespace
 
 CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len,
@@ -225,25 +174,81 @@ CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, i
       target_lons_(lon_coords, lon_coords + lon_len),
       target_lats_(lat_coords, lat_coords + lat_len),
       comm_c_(comm_c) {
+    // Configure the CECE logger with this driver's communicator so rank
+    // filtering is correct when running under a non-COMM_WORLD split.
+    {
+        int mpi_init = 0;
+        MPI_Initialized(&mpi_init);
+        if (mpi_init && comm_c_ != MPI_COMM_NULL) {
+            cece::CeceLogger::GetInstance().ConfigureCommunicator(comm_c_);
+        }
+    }
+
+    // Parse config once at construction using HELM CONF
     try {
-        YAML::Node config = YAML::LoadFile(config_file_);
-        if (config["driver"] && config["driver"]["gridspec_file"]) {
-            gridspec_file_ = config["driver"]["gridspec_file"].as<std::string>();
+        conf::Config cfg = conf::Config::from_file(config_file_);
+        gridspec_file_ = cfg.get_or<std::string>("driver.gridspec_file", "");
+
+        int amio_threads = cfg.get_or("driver.amio_worker_threads", 1);
+        if (amio_threads < 1) {
+            throw std::invalid_argument("driver.amio_worker_threads must be >= 1; got " + std::to_string(amio_threads) + ".");
         }
-        if (config["driver"] && config["driver"]["amio_worker_threads"]) {
-            const int worker_threads = config["driver"]["amio_worker_threads"].as<int>();
-            if (worker_threads < 1) {
-                throw std::invalid_argument("driver.amio_worker_threads must be >= 1; got " + std::to_string(worker_threads) + ".");
+        int amio_staging_buffer_count = cfg.get_or("driver.amio_staging_buffer_count", 8);
+        if (amio_staging_buffer_count < 1) {
+            throw std::invalid_argument("driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(amio_staging_buffer_count) + ".");
+        }
+
+        // Cache per-variable stream configuration
+        if (cfg.has("cece_data.streams")) {
+            conf::Value streams = cfg.at("cece_data.streams");
+            for (std::size_t si = 0; si < streams.size(); ++si) {
+                conf::Value stream = streams[si];
+                std::string stream_file = stream["file"].string_or("");
+                std::string stream_mapalgo = stream["mapalgo"].string_or("consd");
+                std::string stream_cadence = stream["cadence"].string_or("");
+                std::string stream_tintalgo = stream["tintalgo"].string_or("nearest");
+
+                // Parse data_model
+                std::string data_model = "enhanced";
+                bool data_model_explicit = false;
+                conf::Value dm_val = stream["data_model"];
+                if (dm_val.is_defined()) {
+                    std::string requested_model = dm_val.as_string();
+                    std::transform(requested_model.begin(), requested_model.end(), requested_model.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    if (requested_model == "classic" || requested_model == "enhanced") {
+                        data_model = requested_model;
+                        data_model_explicit = true;
+                    } else if (requested_model != "auto") {
+                        CECE_LOG_WARNING("[DRIVER] Invalid stream data_model='" + requested_model +
+                                         "'; using default auto behavior (enhanced then classic fallback).");
+                    }
+                }
+
+                // Map each variable in this stream to its config
+                conf::Value variables = stream["variables"];
+                for (std::size_t vi = 0; vi < variables.size(); ++vi) {
+                    conf::Value var = variables[vi];
+                    std::string model_name = var["model"].string_or("");
+                    if (model_name.empty()) continue;
+
+                    StreamVarConfig svc;
+                    svc.input_file_path = stream_file;
+                    svc.input_var_name = var["file"].string_or(model_name);
+                    svc.mapalgo = stream_mapalgo;
+                    svc.cadence = stream_cadence;
+                    svc.tintalgo = stream_tintalgo;
+                    svc.data_model = data_model;
+                    svc.data_model_explicit = data_model_explicit;
+                    svc.amio_threads = amio_threads;
+                    svc.amio_staging_buffer_count = amio_staging_buffer_count;
+                    stream_var_configs_[model_name] = svc;
+                }
             }
         }
-        if (config["driver"] && config["driver"]["amio_staging_buffer_count"]) {
-            const int buffer_count = config["driver"]["amio_staging_buffer_count"].as<int>();
-            if (buffer_count < 1) {
-                throw std::invalid_argument("driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(buffer_count) + ".");
-            }
-        }
-    } catch (const YAML::Exception& e) {
-        gridspec_file_ = "";
+    } catch (const conf::Conf_Error& e) {
+        CECE_LOG_ERROR("[DRIVER] Failed to parse config file '" + config_file_ + "': " + e.what());
+        throw;
     }
 
     cece_io_ = std::make_unique<io::CeceIO>();
@@ -279,198 +284,12 @@ CeceDriverOrchestrator::~CeceDriverOrchestrator() {
     cece_io_.reset();
 }
 
-bool CeceDriverOrchestrator::AssembleReplicatedField(const std::string& var_name, const io::RegridPlan& plan, const std::vector<double>& source,
-                                                     int file_nx, int file_ny, int field_nlev, DeviceView3D stream_view, void* cece_core_data_ptr,
-                                                     std::vector<double>& ingest_buffer, std::string& failure_detail) {
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    int mpi_size = 1;
-    int mpi_rank = 0;
-    if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
-        MPI_Comm_size(comm_c_, &mpi_size);
-        MPI_Comm_rank(comm_c_, &mpi_rank);
-    }
-    const bool distributed_regrid = mpi_initialized && mpi_size > 1 && comm_c_ != MPI_COMM_NULL;
-    const int band_base = ny_ / mpi_size;
-    const int band_rem = ny_ % mpi_size;
-    auto band_start = [&](int rank) { return rank * band_base + std::min(rank, band_rem); };
-    const int expected_j0 = band_start(mpi_rank);
-    const int expected_j1 = band_start(mpi_rank + 1);
-
-    // This must be the helper's first distributed gate. Every caller reaches
-    // it before any rank-local return, so a bad source buffer or inconsistent
-    // AMIO metadata cannot leave peer ranks waiting in the layer collectives.
-    const bool positive_dimensions = file_nx > 0 && file_ny > 0 && field_nlev > 0 && nx_ > 0 && ny_ > 0;
-    const size_t source_spatial = positive_dimensions ? static_cast<size_t>(file_nx) * file_ny : 0;
-    const size_t expected_source_size = positive_dimensions ? static_cast<size_t>(field_nlev) * source_spatial : 0;
-    const bool local_source_ready = positive_dimensions && cece_core_data_ptr != nullptr && plan.built && plan.file_nx == file_nx &&
-                                    plan.file_ny == file_ny && plan.j0 == expected_j0 && plan.j1 == expected_j1 &&
-                                    source.size() == expected_source_size && stream_view.extent(0) == static_cast<size_t>(nx_) &&
-                                    stream_view.extent(1) == static_cast<size_t>(ny_) && stream_view.extent(2) == static_cast<size_t>(field_nlev);
-    if (!local_source_ready && failure_detail.empty()) {
-        failure_detail = "source buffer or regrid metadata changed after AMIO validation";
-    }
-    if (!collective_all_ready(comm_c_, local_source_ready, "source and regrid metadata readiness", failure_detail)) return false;
-    if (!collective_int_matches(comm_c_, file_nx, "source longitude count", failure_detail) ||
-        !collective_int_matches(comm_c_, file_ny, "source latitude count", failure_detail) ||
-        !collective_int_matches(comm_c_, field_nlev, "source level count", failure_detail) ||
-        !collective_int_matches(comm_c_, plan.identity ? 1 : 0, "regrid-plan identity mode", failure_detail)) {
-        return false;
-    }
-
-    const size_t target_spatial = static_cast<size_t>(nx_) * ny_;
-
-    std::vector<int> counts;
-    std::vector<int> displs;
-    if (distributed_regrid) {
-        counts.resize(mpi_size);
-        displs.resize(mpi_size);
-        for (int rank = 0; rank < mpi_size; ++rank) {
-            counts[rank] = (band_start(rank + 1) - band_start(rank)) * nx_;
-            displs[rank] = band_start(rank) * nx_;
-        }
-    }
-
-    // Regridding is decomposed into rank-local latitude bands, but CECE's
-    // current downstream contract is replicated: stream_view,
-    // CeceImportState, the ingestor cache, physics, and output all consume
-    // nx_ x ny_ x levels fields on every rank. Assemble each layer globally
-    // before populating those views. Removing this collective requires a
-    // coordinated distributed-state/output redesign rather than a local
-    // driver change.
-    std::vector<double> full_destination(static_cast<size_t>(field_nlev) * target_spatial, 0.0);
-    for (int level = 0; level < field_nlev; ++level) {
-        std::vector<double> local_destination;
-        const double* source_layer = source.data() + static_cast<size_t>(level) * source_spatial;
-        bool local_regrid_succeeded = false;
-        try {
-            local_regrid_succeeded =
-                cece::io::apply_regrid_plan(plan, /*time_offset=*/0, /*is_float=*/false, source_layer, file_nx, file_ny, nx_, local_destination);
-        } catch (const std::exception& error) {
-            failure_detail = "regrid weight application threw an exception: " + std::string(error.what());
-        } catch (...) {
-            failure_detail = "regrid weight application threw an unknown exception";
-        }
-        const size_t expected_local_size = static_cast<size_t>(plan.j1 - plan.j0) * nx_;
-        const bool gather_count_matches = !distributed_regrid || expected_local_size == static_cast<size_t>(counts[mpi_rank]);
-        const bool local_layer_ready = local_regrid_succeeded && local_destination.size() == expected_local_size && gather_count_matches;
-        bool all_ranks_ready = local_layer_ready;
-
-        // All ranks must make the same decision before entering the gather. A
-        // rank-local early exit here would strand peers in MPI_Allgatherv.
-        if (distributed_regrid) {
-            const int local_ready = local_layer_ready ? 1 : 0;
-            int global_ready = 0;
-            const int ready_rc = MPI_Allreduce(&local_ready, &global_ready, 1, MPI_INT, MPI_MIN, comm_c_);
-            if (ready_rc != MPI_SUCCESS) {
-                failure_detail = "MPI_Allreduce failed while validating rank-local regrid bands (error code " + std::to_string(ready_rc) + ")";
-                CECE_LOG_DEBUG("[DRIVER] rank-local regrid or replicated-field assembly failed!");
-                return false;
-            }
-            all_ranks_ready = global_ready == 1;
-        }
-
-        if (!all_ranks_ready) {
-            if (failure_detail.empty()) {
-                failure_detail = "rank-local regrid failed or produced an unexpected destination-band size";
-            }
-            CECE_LOG_DEBUG("[DRIVER] rank-local regrid or replicated-field assembly failed!");
-            return false;
-        }
-
-        double* destination_layer = full_destination.data() + static_cast<size_t>(level) * target_spatial;
-        if (distributed_regrid) {
-            const int gather_rc = MPI_Allgatherv(local_destination.data(), counts[mpi_rank], MPI_DOUBLE, destination_layer, counts.data(),
-                                                 displs.data(), MPI_DOUBLE, comm_c_);
-            const int local_gather_ok = gather_rc == MPI_SUCCESS ? 1 : 0;
-            int global_gather_ok = 0;
-            const int gather_status_rc = MPI_Allreduce(&local_gather_ok, &global_gather_ok, 1, MPI_INT, MPI_MIN, comm_c_);
-            if (gather_status_rc != MPI_SUCCESS || global_gather_ok != 1) {
-                if (gather_status_rc != MPI_SUCCESS) {
-                    failure_detail =
-                        "MPI_Allreduce failed while synchronizing MPI_Allgatherv status (error code " + std::to_string(gather_status_rc) + ")";
-                } else {
-                    failure_detail =
-                        "MPI_Allgatherv failed on one or more ranks while assembling the replicated destination field "
-                        "(local error code " +
-                        std::to_string(gather_rc) + ")";
-                }
-                CECE_LOG_DEBUG("[DRIVER] rank-local regrid or replicated-field assembly failed!");
-                return false;
-            }
-        } else {
-            std::copy(local_destination.begin(), local_destination.end(), destination_layer + static_cast<size_t>(plan.j0) * nx_);
-        }
-    }
-
-    auto stream_host = Kokkos::create_mirror_view(stream_view);
-    for (int level = 0; level < field_nlev; ++level) {
-        for (int j = 0; j < ny_; ++j) {
-            for (int i = 0; i < nx_; ++i) {
-                stream_host(i, j, level) = full_destination[static_cast<size_t>(level) * target_spatial + static_cast<size_t>(j) * nx_ + i];
-            }
-        }
-    }
-    Kokkos::deep_copy(stream_view, stream_host);
-
-    // Also populate the Core import state with the same full field.
-    auto* data = static_cast<cece::CeceInternalData*>(cece_core_data_ptr);
-    auto core_it = data->import_state.fields.find(var_name);
-    if (core_it == data->import_state.fields.end()) {
-        cece::DualView3D field(var_name, nx_, ny_, field_nlev);
-        data->import_state.fields[var_name] = field;
-        core_it = data->import_state.fields.find(var_name);
-    }
-
-    auto& core_field = core_it->second;
-    auto core_view = core_field.view_device();
-    const bool local_core_shape_ready = core_view.extent(0) == static_cast<size_t>(nx_) && core_view.extent(1) == static_cast<size_t>(ny_) &&
-                                        core_view.extent(2) == static_cast<size_t>(field_nlev);
-    if (!local_core_shape_ready) {
-        failure_detail = "core import field shape mismatch for '" + var_name + "': expected " + std::to_string(nx_) + "x" + std::to_string(ny_) +
-                         "x" + std::to_string(field_nlev) + ", found " + std::to_string(core_view.extent(0)) + "x" +
-                         std::to_string(core_view.extent(1)) + "x" + std::to_string(core_view.extent(2));
-    }
-    if (!collective_all_ready(comm_c_, local_core_shape_ready, "core import field shape validation", failure_detail)) return false;
-
-    auto core_host = Kokkos::create_mirror_view(core_view);
-    for (int level = 0; level < field_nlev; ++level) {
-        for (int j = 0; j < ny_; ++j) {
-            for (int i = 0; i < nx_; ++i) {
-                core_host(i, j, level) = full_destination[static_cast<size_t>(level) * target_spatial + static_cast<size_t>(j) * nx_ + i];
-            }
-        }
-    }
-    Kokkos::deep_copy(core_view, core_host);
-    core_field.modify_device();
-    core_field.sync_host();
-    ingest_buffer = std::move(full_destination);
-    return true;
-}
-
 bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* cece_core_data_ptr) {
-    std::string core_readiness_detail;
-    if (!collective_all_ready(comm_c_, cece_core_data_ptr != nullptr, "CECE core-data readiness", core_readiness_detail)) {
-        CECE_LOG_ERROR("[DRIVER FATAL] " + core_readiness_detail);
-        return false;
-    }
+    if (!cece_core_data_ptr) return false;
 
     // A. Advance the pipeline step
     dagr_->advance_step();
     Kokkos::fence();
-
-    // Load full config to parse streams
-    YAML::Node config = YAML::LoadFile(config_file_);
-
-    int mpi_initialized = 0;
-    MPI_Initialized(&mpi_initialized);
-    int mpi_rank = 0;
-    int mpi_size = 1;
-    if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
-        MPI_Comm_rank(comm_c_, &mpi_rank);
-        MPI_Comm_size(comm_c_, &mpi_size);
-    }
-
     // Parse the current simulation datetime once. Streams that declare a
     // temporal cadence (hourly/weekly/monthly) use these calendar fields to
     // select the correct file record; streams without a cadence keep the
@@ -480,102 +299,63 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
     // B. Push CeceIO's newly computed emission views into CECE's data ingestor
     for (const auto& var_name : cece_io_->GetOutputVarNames()) {
         auto stream_view = cece_io_->GetFieldView(var_name);
-        const int field_nlev = static_cast<int>(stream_view.extent(2));
-        // Human-readable reason for the most recent read failure, propagated to
-        // the fatal error message so the underlying AMIO status reaches CECE.
-        std::string failure_detail;
-        if (field_nlev < 1) {
-            CECE_LOG_ERROR("[DRIVER FATAL] Field '" + var_name + "' has no configured levels");
-            failure_detail = "field has no configured levels";
-        }
-        if (!collective_all_ready(comm_c_, field_nlev >= 1, "field-level metadata readiness for '" + var_name + "'", failure_detail)) return false;
-        std::vector<double> ingest_buffer;
-        bool read_success = false;
 
-        // Parse input file path and variable name dynamically from YAML config cece_data block
+        // Use cached stream configuration (parsed once at construction)
         std::string input_file_path = "";
         std::string input_var_name = "";
-        std::string mapalgo = "consd";               // default fallback
-        std::string stream_data_model = "enhanced";  // default AMIO data model
-        std::string cadence;                         // temporal cadence: hourly|weekly|monthly ("" -> legacy cycling)
-        std::string tintalgo = "nearest";            // time-interp algorithm: linear|nearest
+        std::string mapalgo = "consd";
+        std::string stream_data_model = "enhanced";
+        std::string cadence;
+        std::string tintalgo = "nearest";
         bool stream_data_model_explicit = false;
-        if (config["cece_data"] && config["cece_data"]["streams"]) {
-            for (const auto& stream : config["cece_data"]["streams"]) {
-                bool found_var = false;
-                for (const auto& var : stream["variables"]) {
-                    std::string model_name;
-                    std::string file_name;
-                    if (var.IsScalar()) {
-                        model_name = var.as<std::string>();
-                        file_name = model_name;
-                    } else if (var.IsMap() && var["model"]) {
-                        model_name = var["model"].as<std::string>();
-                        file_name = var["file"] ? var["file"].as<std::string>() : model_name;
-                    }
+        int amio_threads = 1;
+        int amio_staging_buffer_count = 8;
 
-                    if (model_name == var_name) {
-                        if (stream["file"]) {
-                            input_file_path = stream["file"].as<std::string>();
-                        }
-                        input_var_name = file_name;
-                        if (stream["mapalgo"]) {
-                            mapalgo = stream["mapalgo"].as<std::string>();
-                        }
-                        if (stream["cadence"]) {
-                            cadence = stream["cadence"].as<std::string>();
-                        }
-                        if (stream["tintalgo"]) {
-                            tintalgo = stream["tintalgo"].as<std::string>();
-                        }
-                        if (stream["data_model"]) {
-                            std::string requested_model = stream["data_model"].as<std::string>();
-                            std::transform(requested_model.begin(), requested_model.end(), requested_model.begin(),
-                                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-                            if (requested_model == "classic" || requested_model == "enhanced") {
-                                stream_data_model = requested_model;
-                                stream_data_model_explicit = true;
-                            } else if (requested_model == "auto") {
-                                stream_data_model = "enhanced";
-                                stream_data_model_explicit = false;
-                            } else {
-                                CECE_LOG_WARNING("[DRIVER] Invalid stream data_model='" + requested_model + "' for stream variable '" + var_name +
-                                                 "'; using default auto behavior (enhanced then classic fallback).");
-                            }
-                        }
-                        found_var = true;
-                        break;
-                    }
-                }
-                if (found_var) break;
-            }
+        auto cfg_it = stream_var_configs_.find(var_name);
+        if (cfg_it != stream_var_configs_.end()) {
+            const StreamVarConfig& svc = cfg_it->second;
+            input_file_path = svc.input_file_path;
+            input_var_name = svc.input_var_name;
+            mapalgo = svc.mapalgo;
+            cadence = svc.cadence;
+            tintalgo = svc.tintalgo;
+            stream_data_model = svc.data_model;
+            stream_data_model_explicit = svc.data_model_explicit;
+            amio_threads = svc.amio_threads;
+            amio_staging_buffer_count = svc.amio_staging_buffer_count;
         }
 
         if (input_file_path.empty()) {
-            CECE_LOG_ERROR("[DRIVER FATAL] Input file path not specified for stream variable '" + var_name + "' in configuration!");
-            failure_detail = "input file path is not configured";
+            LogFatal("[DRIVER FATAL] Input file path not specified for stream variable '" + var_name + "' in configuration!");
+            return false;
         }
         if (input_var_name.empty()) {
             input_var_name = var_name;
         }
-        if (!collective_all_ready(comm_c_, !input_file_path.empty(), "stream configuration readiness for '" + var_name + "'", failure_detail)) {
-            return false;
-        }
 
         // Verify if the input file path exists and is accessible from this compute/login node
         std::error_code fs_ec;
-        const bool local_file_ready = fs::exists(input_file_path, fs_ec);
-        if (!local_file_ready) {
-            CECE_LOG_ERROR("[DRIVER FATAL] File '" + input_file_path +
-                           "' does not exist or is unreadable on this node! (System error: " + fs_ec.message() + ")");
-            failure_detail = "input file does not exist or is unreadable: " + fs_ec.message();
+        if (!fs::exists(input_file_path, fs_ec)) {
+            LogFatal("[DRIVER FATAL] File '" + input_file_path + "' does not exist or is unreadable on this node! (System error: " + fs_ec.message() +
+                     ")");
         } else {
             CECE_LOG_DEBUG("[DRIVER] Input file '" + input_file_path + "' successfully verified on local filesystem.");
         }
-        if (!collective_all_ready(comm_c_, local_file_ready, "input-file readiness for '" + var_name + "'", failure_detail)) return false;
+
+        bool read_success = false;
+        // Human-readable reason for the most recent read failure, propagated to
+        // the fatal error message so the underlying AMIO status reaches CECE.
+        std::string failure_detail;
 
         // Dynamically open and read using AMIO API
         std::string read_manifest_path = "amio_read_manifest_facade_" + var_name + ".yaml";
+
+        int rank = 0;
+        int mpi_initialized = 0;
+        MPI_Initialized(&mpi_initialized);
+        if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
+            MPI_Comm_rank(comm_c_, &rank);
+        }
 
         amio_core_handle read_core = nullptr;
         amio_dataset_handle read_dataset = nullptr;
@@ -590,59 +370,38 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
 
         amio_status_t amio_rc = AMIO_ERR_BACKEND_FAILURE;
         std::string active_data_model = data_models_to_try.front();
-
-        int amio_threads = 1;
-        if (config["driver"] && config["driver"]["amio_worker_threads"]) {
-            amio_threads = config["driver"]["amio_worker_threads"].as<int>();
-            if (amio_threads < 1) {
-                failure_detail = "driver.amio_worker_threads must be >= 1; got " + std::to_string(amio_threads) + ".";
-                CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
-            }
-        }
-
-        int amio_staging_buffer_count = 8;
-        if (config["driver"] && config["driver"]["amio_staging_buffer_count"]) {
-            amio_staging_buffer_count = config["driver"]["amio_staging_buffer_count"].as<int>();
-            if (amio_staging_buffer_count < 1) {
-                failure_detail = "driver.amio_staging_buffer_count must be >= 1; got " + std::to_string(amio_staging_buffer_count) + ".";
-                CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
-            }
-        }
-        const bool local_amio_config_ready = amio_threads >= 1 && amio_staging_buffer_count >= 1;
-        if (!collective_all_ready(comm_c_, local_amio_config_ready, "AMIO driver configuration", failure_detail)) return false;
-
-        bool amio_open_ready = false;
         for (const auto& candidate_model : data_models_to_try) {
             active_data_model = candidate_model;
 
-            bool local_manifest_ready = true;
-            if (mpi_rank == 0) {
+            if (rank == 0) {
                 // Write input manifest YAML (Rank 0 only to prevent parallel write conflicts)
                 std::ofstream m_file(read_manifest_path);
                 if (!m_file) {
-                    CECE_LOG_ERROR("[DRIVER FATAL] Failed to create AMIO manifest YAML file '" + read_manifest_path + "'");
-                    failure_detail = "failed to create AMIO manifest YAML file '" + read_manifest_path + "'";
-                    local_manifest_ready = false;
-                } else {
-                    m_file << "backend: netcdf4\n"
-                           << "path: " << input_file_path << "\n"
-                           << "data_model: " << candidate_model << "\n"
-                           << "staging_pool:\n"
-                           << "  buffer_count: " << amio_staging_buffer_count << "\n"
-                           << "  buffer_capacity_bytes: 268435456\n"
-                           << "worker_pool:\n"
-                           << "  threads: " << amio_threads << "\n"
-                           << "prefetch:\n"
-                           << "  depth: 2\n"
-                           << "  read_timeout_s: 120\n"
-                           << "staging_timeout_ms: 30000\n";
-                    m_file.close();
+                    LogFatal("[DRIVER FATAL] Failed to create AMIO manifest YAML file '" + read_manifest_path + "'");
+                    return false;
                 }
+                m_file << "backend: netcdf4\n"
+                       << "path: " << input_file_path << "\n"
+                       << "data_model: " << candidate_model << "\n"
+                       << "staging_pool:\n"
+                       << "  buffer_count: " << amio_staging_buffer_count << "\n"
+                       << "  buffer_capacity_bytes: 268435456\n"
+                       << "worker_pool:\n"
+                       << "  threads: " << amio_threads << "\n"
+                       << "prefetch:\n"
+                       << "  depth: 2\n"
+                       << "  read_timeout_s: 120\n"
+                       << "staging_timeout_ms: 30000\n";
+                m_file.close();
             }
 
-            // The collective also ensures rank 0 has finished the manifest
-            // before any peer tries to load it.
-            if (!collective_all_ready(comm_c_, local_manifest_ready, "AMIO manifest creation", failure_detail)) break;
+            // Wait for Rank 0 to finish writing the manifest before other ranks load it.
+            if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
+                int barrier_rc = MPI_Barrier(comm_c_);
+                if (barrier_rc != MPI_SUCCESS) {
+                    CECE_LOG_WARNING("[DRIVER] MPI_Barrier failed with error code " + std::to_string(barrier_rc));
+                }
+            }
 
             // Force serial I/O fallback for reading offline datasets to prevent MPI multithreading deadlocks.
             if (mpi_initialized) {
@@ -666,10 +425,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                 amio_set_parent_communicator(MPI_Comm_c2f(comm_c_));
             }
 
-            const bool local_open_ready = amio_rc == AMIO_OK && read_core != nullptr && read_dataset != nullptr;
-            if (collective_all_ready(comm_c_, local_open_ready, "AMIO dataset open using data_model='" + candidate_model + "'", failure_detail)) {
-                amio_open_ready = true;
-                failure_detail.clear();
+            if (amio_rc == AMIO_OK) {
                 break;
             }
 
@@ -686,7 +442,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             }
         }
 
-        if (!amio_open_ready) {
+        if (amio_rc != AMIO_OK) {
             CECE_LOG_DEBUG("[DRIVER] amio_open_dataset failed for " + input_file_path + " with rc = " + std::to_string(amio_rc) + " (" +
                            amio_strerror(amio_rc) + ") after trying data_model='" + active_data_model + "'");
         } else {
@@ -696,6 +452,12 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
 
             // Determine this rank's contiguous destination latitude band [j0, j1)
             // via a simple block decomposition of the ny_ destination rows.
+            int mpi_size = 1;
+            int mpi_rank = 0;
+            if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
+                MPI_Comm_size(comm_c_, &mpi_size);
+                MPI_Comm_rank(comm_c_, &mpi_rank);
+            }
             const int band_base = ny_ / mpi_size;
             const int band_rem = ny_ % mpi_size;
             auto band_start = [&](int r) { return r * band_base + std::min(r, band_rem); };
@@ -732,61 +494,20 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                 }
                 file_nt_cache_[var_name] = file_nt;
             }
-            bool file_records_ready =
-                collective_all_ready(comm_c_, file_nt > 0, "AMIO record-count readiness for '" + var_name + "'", failure_detail);
-            if (file_records_ready) {
-                file_records_ready = collective_int_matches(comm_c_, file_nt, "AMIO record count for '" + var_name + "'", failure_detail);
-            }
 
             // 2. Build (or reuse cached) interpolation weights for this rank's band.
             //    Weights depend only on the grids, so they are generated once and
             //    reused for every timestep.
             auto plan_it = regrid_plans_.find(var_name);
-            if (file_records_ready && (plan_it == regrid_plans_.end() || !plan_it->second.built)) {
+            if (plan_it == regrid_plans_.end() || !plan_it->second.built) {
                 cece::io::RegridPlan plan;
-                // An explicit passthrough is safe without reopening coordinate
-                // variables only when the stream and gridspec resolve to the
-                // exact same file.  main.cpp has already loaded and validated
-                // the target coordinates from that file; read_slab below still
-                // verifies every field's horizontal size before copying.
-                std::error_code equivalent_ec;
-                const bool exact_source_target_file = mapalgo == "passthrough" && !gridspec_file_.empty() &&
-                                                      fs::equivalent(fs::path(input_file_path), fs::path(gridspec_file_), equivalent_ec) &&
-                                                      !equivalent_ec;
-
-                if (exact_source_target_file) {
-                    plan.j0 = j0;
-                    plan.j1 = j1;
-                    plan.file_nx = nx_;
-                    plan.file_ny = ny_;
-                    plan.identity = true;
-                    plan.built = true;
-                    CECE_LOG_INFO("[DRIVER] passthrough verified stream file equals explicit gridspec file for '" + var_name +
-                                  "'; using exact cell copy");
-                    plan_it = regrid_plans_.emplace(var_name, std::move(plan)).first;
+                if (!cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, gridspec_file_, plan)) {
+                    CECE_LOG_DEBUG("[DRIVER] build_regrid_plan failed for '" + var_name + "'");
+                    failure_detail = "regrid plan construction failed (could not read source grid coordinates)";
                 } else {
-                    bool local_plan_built = false;
-                    try {
-                        local_plan_built =
-                            cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, gridspec_file_, plan);
-                    } catch (const std::exception& error) {
-                        failure_detail = "regrid plan construction threw an exception: " + std::string(error.what());
-                    } catch (...) {
-                        failure_detail = "regrid plan construction threw an unknown exception";
-                    }
-                    if (!local_plan_built) {
-                        CECE_LOG_DEBUG("[DRIVER] build_regrid_plan failed for '" + var_name + "'");
-                        if (failure_detail.empty()) {
-                            failure_detail = "regrid plan construction failed (could not read source grid coordinates)";
-                        }
-                    } else {
-                        plan_it = regrid_plans_.emplace(var_name, std::move(plan)).first;
-                    }
+                    plan_it = regrid_plans_.emplace(var_name, std::move(plan)).first;
                 }
             }
-            const bool local_plan_ready = file_records_ready && plan_it != regrid_plans_.end() && plan_it->second.built;
-            const bool all_plans_ready =
-                collective_all_ready(comm_c_, local_plan_ready, "regrid-plan readiness for '" + var_name + "'", failure_detail);
 
             // 3. Read the bracketing record(s) for this timestep, blend in time on
             //    the SOURCE grid, then regrid ONCE. Because regridding is a linear
@@ -799,7 +520,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
             //      - hourly / weekly      -> nearest discrete profile record
             //      - monthly + tintalgo=linear -> mid-month linear interpolation
             //        between the two bracketing climatological records.
-            if (all_plans_ready) {
+            if (plan_it != regrid_plans_.end() && plan_it->second.built) {
                 const cece::io::RegridPlan& plan = plan_it->second;
 
                 RecordBracket bracket = cadence_record_bracket(cadence, tintalgo, sim_dt, file_nt);
@@ -808,10 +529,6 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     bracket.i0 = bracket.i1 = t_idx;
                     bracket.weight = 0.0;
                 }
-                const bool needs_upper_record = bracket.i1 != bracket.i0 && bracket.weight > 0.0;
-                const bool bracket_ready = collective_int_matches(comm_c_, bracket.i0, "lower AMIO record index", failure_detail) &&
-                                           collective_int_matches(comm_c_, bracket.i1, "upper AMIO record index", failure_detail) &&
-                                           collective_int_matches(comm_c_, needs_upper_record ? 1 : 0, "AMIO interpolation mode", failure_detail);
 
                 // Diagnostic: report which time slice(s) are being read from the file.
                 if (bracket.i0 == bracket.i1 || bracket.weight == 0.0) {
@@ -825,10 +542,14 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                                   "' for field '" + var_name + "' (cadence=" + cadence + ", tintalgo=" + tintalgo + ", time=" + time_iso8601 + ")");
                 }
 
-                // Read one time record into a double buffer on the source grid.
-                // AMIO removes the CF time dimension, but any remaining dimensions
-                // before [lat, lon] are preserved as per-variable levels.
-                auto read_slab = [&](int t_idx, std::vector<double>& out, int& slab_nx, int& slab_ny) -> bool {
+                int file_nx = 0;
+                int file_ny = 0;
+
+                // Read a single record into a double buffer on the source grid. The
+                // AMIO netCDF backend detects the CF time dimension and returns a
+                // single [lat, lon] slab, so each read stays at ny*nx elements even
+                // for long, high-resolution sub-daily datasets (e.g. CAMS-TEMPO).
+                auto read_slab = [&](int t_idx, std::vector<double>& out) -> bool {
                     amio_view_handle slab_view = nullptr;
                     amio_status_t rc = amio_read(read_dataset, input_var_name.c_str(), t_idx, nullptr, &slab_view);
                     if (rc != AMIO_OK) {
@@ -854,96 +575,110 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                         amio_release_view(slab_view);
                         return false;
                     }
-                    if (read_shape.rank < 2) {
-                        failure_detail = "AMIO field rank is less than two for '" + input_var_name + "'";
-                        amio_release_view(slab_view);
-                        return false;
-                    }
                     const int fny = static_cast<int>(read_shape.extents[read_shape.rank - 2]);
                     const int fnx = static_cast<int>(read_shape.extents[read_shape.rank - 1]);
                     size_t total_elements = 1;
                     for (int d = 0; d < read_shape.rank; ++d) {
                         total_elements *= read_shape.extents[d];
                     }
+                    const bool is_float = (view_size == total_elements * 4);
                     const size_t spatial = static_cast<size_t>(fny) * fnx;
-                    const size_t record_elements = static_cast<size_t>(field_nlev) * spatial;
-                    if (spatial == 0 || record_elements == 0 || total_elements % record_elements != 0) {
-                        failure_detail =
-                            "AMIO field shape is incompatible with configured levels=" + std::to_string(field_nlev) + " for '" + input_var_name + "'";
-                        amio_release_view(slab_view);
-                        return false;
-                    }
-                    const size_t records_in_view = total_elements / record_elements;
-                    const size_t record_index = records_in_view > 1 ? static_cast<size_t>(t_idx) : 0;
-                    if (record_index >= records_in_view) {
-                        failure_detail = "AMIO view does not contain requested record " + std::to_string(t_idx) + " for '" + input_var_name + "'";
-                        amio_release_view(slab_view);
-                        return false;
-                    }
-                    const size_t offset = record_index * record_elements;
-
-                    const bool is_float = (view_size == total_elements * sizeof(float));
-                    const bool is_double = (view_size == total_elements * sizeof(double));
-                    if (!is_float && !is_double) {
-                        failure_detail = "AMIO returned an unsupported element size for '" + input_var_name + "'";
-                        amio_release_view(slab_view);
-                        return false;
-                    }
-
-                    out.resize(record_elements);
+                    // Normally the view holds a single slab (offset 0). Stay robust to
+                    // a backend that returns the whole variable.
+                    const size_t slices_in_view = (spatial > 0) ? (total_elements / spatial) : 1;
+                    const size_t off = (slices_in_view > 1) ? static_cast<size_t>(t_idx) * spatial : 0;
+                    out.resize(spatial);
                     if (is_float) {
-                        const float* p = static_cast<const float*>(view_data) + offset;
-                        for (size_t k = 0; k < record_elements; ++k) out[k] = static_cast<double>(p[k]);
+                        const float* p = static_cast<const float*>(view_data) + off;
+                        for (size_t k = 0; k < spatial; ++k) out[k] = static_cast<double>(p[k]);
                     } else {
-                        const double* p = static_cast<const double*>(view_data) + offset;
-                        for (size_t k = 0; k < record_elements; ++k) out[k] = p[k];
+                        const double* p = static_cast<const double*>(view_data) + off;
+                        for (size_t k = 0; k < spatial; ++k) out[k] = p[k];
                     }
-                    slab_nx = fnx;
-                    slab_ny = fny;
+                    file_nx = fnx;
+                    file_ny = fny;
                     amio_release_view(slab_view);
                     CECE_LOG_DEBUG("[DRIVER] Read slab t=" + std::to_string(t_idx) + " for '" + input_var_name + "': " + std::to_string(fny) + "x" +
-                                   std::to_string(fnx) + "x" + std::to_string(field_nlev) + " (" + std::to_string(record_elements) +
-                                   " elements, records_in_view=" + std::to_string(records_in_view) + ", " + (is_float ? "float32" : "float64") + ")");
+                                   std::to_string(fnx) + " (" + std::to_string(spatial) + " elements, " + (is_float ? "float32" : "float64") + ")");
                     return true;
                 };
 
                 // Read the lower record and, when interpolating, the upper record;
                 // blend on the source grid with the bracket weight.
                 std::vector<double> src;
-                int file_nx = 0;
-                int file_ny = 0;
-                const bool local_lower_ready = bracket_ready && read_slab(bracket.i0, src, file_nx, file_ny);
-                bool have_data = collective_all_ready(comm_c_, local_lower_ready, "lower AMIO slab readiness for '" + var_name + "'", failure_detail);
-                if (have_data && needs_upper_record) {
+                bool have_data = read_slab(bracket.i0, src);
+                if (have_data && bracket.i1 != bracket.i0 && bracket.weight > 0.0) {
                     std::vector<double> src1;
-                    int upper_nx = 0;
-                    int upper_ny = 0;
-                    const bool local_upper_ready =
-                        read_slab(bracket.i1, src1, upper_nx, upper_ny) && src1.size() == src.size() && upper_nx == file_nx && upper_ny == file_ny;
-                    have_data = collective_all_ready(comm_c_, local_upper_ready, "upper AMIO slab readiness for '" + var_name + "'", failure_detail);
-                    if (have_data) {
+                    if (read_slab(bracket.i1, src1) && src1.size() == src.size()) {
                         const double w = bracket.weight;
                         for (size_t k = 0; k < src.size(); ++k) {
                             src[k] = (1.0 - w) * src[k] + w * src1[k];
                         }
+                    } else {
+                        have_data = false;
                     }
                 }
 
                 if (have_data) {
-                    read_success = AssembleReplicatedField(var_name, plan, src, file_nx, file_ny, field_nlev, stream_view, cece_core_data_ptr,
-                                                           ingest_buffer, failure_detail);
+                    std::vector<double> local_dst;
+                    if (cece::io::apply_regrid_plan(plan, /*time_offset=*/0, /*is_float=*/false, src.data(), file_nx, file_ny, nx_, local_dst)) {
+                        // Gather each rank's destination band into the full [nx_*ny_] field.
+                        std::vector<double> full_dst(static_cast<size_t>(nx_) * ny_, 0.0);
+                        if (mpi_initialized && mpi_size > 1 && comm_c_ != MPI_COMM_NULL) {
+                            std::vector<int> counts(mpi_size), displs(mpi_size);
+                            for (int r = 0; r < mpi_size; ++r) {
+                                counts[r] = (band_start(r + 1) - band_start(r)) * nx_;
+                                displs[r] = band_start(r) * nx_;
+                            }
+                            MPI_Allgatherv(local_dst.data(), counts[mpi_rank], MPI_DOUBLE, full_dst.data(), counts.data(), displs.data(), MPI_DOUBLE,
+                                           comm_c_);
+                        } else {
+                            std::copy(local_dst.begin(), local_dst.end(), full_dst.begin() + static_cast<size_t>(j0) * nx_);
+                        }
+
+                        // Populate the CECE field view (i, j, 0) from the full field.
+                        auto h_view = Kokkos::create_mirror_view(stream_view);
+                        for (int j = 0; j < ny_; ++j) {
+                            for (int i = 0; i < nx_; ++i) {
+                                h_view(i, j, 0) = full_dst[static_cast<size_t>(j) * nx_ + i];
+                            }
+                        }
+                        Kokkos::deep_copy(stream_view, h_view);
+
+                        // Also directly populate the C++ Core's import state fields to guarantee
+                        // parallel-safe and synchronized import states across the driver facade and compute core!
+                        auto* d = static_cast<cece::CeceInternalData*>(cece_core_data_ptr);
+                        auto it_core = d->import_state.fields.find(var_name);
+                        if (it_core == d->import_state.fields.end()) {
+                            // Dynamically allocate the import field DualView inside the core
+                            cece::DualView3D dv(var_name, nx_, ny_, nz_);
+                            d->import_state.fields[var_name] = dv;
+                            it_core = d->import_state.fields.find(var_name);
+                        }
+
+                        if (it_core != d->import_state.fields.end()) {
+                            auto& core_field = it_core->second;
+                            auto h_view_core = Kokkos::create_mirror_view(core_field.view_device());
+                            for (int j = 0; j < ny_; ++j) {
+                                for (int i = 0; i < nx_; ++i) {
+                                    h_view_core(i, j, 0) = full_dst[static_cast<size_t>(j) * nx_ + i];
+                                }
+                            }
+                            Kokkos::deep_copy(core_field.view_device(), h_view_core);
+                            core_field.modify_device();
+                            core_field.sync_host();
+                        }
+
+                        read_success = true;
+                    } else {
+                        CECE_LOG_DEBUG("[DRIVER] apply_regrid_plan returned false!");
+                        failure_detail = "regrid weight application failed";
+                    }
                 }
             }
-            read_success = collective_all_ready(comm_c_, read_success, "replicated field assembly for '" + var_name + "'", failure_detail);
-            if (read_dataset) {
-                amio_close(read_dataset);
-                read_dataset = nullptr;
-            }
+            amio_close(read_dataset);
         }
-        if (read_core) {
-            amio_finalize(read_core);
-            read_core = nullptr;
-        }
+        amio_finalize(read_core);
 
         // Wait for all ranks to finalize their AMIO sessions before deleting the manifest file
         if (mpi_initialized && comm_c_ != MPI_COMM_NULL) {
@@ -952,7 +687,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                 CECE_LOG_WARNING("[DRIVER] MPI_Barrier failed with error code " + std::to_string(barrier_rc));
             }
         }
-        if (mpi_rank == 0) {
+        if (rank == 0) {
             std::error_code rm_ec;
             fs::remove(read_manifest_path, rm_ec);
             if (rm_ec) {
@@ -964,40 +699,23 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         if (!read_success) {
             std::string detail =
                 failure_detail.empty() ? ("open/init failed: rc=" + std::to_string(amio_rc) + " (" + amio_strerror(amio_rc) + ")") : failure_detail;
-            CECE_LOG_ERROR("[FATAL ERROR] AMIO read failed for field '" + var_name + "' in file '" + input_file_path + "'. Reason: " + detail +
-                           ". Idealized fallback is disabled!");
+            LogFatal("[FATAL ERROR] AMIO read failed for field '" + var_name + "' in file '" + input_file_path + "'. Reason: " + detail +
+                     ". Idealized fallback is disabled!");
             return false;
         } else {
             CECE_LOG_INFO("[DRIVER] AMIO read succeeded for field '" + var_name + "' - loaded real data from " + input_file_path);
         }
 
-        const size_t expected_ingest_size = static_cast<size_t>(field_nlev) * nx_ * ny_;
-        const bool local_ingest_size_ready = ingest_buffer.size() == expected_ingest_size;
-        if (!local_ingest_size_ready) {
-            failure_detail = "internal ingest buffer size mismatch for field '" + var_name + "'";
-        }
-        if (!collective_all_ready(comm_c_, local_ingest_size_ready, "ingest-buffer readiness for '" + var_name + "'", failure_detail)) {
-            CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
-            return false;
-        }
-
-        // Ingest the host staging buffer into CECE's cache. Do not pass a
-        // DefaultExecutionSpace pointer to the host-copying C bridge.
+        // Ingest raw data pointer of stream view into CECE's ingestor cache
         int bridge_rc = 0;
-        cece_ingestor_set_field(cece_core_data_ptr, var_name.c_str(), static_cast<int>(var_name.length()), ingest_buffer.data(),
-                                field_nlev,  // n_lev
-                                nx_ * ny_,   // n_elem
+        cece_ingestor_set_field(cece_core_data_ptr, var_name.c_str(), static_cast<int>(var_name.length()), stream_view.data(),
+                                nz_,        // n_lev
+                                nx_ * ny_,  // n_elem
                                 &bridge_rc);
-        const bool local_bridge_ready = bridge_rc == 0;
-        if (!local_bridge_ready) {
-            failure_detail = "CECE ingestor rejected field '" + var_name + "' with rc=" + std::to_string(bridge_rc);
-        }
-        if (!collective_all_ready(comm_c_, local_bridge_ready, "CECE ingestor readiness for '" + var_name + "'", failure_detail)) {
-            CECE_LOG_ERROR("[DRIVER FATAL] " + failure_detail);
+        if (bridge_rc != 0) {
+            LogFatal("[DRIVER FATAL] cece_ingestor_set_field failed for variable '" + var_name + "' with rc=" + std::to_string(bridge_rc));
             return false;
         }
-        CECE_LOG_INFO("[DRIVER] Ingested field '" + var_name + "' with shape " + std::to_string(nx_) + "x" + std::to_string(ny_) + "x" +
-                      std::to_string(field_nlev));
     }
 
     step_index_++;
@@ -1025,7 +743,7 @@ void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int
         auto* driver = new cece::CeceDriverOrchestrator(path, nx, ny, nz, lon_coords, lon_len, lat_coords, lat_len, comm_c);
         *driver_ptr_out = static_cast<void*>(driver);
     } catch (const std::exception& e) {
-        CECE_LOG_ERROR(std::string("cece_driver_create: ") + e.what());
+        std::cerr << "ERROR: cece_driver_create: " << e.what() << std::endl;
         if (rc) *rc = -1;
     }
 }
@@ -1038,7 +756,7 @@ void cece_driver_advance_time(void* driver_ptr, const char* time_iso8601, int ti
         bool ok = driver->AdvanceTime(t_iso, cece_core_data_ptr);
         if (!ok && rc) *rc = -1;
     } catch (const std::exception& e) {
-        CECE_LOG_ERROR(std::string("cece_driver_advance_time: ") + e.what());
+        std::cerr << "ERROR: cece_driver_advance_time: " << e.what() << std::endl;
         if (rc) *rc = -1;
     }
 }
