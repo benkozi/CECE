@@ -7,7 +7,6 @@
 
 #include "cece/cece_helm_graph.hpp"
 #include "cece/cece_io.hpp"
-#include "test_mpi_singleton.hpp"
 
 // Forward declare CECE C-Linkage APIs
 extern "C" {
@@ -117,9 +116,6 @@ class KokkosMpiEnvironment : public ::testing::Environment {
 };
 
 int main(int argc, char** argv) {
-    // Force standalone MPI init (no Slurm/PMI); see test_mpi_singleton.hpp.
-    cece::test::force_mpi_singleton();
-
     ::testing::InitGoogleTest(&argc, argv);
     ::testing::AddGlobalTestEnvironment(new KokkosMpiEnvironment(argc, argv));
     return RUN_ALL_TESTS();
