@@ -14,6 +14,19 @@
 
 namespace cece {
 
+/// Per-variable stream configuration cached at construction time.
+/// Eliminates repeated config re-parsing on every timestep.
+struct StreamVarConfig {
+    std::string input_file_path = "";
+    std::string input_var_name = "";
+    std::string mapalgo = "consd";
+    std::string cadence;  // "" means legacy step-index cycling
+    std::string tintalgo = "nearest";
+    std::string data_model = "enhanced";
+    bool data_model_explicit = false;
+    int amio_threads = 1;
+    int amio_staging_buffer_count = 8;
+};
 class CeceDriverOrchestrator {
    public:
     CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
@@ -42,6 +55,8 @@ class CeceDriverOrchestrator {
     int step_index_{0};
     MPI_Comm comm_c_{MPI_COMM_NULL};
 
+    // Cached per-variable stream configuration (parsed once at construction)
+    std::unordered_map<std::string, StreamVarConfig> stream_var_configs_;
     // Cached regridding plans keyed by model variable name. The expensive
     // interpolation weights are built once (per rank-local destination band)
     // and reused for every timestep.

@@ -102,6 +102,9 @@ The physics scheme generator and other scripts require `jinja2`, `pyyaml`, and `
 python3 -m pip install jinja2 pyyaml pytest
 ```
 
+### Pull Requests
+Reviewers and approval requirements are defined in [`.github/CODEOWNERS`](https://github.com/ufs-community/CECE/blob/develop/.github/CODEOWNERS); the header of that file explains the policy.
+
 ## Documentation Resources
 *   **ESMF User Guide:** [https://earthsystemmodeling.org/docs/release/latest/ESMF_usrdoc](https://earthsystemmodeling.org/docs/release/latest/ESMF_usrdoc)
 *   **ESMF Reference Manual:** [https://earthsystemmodeling.org/docs/release/latest/ESMF_refdoc/](https://earthsystemmodeling.org/docs/release/latest/ESMF_refdoc/)
