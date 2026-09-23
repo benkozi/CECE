@@ -411,6 +411,27 @@ if(PIO_ROOT)
 endif()
 
 find_package(MPI REQUIRED)
+
+# Container preflags for mpiexec/mpirun test launches, composed exactly once
+# so every TEST_LAUNCHER and multi-rank add_test sees the same list.
+# --allow-run-as-root exists for the container's root user and
+# --oversubscribe for oversubscribed local/container CPUs — use-case flags,
+# never needed on HPC compute nodes, and Intel MPI's hydra rejects
+# --allow-run-as-root outright. Container entry points pass this ON;
+# HPC/default configures stay clean.
+option(
+  CECE_MPIEXEC_CONTAINER_FLAGS
+  "Append --allow-run-as-root/--oversubscribe to MPIEXEC_PREFLAGS for container/root/oversubscribed local runs (never needed on HPC)"
+  OFF
+)
+if(CECE_MPIEXEC_CONTAINER_FLAGS)
+  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
+    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
+  endif()
+  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
+    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
+  endif()
+endif()
 message(STATUS "Found MPI: ${MPI_CXX_VERSION}")
 cece_register_dep("MPI" "system (${MPI_CXX_COMPILER})")
 
@@ -760,12 +781,6 @@ if(CECE_BUILD_TESTING)
     tools/pmpi_allgatherv_timer.cpp
   )
   target_link_libraries(benchmark_mpi_pipeline PRIVATE cece HELM::HALO MPI::MPI_CXX Kokkos::kokkos)
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
 
   add_executable(test_hemco_parity tests/test_hemco_parity.cpp)
   target_link_libraries(test_hemco_parity PRIVATE cece GTest::gtest_main)
@@ -1054,12 +1069,8 @@ if(CECE_BUILD_TESTING)
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
   # Multi-rank registration under mpirun. MPIEXEC_* come from find_package(MPI)
-  # (called earlier in this file). --allow-run-as-root is required for the root
-  # user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
-  # already present.
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
+  # (called earlier in this file). Container preflags come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_mpi_reuse_decision_np2
     COMMAND
@@ -1094,12 +1105,9 @@ if(CECE_BUILD_TESTING)
     test_endpoint_reuse_decision_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  # Multi-rank registration under mpirun. --allow-run-as-root is required for the
-  # root user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
-  # already present (the guard above may have added it for the reuse-decision test).
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
+  # Multi-rank registration under mpirun. Container preflags
+  # (--allow-run-as-root/--oversubscribe) come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_endpoint_reuse_decision_np2
     COMMAND
@@ -1137,17 +1145,9 @@ if(CECE_BUILD_TESTING)
     test_fused_gate_equivalence_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  # Multi-rank registration under mpirun. --allow-run-as-root is required for the
-  # root user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
-  # already present (earlier guards may have added it).
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
-  # --oversubscribe lets the container (fewer physical slots than 4) launch the
-  # -np 4 case without failing slot allocation, matching the baseline harness.
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
+  # Multi-rank registration under mpirun. Container preflags
+  # (--allow-run-as-root/--oversubscribe) come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_fused_gate_equivalence_np2
     COMMAND
@@ -1192,16 +1192,9 @@ if(CECE_BUILD_TESTING)
     test_collective_count_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  # Multi-rank registration under mpirun. --allow-run-as-root is required for the
-  # root user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
-  # already present (earlier guards may have added it). --oversubscribe lets the
-  # container run -np 2 with limited slots.
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
+  # Multi-rank registration under mpirun. Container preflags
+  # (--allow-run-as-root/--oversubscribe) come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_collective_count_np2
     COMMAND
@@ -1240,16 +1233,9 @@ if(CECE_BUILD_TESTING)
     test_halo_gather_equivalence_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  # Multi-rank registration under mpirun. --allow-run-as-root is required for the
-  # root user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
-  # already present (earlier guards may have added it). --oversubscribe lets the
-  # container run -np 2/4 with limited slots.
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
+  # Multi-rank registration under mpirun. Container preflags
+  # (--allow-run-as-root/--oversubscribe) come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_halo_gather_equivalence_np2
     COMMAND
@@ -1301,16 +1287,9 @@ if(CECE_BUILD_TESTING)
     test_collective_gate_equivalence_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  # Multi-rank registration under mpirun. --allow-run-as-root is required for the
-  # root user in the cece-dev container; it is injected via MPIEXEC_PREFLAGS if not
-  # already present (earlier guards may have added it). --oversubscribe lets the
-  # resource-constrained container run -np 2 with limited slots.
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
+  # Multi-rank registration under mpirun. Container preflags
+  # (--allow-run-as-root/--oversubscribe) come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_collective_gate_equivalence_np2
     COMMAND
@@ -1340,9 +1319,6 @@ if(CECE_BUILD_TESTING)
     test_halo_adoption_units_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  if(NOT "--oversubscribe" IN_LIST MPIEXEC_PREFLAGS)
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
   add_test(
     NAME test_halo_adoption_units_np2
     COMMAND
@@ -1394,16 +1370,9 @@ if(CECE_BUILD_TESTING)
     test_halo_multirank_integration_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
   )
-  # Multi-rank registration under mpirun. --allow-run-as-root is required for the
-  # root user in the cece-dev container; --oversubscribe lets the resource-
-  # constrained container run -np 2/4 with limited slots. Injected only if an
-  # earlier guard has not already added them.
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "allow-run-as-root")
-    list(APPEND MPIEXEC_PREFLAGS "--allow-run-as-root")
-  endif()
-  if(NOT "${MPIEXEC_PREFLAGS}" MATCHES "oversubscribe")
-    list(APPEND MPIEXEC_PREFLAGS "--oversubscribe")
-  endif()
+  # Multi-rank registration under mpirun. Container preflags
+  # (--allow-run-as-root/--oversubscribe) come from the
+  # CECE_MPIEXEC_CONTAINER_FLAGS option near find_package(MPI).
   add_test(
     NAME test_halo_multirank_integration_np2
     COMMAND
