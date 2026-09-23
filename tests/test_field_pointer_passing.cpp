@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "cece/cece_internal.hpp"
-#include "test_mpi_singleton.hpp"
 
 extern "C" {
 void cece_core_initialize_p1(void** data_ptr_ptr, int* rc);
@@ -586,9 +585,6 @@ int main(int argc, char** argv) {
     }
 
     if (!is_discovery) {
-        // Force standalone MPI init (no Slurm/PMI); see test_mpi_singleton.hpp.
-        cece::test::force_mpi_singleton();
-
         // Initialize MPI to check rank and prevent parallel duplicate execution conflicts of local unit tests
         int mpi_initialized = 0;
         MPI_Initialized(&mpi_initialized);

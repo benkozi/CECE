@@ -15,7 +15,6 @@
 #include "cece/cece_regridder_utils.hpp"
 #include "cece/cece_standalone_writer.hpp"
 #include "cece/cece_utils.hpp"
-#include "test_mpi_singleton.hpp"
 
 extern "C" {
 void cece_core_write_step(void* data_ptr, double time_seconds, int step_index, int* rc);
@@ -429,9 +428,6 @@ int main(int argc, char** argv) {
     }
 
     if (!is_discovery) {
-        // Force standalone MPI init (no Slurm/PMI); see test_mpi_singleton.hpp.
-        cece::test::force_mpi_singleton();
-
         // Initialize MPI to check rank and prevent parallel duplicate execution conflicts of local unit tests
         int mpi_initialized = 0;
         MPI_Initialized(&mpi_initialized);
