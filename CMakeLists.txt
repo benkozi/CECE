@@ -1775,6 +1775,10 @@ if(CECE_BUILD_TESTING)
     test_band_boundary_conservation
     PRIVATE cece GTest::gtest MPI::MPI_CXX Kokkos::kokkos HELM::AXIS rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_band_boundary_conservation
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # Band-boundary conservation on CURVILINEAR grids (distributed-domain-decomposition,
   # Property 11). Drives the REAL build_band_mesh_curvilinear_with_global_corners
@@ -1784,6 +1788,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_band_boundary_curvilinear
     PRIVATE cece GTest::gtest MPI::MPI_CXX Kokkos::kokkos HELM::AXIS rapidcheck rapidcheck_gtest
+  )
+  set_target_properties(
+    test_band_boundary_curvilinear
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
 
   gtest_discover_tests(
