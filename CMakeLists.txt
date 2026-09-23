@@ -736,6 +736,10 @@ if(CECE_BUILD_TESTING)
     add_library(test_helpers STATIC tests/test_helpers.F90)
     target_include_directories(test_helpers PUBLIC ${ESMF_INCLUDE_DIRS})
     target_link_libraries(test_helpers PUBLIC ESMF::ESMF)
+  set_target_properties(
+    test_helpers
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
     if(MPI_FOUND)
       target_link_libraries(test_helpers PUBLIC MPI::MPI_CXX)
     endif()
@@ -855,6 +859,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_band_single_rank_properties
     PRIVATE cece MPI::MPI_CXX rapidcheck rapidcheck_gtest GTest::gtest
+  )
+  set_target_properties(
+    test_band_single_rank_properties
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
 
   add_executable(test_band_regrid_equals_global_rows tests/test_band_regrid_equals_global_rows.cpp)
@@ -991,6 +999,10 @@ if(CECE_BUILD_TESTING)
     test_endpoint_sizing
     PRIVATE cece GTest::gtest_main MPI::MPI_CXX Kokkos::kokkos
   )
+  set_target_properties(
+    test_endpoint_sizing
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # Endpoint Invalidation and Failure unit/example tests
   # (temporal-endpoint-regrid-cache, Task 12.2). Example-based companions asserting
@@ -1006,6 +1018,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_endpoint_invalidation
     PRIVATE cece GTest::gtest_main MPI::MPI_CXX Kokkos::kokkos
+  )
+  set_target_properties(
+    test_endpoint_invalidation
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
 
   # Regrid Conservation Property Tests (driver-io-regrid-perf, Property 9)
@@ -1061,9 +1077,13 @@ if(CECE_BUILD_TESTING)
   # link GTest::gtest_main. Runnable as a single process AND under mpirun -np 2/4.
   add_executable(test_mpi_reuse_decision tests/test_mpi_reuse_decision.cpp)
   target_link_libraries(test_mpi_reuse_decision PRIVATE cece GTest::gtest MPI::MPI_CXX)
+  set_target_properties(
+    test_mpi_reuse_decision
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
   # Single-process registration (ctest default): runs the binary directly so the
   # rank-invariance property is validated structurally even without a launcher.
-  add_test(NAME test_mpi_reuse_decision_np1 COMMAND $<TARGET_FILE:test_mpi_reuse_decision>)
+  add_test(NAME test_mpi_reuse_decision_np1 COMMAND test_mpi_reuse_decision)
   set_tests_properties(
     test_mpi_reuse_decision_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1094,6 +1114,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_endpoint_reuse_decision
     PRIVATE cece GTest::gtest MPI::MPI_CXX rapidcheck rapidcheck_gtest
+  )
+  set_target_properties(
+    test_endpoint_reuse_decision
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
   # Single-process registration (ctest default): runs the binary directly so the
   # rank-invariance property is validated structurally even without a launcher.
@@ -1137,10 +1161,14 @@ if(CECE_BUILD_TESTING)
     test_fused_gate_equivalence
     PRIVATE cece GTest::gtest MPI::MPI_CXX HELM::HALO rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_fused_gate_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
   # Single-process registration (ctest default): runs the binary directly so the
   # pure-decision properties and the (identity-reduction) packing case validate
   # structurally even without a launcher.
-  add_test(NAME test_fused_gate_equivalence_np1 COMMAND $<TARGET_FILE:test_fused_gate_equivalence>)
+  add_test(NAME test_fused_gate_equivalence_np1 COMMAND test_fused_gate_equivalence)
   set_tests_properties(
     test_fused_gate_equivalence_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1185,9 +1213,13 @@ if(CECE_BUILD_TESTING)
     test_collective_count
     PRIVATE cece HELM::HALO MPI::MPI_CXX Kokkos::kokkos GTest::gtest rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_collective_count
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
   # Single-process registration (ctest default): runs the binary directly so the
   # level-independence property is validated structurally even without a launcher.
-  add_test(NAME test_collective_count_np1 COMMAND $<TARGET_FILE:test_collective_count>)
+  add_test(NAME test_collective_count_np1 COMMAND test_collective_count)
   set_tests_properties(
     test_collective_count_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1221,6 +1253,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_halo_gather_equivalence
     PRIVATE cece HELM::HALO MPI::MPI_CXX Kokkos::kokkos GTest::gtest rapidcheck rapidcheck_gtest
+  )
+  set_target_properties(
+    test_halo_gather_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
   # Single-process registration (ctest default): runs the binary directly so the
   # mpi_size == 1 boundary (Decision A std::copy fast path) is validated even
@@ -1276,6 +1312,10 @@ if(CECE_BUILD_TESTING)
     test_collective_gate_equivalence
     PRIVATE cece GTest::gtest MPI::MPI_CXX rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_collective_gate_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
   # Single-process registration (ctest default): runs the binary directly so the
   # short-circuit (NULL comm / size-1) branches are validated even without a
   # launcher.
@@ -1314,7 +1354,11 @@ if(CECE_BUILD_TESTING)
   # decision-predicate tests even without a launcher.
   add_executable(test_halo_adoption_units tests/test_halo_adoption_units.cpp)
   target_link_libraries(test_halo_adoption_units PRIVATE cece GTest::gtest MPI::MPI_CXX HELM::HALO)
-  add_test(NAME test_halo_adoption_units_np1 COMMAND $<TARGET_FILE:test_halo_adoption_units>)
+  set_target_properties(
+    test_halo_adoption_units
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
+  add_test(NAME test_halo_adoption_units_np1 COMMAND test_halo_adoption_units)
   set_tests_properties(
     test_halo_adoption_units_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1358,6 +1402,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_halo_multirank_integration
     PRIVATE cece HELM::HALO MPI::MPI_CXX Kokkos::kokkos GTest::gtest
+  )
+  set_target_properties(
+    test_halo_multirank_integration
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
   # Single-process registration (ctest default): the np1 short-circuit branches
   # (local decision, Decision A std::copy fast path) are validated without a
@@ -1817,6 +1865,10 @@ if(CECE_BUILD_TESTING)
     test_output_gather_reconstruction
     PRIVATE cece GTest::gtest MPI::MPI_CXX rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_output_gather_reconstruction
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
   add_test(
     NAME test_output_gather_reconstruction_np1
     COMMAND $<TARGET_FILE:test_output_gather_reconstruction>
@@ -1864,7 +1916,11 @@ if(CECE_BUILD_TESTING)
   # at np1 (structural, single-rank == whole-grid path) and np4 (surplus path).
   add_executable(test_surplus_rank_lockstep tests/test_surplus_rank_lockstep.cpp)
   target_link_libraries(test_surplus_rank_lockstep PRIVATE cece GTest::gtest MPI::MPI_CXX)
-  add_test(NAME test_surplus_rank_lockstep_np1 COMMAND $<TARGET_FILE:test_surplus_rank_lockstep>)
+  set_target_properties(
+    test_surplus_rank_lockstep
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
+  add_test(NAME test_surplus_rank_lockstep_np1 COMMAND test_surplus_rank_lockstep)
   set_tests_properties(
     test_surplus_rank_lockstep_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
