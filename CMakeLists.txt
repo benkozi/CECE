@@ -1772,38 +1772,32 @@ if(CECE_BUILD_TESTING)
   gtest_discover_tests(test_driver_clock_management)
   gtest_discover_tests(test_clock_operations_unit)
   gtest_discover_tests(test_driver_integration_end_to_end)
-  gtest_discover_tests(test_stacking_engine PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(
-    test_vertical_distribution_single
-    PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false"
-  )
-  gtest_discover_tests(test_cece_utils PROPERTIES PROCESSORS 1 ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_numerical_equivalence PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_cece_compute PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+  gtest_discover_tests(test_stacking_engine)
+  gtest_discover_tests(test_vertical_distribution_single)
+  gtest_discover_tests(test_cece_utils PROPERTIES PROCESSORS 1)
+  gtest_discover_tests(test_numerical_equivalence)
+  gtest_discover_tests(test_cece_compute)
   gtest_discover_tests(
     test_standalone_writer_attributes
-    PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false" PROCESSORS 1
+    PROPERTIES PROCESSORS 1
   )
-  gtest_discover_tests(test_physics PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_cece_ingestor PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_hemco_mimic PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_field_resolution_priority PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_ingest_setfield_bypass PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(
-    test_ingest_copyback_neutralized
-    PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false"
-  )
-  gtest_discover_tests(test_hemco_parity PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_kokkos_configuration PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_properties PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_suite_idempotence PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+  gtest_discover_tests(test_physics)
+  gtest_discover_tests(test_cece_ingestor)
+  gtest_discover_tests(test_hemco_mimic)
+  gtest_discover_tests(test_field_resolution_priority)
+  gtest_discover_tests(test_ingest_setfield_bypass)
+  gtest_discover_tests(test_ingest_copyback_neutralized)
+  gtest_discover_tests(test_hemco_parity)
+  gtest_discover_tests(test_kokkos_configuration)
+  gtest_discover_tests(test_properties)
+  gtest_discover_tests(test_suite_idempotence)
   gtest_discover_tests(test_repro_failure)
   gtest_discover_tests(test_ccpp_readiness)
-  gtest_discover_tests(test_fengsha_properties PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_ginoux_properties PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_k14_properties PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_speciation PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_megan3 PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+  gtest_discover_tests(test_fengsha_properties)
+  gtest_discover_tests(test_ginoux_properties)
+  gtest_discover_tests(test_k14_properties)
+  gtest_discover_tests(test_speciation)
+  gtest_discover_tests(test_megan3)
   gtest_discover_tests(test_cece_clock_properties)
   gtest_discover_tests(test_cece_clock_run_loop)
   gtest_discover_tests(test_bracket_equal_properties)
@@ -1837,11 +1831,11 @@ if(CECE_BUILD_TESTING)
   gtest_discover_tests(test_ingest_consolidation_equivalence)
   gtest_discover_tests(test_ingest_collective_gate_order)
   gtest_discover_tests(test_ingest_single_write)
-  gtest_discover_tests(test_bdsnp PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
-  gtest_discover_tests(test_bdsnp_runtime PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false")
+  gtest_discover_tests(test_bdsnp)
+  gtest_discover_tests(test_bdsnp_runtime)
   gtest_discover_tests(
     test_helm_cpp
-    PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMP_PROC_BIND=false" PROCESSORS 1
+    PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
   )
 
   if(ESMF_FOUND)
@@ -1852,19 +1846,19 @@ if(CECE_BUILD_TESTING)
     gtest_discover_tests(test_cece_cap PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm")
     gtest_discover_tests(
       test_diagnostics
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMP_PROC_BIND=false"
+      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
     )
     gtest_discover_tests(
       test_field_creation
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMP_PROC_BIND=false" PROCESSORS 1
+      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
     )
     gtest_discover_tests(
       test_field_creation_error_handling
-      PROPERTIES ENVIRONMENT "OMP_PROC_BIND=false" PROCESSORS 1
+      PROPERTIES PROCESSORS 1
     )
     gtest_discover_tests(
       test_field_pointer_passing
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMP_PROC_BIND=false" PROCESSORS 1
+      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
     )
   endif()
   # Band-boundary conservation on NON-UNIFORM grids (distributed-domain-decomposition,
@@ -2016,6 +2010,25 @@ if(CECE_BUILD_TESTING)
         TIMEOUT 600
     )
   endif()
+
+  # Pre-main test-environment defaults, linked into EVERY test/benchmark
+  # executable. Currently: OMP_PROC_BIND=false (Kokkos's own unit-testing
+  # recommendation; overwrite=0, so an exported value wins), applied before
+  # main so gtest discovery re-runs are covered too — ctest ENVIRONMENT
+  # properties only apply when a test runs, never during discovery. An
+  # OBJECT library so the otherwise-unreferenced initializer object always
+  # reaches the link line (a static archive member would be dropped). The
+  # loop keys on target type + name rather than a hand-kept list, so new
+  # test targets are covered automatically.
+  add_library(cece_test_default_env OBJECT tests/support/test_default_env.cpp)
+  get_property(_cece_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_cece_target IN LISTS _cece_dir_targets)
+    get_target_property(_cece_target_type ${_cece_target} TYPE)
+    if(_cece_target_type STREQUAL "EXECUTABLE"
+       AND _cece_target MATCHES "^(test_|benchmark_|hemco_comparison_driver$)")
+      target_link_libraries(${_cece_target} PRIVATE cece_test_default_env)
+    endif()
+  endforeach()
 endif() # CECE_BUILD_TESTING
 
 # Standalone NUOPC driver
