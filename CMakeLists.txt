@@ -748,10 +748,10 @@ if(CECE_BUILD_TESTING)
     add_library(test_helpers STATIC tests/test_helpers.F90)
     target_include_directories(test_helpers PUBLIC ${ESMF_INCLUDE_DIRS})
     target_link_libraries(test_helpers PUBLIC ESMF::ESMF)
-  set_target_properties(
-    test_helpers
-    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
-  )
+    set_target_properties(
+      test_helpers
+      PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+    )
     if(MPI_FOUND)
       target_link_libraries(test_helpers PUBLIC MPI::MPI_CXX)
     endif()
@@ -1161,10 +1161,7 @@ if(CECE_BUILD_TESTING)
   )
   # Single-process registration (ctest default): runs the binary directly so the
   # rank-invariance property is validated structurally even without a launcher.
-  add_test(
-    NAME test_endpoint_reuse_decision_np1
-    COMMAND test_endpoint_reuse_decision
-  )
+  add_test(NAME test_endpoint_reuse_decision_np1 COMMAND test_endpoint_reuse_decision)
   set_tests_properties(
     test_endpoint_reuse_decision_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1301,10 +1298,7 @@ if(CECE_BUILD_TESTING)
   # Single-process registration (ctest default): runs the binary directly so the
   # mpi_size == 1 boundary (Decision A std::copy fast path) is validated even
   # without a launcher.
-  add_test(
-    NAME test_halo_gather_equivalence_np1
-    COMMAND test_halo_gather_equivalence
-  )
+  add_test(NAME test_halo_gather_equivalence_np1 COMMAND test_halo_gather_equivalence)
   set_tests_properties(
     test_halo_gather_equivalence_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1359,10 +1353,7 @@ if(CECE_BUILD_TESTING)
   # Single-process registration (ctest default): runs the binary directly so the
   # short-circuit (NULL comm / size-1) branches are validated even without a
   # launcher.
-  add_test(
-    NAME test_collective_gate_equivalence_np1
-    COMMAND test_collective_gate_equivalence
-  )
+  add_test(NAME test_collective_gate_equivalence_np1 COMMAND test_collective_gate_equivalence)
   set_tests_properties(
     test_collective_gate_equivalence_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1450,10 +1441,7 @@ if(CECE_BUILD_TESTING)
   # Single-process registration (ctest default): the np1 short-circuit branches
   # (local decision, Decision A std::copy fast path) are validated without a
   # launcher.
-  add_test(
-    NAME test_halo_multirank_integration_np1
-    COMMAND test_halo_multirank_integration
-  )
+  add_test(NAME test_halo_multirank_integration_np1 COMMAND test_halo_multirank_integration)
   set_tests_properties(
     test_halo_multirank_integration_np1
     PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -1503,18 +1491,20 @@ if(CECE_BUILD_TESTING)
     add_executable(test_field_creation_error_handling tests/test_field_creation_error_handling.cpp)
     if(CECE_HAS_FORTRAN AND TARGET test_helpers)
       target_link_libraries(test_field_creation PRIVATE cece test_helpers GTest::gtest_main)
-  set_target_properties(
-    test_field_creation
-    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
-  )
+      set_target_properties(
+        test_field_creation
+        PROPERTIES
+          TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+      )
       target_link_libraries(
         test_field_creation_error_handling
         PRIVATE cece test_helpers GTest::gtest_main
       )
-  set_target_properties(
-    test_field_creation_error_handling
-    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
-  )
+      set_target_properties(
+        test_field_creation_error_handling
+        PROPERTIES
+          TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+      )
     else()
       target_link_libraries(test_field_creation PRIVATE cece GTest::gtest_main)
       target_link_libraries(test_field_creation_error_handling PRIVATE cece GTest::gtest_main)
@@ -1524,10 +1514,11 @@ if(CECE_BUILD_TESTING)
     add_executable(test_field_pointer_passing tests/test_field_pointer_passing.cpp)
     if(CECE_HAS_FORTRAN AND TARGET test_helpers)
       target_link_libraries(test_field_pointer_passing PRIVATE cece test_helpers GTest::gtest_main)
-  set_target_properties(
-    test_field_pointer_passing
-    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
-  )
+      set_target_properties(
+        test_field_pointer_passing
+        PROPERTIES
+          TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+      )
     else()
       target_link_libraries(test_field_pointer_passing PRIVATE cece GTest::gtest_main)
     endif()
@@ -1794,10 +1785,7 @@ if(CECE_BUILD_TESTING)
   gtest_discover_tests(test_cece_utils PROPERTIES PROCESSORS 1)
   gtest_discover_tests(test_numerical_equivalence)
   gtest_discover_tests(test_cece_compute)
-  gtest_discover_tests(
-    test_standalone_writer_attributes
-    PROPERTIES PROCESSORS 1
-  )
+  gtest_discover_tests(test_standalone_writer_attributes PROPERTIES PROCESSORS 1)
   gtest_discover_tests(test_physics)
   gtest_discover_tests(test_cece_ingestor)
   gtest_discover_tests(test_hemco_mimic)
@@ -1857,10 +1845,7 @@ if(CECE_BUILD_TESTING)
   # Keep ENVIRONMENT single-valued here (historically only the first entry
   # ever applied); multi-entry env strings are fine on set_tests_properties
   # for directly-registered tests, which parse quoted values whole.
-  gtest_discover_tests(
-    test_helm_cpp
-    PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
-  )
+  gtest_discover_tests(test_helm_cpp PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1)
 
   if(ESMF_FOUND)
     gtest_discover_tests(
@@ -1869,14 +1854,8 @@ if(CECE_BUILD_TESTING)
     )
     gtest_discover_tests(test_cece_cap PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp")
     gtest_discover_tests(test_diagnostics PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp")
-    gtest_discover_tests(
-      test_field_creation
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
-    )
-    gtest_discover_tests(
-      test_field_creation_error_handling
-      PROPERTIES PROCESSORS 1
-    )
+    gtest_discover_tests(test_field_creation PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1)
+    gtest_discover_tests(test_field_creation_error_handling PROPERTIES PROCESSORS 1)
     gtest_discover_tests(
       test_field_pointer_passing
       PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
@@ -1936,10 +1915,7 @@ if(CECE_BUILD_TESTING)
     test_output_gather_reconstruction
     PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
-  add_test(
-    NAME test_output_gather_reconstruction_np1
-    COMMAND test_output_gather_reconstruction
-  )
+  add_test(NAME test_output_gather_reconstruction_np1 COMMAND test_output_gather_reconstruction)
   set_tests_properties(
     test_output_gather_reconstruction_np1
     PROPERTIES ENVIRONMENT "RC_PARAMS=max_success=100;FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
@@ -2060,38 +2036,31 @@ if(CECE_BUILD_TESTING)
   set(_cece_label_dir_queue "${CMAKE_CURRENT_SOURCE_DIR}")
   while(_cece_label_dir_queue)
     list(POP_FRONT _cece_label_dir_queue _cece_label_dir)
-    get_property(
-      _cece_label_subdirs
-      DIRECTORY "${_cece_label_dir}"
-      PROPERTY SUBDIRECTORIES
-    )
+    get_property(_cece_label_subdirs DIRECTORY "${_cece_label_dir}" PROPERTY SUBDIRECTORIES)
     list(APPEND _cece_label_dir_queue ${_cece_label_subdirs})
-    get_property(
-      _cece_registered_tests
-      DIRECTORY "${_cece_label_dir}"
-      PROPERTY TESTS
-    )
+    get_property(_cece_registered_tests DIRECTORY "${_cece_label_dir}" PROPERTY TESTS)
     foreach(_cece_test IN LISTS _cece_registered_tests)
       if(_cece_test MATCHES "_np([0-9]+)$")
         set_property(
-          TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
-          APPEND PROPERTY LABELS "np${CMAKE_MATCH_1}"
+          TEST ${_cece_test}
+          DIRECTORY "${_cece_label_dir}"
+          APPEND
+          PROPERTY LABELS "np${CMAKE_MATCH_1}"
         )
         set_property(
-          TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
+          TEST ${_cece_test}
+          DIRECTORY "${_cece_label_dir}"
           PROPERTY PROCESSORS "${CMAKE_MATCH_1}"
         )
       else()
         get_property(
           _cece_test_labels
-          TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
+          TEST ${_cece_test}
+          DIRECTORY "${_cece_label_dir}"
           PROPERTY LABELS
         )
         if(NOT _cece_test_labels MATCHES "np[0-9]")
-          set_property(
-            TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
-            APPEND PROPERTY LABELS np1
-          )
+          set_property(TEST ${_cece_test} DIRECTORY "${_cece_label_dir}" APPEND PROPERTY LABELS np1)
         endif()
       endif()
     endforeach()
@@ -2101,8 +2070,10 @@ if(CECE_BUILD_TESTING)
   get_property(_cece_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
   foreach(_cece_target IN LISTS _cece_dir_targets)
     get_target_property(_cece_target_type ${_cece_target} TYPE)
-    if(_cece_target_type STREQUAL "EXECUTABLE"
-       AND _cece_target MATCHES "^(test_|benchmark_|hemco_comparison_driver$)")
+    if(
+      _cece_target_type STREQUAL "EXECUTABLE"
+      AND _cece_target MATCHES "^(test_|benchmark_|hemco_comparison_driver$)"
+    )
       target_link_libraries(${_cece_target} PRIVATE cece_test_default_env)
     endif()
   endforeach()

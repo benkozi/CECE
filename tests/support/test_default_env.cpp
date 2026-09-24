@@ -13,8 +13,8 @@
 namespace {
 
 const bool cece_test_omp_defaults_applied = [] {
-  ::setenv("OMP_PROC_BIND", "false", /*overwrite=*/0);
-  return true;
+    ::setenv("OMP_PROC_BIND", "false", /*overwrite=*/0);
+    return true;
 }();
 
 }  // namespace
