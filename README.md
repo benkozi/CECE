@@ -27,6 +27,10 @@ The maintained container workflows (`scripts/build-and-test-container.py`,
 CI) pass it automatically; only manual in-container configures like the
 one above need it spelled out.
 
+To run the test suite on an HPC Slurm system (srun-launched ranks
+instead of the container's mpiexec), see
+[scripts/README.md](scripts/README.md).
+
 ### 3. Run Examples
 CECE provides several example configurations to demonstrate different capabilities:
 

@@ -1768,6 +1768,23 @@ if(CECE_BUILD_TESTING)
   # it without per-call edits. Requires CMake >= 3.18 (project already uses 3.27).
   set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
+  # Every discovered gtest suite runs single-rank (its TEST_LAUNCHER, where
+  # present, is `mpiexec -n 1`), so tag all discovered tests LABELS np1 —
+  # rank-count selection (`ctest -L np1|np2|np4`) then covers the whole
+  # suite. Shadowing the module function keeps the call sites untouched and
+  # future calls covered; the module's implementation stays reachable under
+  # the underscore name, and repeated PROPERTIES keywords accumulate, so
+  # call-site PROPERTIES merge with the injected pair. The injection is
+  # PREPENDED: discovery serializes PROPERTIES as a flat list and re-pairs
+  # it name/value, so a semicolon-list value at a call site (see the
+  # FI_PROVIDER note below) silently corrupts every pair after it —
+  # prepending keeps LABELS/np1 ahead of any such value. Directly-registered
+  # tests get their labels from the `_np<N>` suffix sweep at the end of
+  # this block.
+  function(gtest_discover_tests target)
+    _gtest_discover_tests(${target} PROPERTIES LABELS np1 ${ARGN})
+  endfunction()
+
   gtest_discover_tests(test_driver_configuration)
   gtest_discover_tests(test_driver_clock_management)
   gtest_discover_tests(test_clock_operations_unit)
@@ -1833,24 +1850,28 @@ if(CECE_BUILD_TESTING)
   gtest_discover_tests(test_ingest_single_write)
   gtest_discover_tests(test_bdsnp)
   gtest_discover_tests(test_bdsnp_runtime)
+  # gtest_discover_tests PROPERTIES cannot carry semicolon-list values:
+  # discovery flattens PROPERTIES and re-pairs name/value, so a list value
+  # (e.g. ENVIRONMENT "A=1;B=2") shifts every pair after it into garbage
+  # properties — B=2 becomes a property NAME and later pairs are lost.
+  # Keep ENVIRONMENT single-valued here (historically only the first entry
+  # ever applied); multi-entry env strings are fine on set_tests_properties
+  # for directly-registered tests, which parse quoted values whole.
   gtest_discover_tests(
     test_helm_cpp
-    PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
+    PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
   )
 
   if(ESMF_FOUND)
     gtest_discover_tests(
       test_driver_config_validation
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
+      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
     )
-    gtest_discover_tests(test_cece_cap PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm")
-    gtest_discover_tests(
-      test_diagnostics
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm"
-    )
+    gtest_discover_tests(test_cece_cap PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp")
+    gtest_discover_tests(test_diagnostics PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp")
     gtest_discover_tests(
       test_field_creation
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
+      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
     )
     gtest_discover_tests(
       test_field_creation_error_handling
@@ -1858,7 +1879,7 @@ if(CECE_BUILD_TESTING)
     )
     gtest_discover_tests(
       test_field_pointer_passing
-      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp;I_MPI_FABRICS=shm" PROCESSORS 1
+      PROPERTIES ENVIRONMENT "FI_PROVIDER=tcp" PROCESSORS 1
     )
   endif()
   # Band-boundary conservation on NON-UNIFORM grids (distributed-domain-decomposition,
@@ -1994,7 +2015,8 @@ if(CECE_BUILD_TESTING)
     add_test(
       NAME test_distributed_output_equivalence
       COMMAND
-        ${CMAKE_COMMAND} -E env "MPIEXEC_EXECUTABLE=${MPIEXEC_EXECUTABLE}" bash
+        ${CMAKE_COMMAND} -E env "MPIEXEC_EXECUTABLE=${MPIEXEC_EXECUTABLE}"
+        "MPIEXEC_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}" bash
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_distributed_output_equivalence.sh --driver
         $<TARGET_FILE:cece_standalone_driver> --config
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/cece_config_ceds_oc_small.yaml --comparator
@@ -2008,6 +2030,10 @@ if(CECE_BUILD_TESTING)
         ENVIRONMENT
           "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMPI_ALLOW_RUN_AS_ROOT=1;OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1"
         TIMEOUT 600
+        # Self-drives -np 1/2/3 sequentially; label/budget for its 3-rank peak
+        # (the suffix loop below skips tests that carry an explicit np label).
+        LABELS np3
+        PROCESSORS 3
     )
   endif()
 
@@ -2020,6 +2046,57 @@ if(CECE_BUILD_TESTING)
   # reaches the link line (a static archive member would be dropped). The
   # loop keys on target type + name rather than a hand-kept list, so new
   # test targets are covered automatically.
+  # Rank-count labels/processors for the directly-registered (non-discovered)
+  # tests, keyed on the `_np<N>` name-suffix convention rather than a
+  # hand-kept list. LABELS enable rank-count selection (`ctest -L np2`);
+  # PROCESSORS makes `ctest -j` budget ranks correctly (e.g. `-j 4` packs
+  # 4x np1, 2x np2, or 1x np4 without oversubscribing a 4-task allocation).
+  # Tests without the suffix default to np1 unless their registration
+  # already set an explicit np label (e.g. the self-driving
+  # test_distributed_output_equivalence). The sweep walks the whole
+  # directory tree — the vendored HELM libs register tests in their own
+  # subdirectories — via the DIRECTORY-scoped test-property API (CMake
+  # 3.28; older CMakes would need per-directory edits instead).
+  set(_cece_label_dir_queue "${CMAKE_CURRENT_SOURCE_DIR}")
+  while(_cece_label_dir_queue)
+    list(POP_FRONT _cece_label_dir_queue _cece_label_dir)
+    get_property(
+      _cece_label_subdirs
+      DIRECTORY "${_cece_label_dir}"
+      PROPERTY SUBDIRECTORIES
+    )
+    list(APPEND _cece_label_dir_queue ${_cece_label_subdirs})
+    get_property(
+      _cece_registered_tests
+      DIRECTORY "${_cece_label_dir}"
+      PROPERTY TESTS
+    )
+    foreach(_cece_test IN LISTS _cece_registered_tests)
+      if(_cece_test MATCHES "_np([0-9]+)$")
+        set_property(
+          TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
+          APPEND PROPERTY LABELS "np${CMAKE_MATCH_1}"
+        )
+        set_property(
+          TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
+          PROPERTY PROCESSORS "${CMAKE_MATCH_1}"
+        )
+      else()
+        get_property(
+          _cece_test_labels
+          TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
+          PROPERTY LABELS
+        )
+        if(NOT _cece_test_labels MATCHES "np[0-9]")
+          set_property(
+            TEST ${_cece_test} DIRECTORY "${_cece_label_dir}"
+            APPEND PROPERTY LABELS np1
+          )
+        endif()
+      endif()
+    endforeach()
+  endwhile()
+
   add_library(cece_test_default_env OBJECT tests/support/test_default_env.cpp)
   get_property(_cece_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
   foreach(_cece_target IN LISTS _cece_dir_targets)
