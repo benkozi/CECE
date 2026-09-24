@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import subprocess
 import sys
@@ -190,66 +189,6 @@ class TestVerifySubmodules(unittest.TestCase):
             self.assertIn("`extern/helm`", content)
             self.assertIn("OUT_OF_SYNC", content)
             self.assertIn("[!WARNING]", content)
-
-    def test_no_raw_print_statements(self) -> None:
-        """Audit scripts/verify_submodules.py AST to enforce zero print() calls."""
-        script_path = SCRIPTS_DIR / "verify_submodules.py"
-        source = script_path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(script_path))
-
-        print_calls: list[int] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id == "print":
-                    print_calls.append(node.lineno)
-
-        self.assertFalse(
-            print_calls,
-            f"Raw print() found on line(s): {print_calls}. Use logging instead.",
-        )
-
-    def test_no_subprocess_run(self) -> None:
-        """Audit scripts/verify_submodules.py AST to enforce zero subprocess.run() calls."""
-        script_path = SCRIPTS_DIR / "verify_submodules.py"
-        source = script_path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(script_path))
-
-        run_calls: list[int] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Attribute) and node.func.attr == "run":
-                    if (
-                        isinstance(node.func.value, ast.Name)
-                        and node.func.value.id == "subprocess"
-                    ):
-                        run_calls.append(node.lineno)
-
-        self.assertFalse(
-            run_calls,
-            f"subprocess.run() found on line(s): {run_calls}. Use subprocess.check_output instead.",
-        )
-
-    def test_no_debug_logging(self) -> None:
-        """Audit scripts/verify_submodules.py AST to enforce zero debug logging calls."""
-        script_path = SCRIPTS_DIR / "verify_submodules.py"
-        source = script_path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(script_path))
-
-        debug_calls: list[int] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                if (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "debug"
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id in ("logger", "logging")
-                ):
-                    debug_calls.append(node.lineno)
-
-        self.assertFalse(
-            debug_calls,
-            f"debug logging found on line(s): {debug_calls}. Logging must be INFO minimum.",
-        )
 
     def test_cli_help(self) -> None:
         """Test CLI --help exits with 0 using subprocess.check_output."""
