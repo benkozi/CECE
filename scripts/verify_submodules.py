@@ -445,7 +445,7 @@ def verify_submodules(
 def log_verification_report(
     statuses: list[SubmoduleStatus], target_branch: str
 ) -> bool:
-    """Log formatted report table and remediation instructions. Returns True if all passed."""
+    """Log formatted report table. Returns True if all passed."""
     sep = "=" * 88
     dash_sep = "-" * 88
 
@@ -500,36 +500,6 @@ def log_verification_report(
     logger.error(
         "%d submodule pointer(s) are out of sync or in error state.", len(mismatches)
     )
-    logger.error("")
-    logger.error("Remediation Instructions:")
-
-    for s in mismatches:
-        if s.status == VerificationStatus.OUT_OF_SYNC and s.expected_sha:
-            exp_short = s.expected_sha[:8]
-            logger.error("To update '%s' to upstream %s:", s.path, s.target_branch)
-            if s.is_nested:
-                logger.error("  Note: '%s' is a nested submodule.", s.path)
-                logger.error(
-                    "  1. Update and commit the pointer in the parent submodule repository."
-                )
-                logger.error(
-                    "  2. Then update and commit the parent submodule pointer in CECE."
-                )
-            logger.error("  git -C %s checkout %s", s.path, s.target_branch)
-            logger.error("  git -C %s pull origin %s", s.path, s.target_branch)
-            logger.error("  git add %s", s.path)
-            logger.error(
-                '  git commit -m "chore(submodule): bump %s to %s (%s)"',
-                s.path,
-                s.target_branch,
-                exp_short,
-            )
-            logger.error("")
-        elif s.status == VerificationStatus.UNINITIALIZED:
-            logger.error("To initialize uninitialized submodule '%s':", s.path)
-            logger.error("  git submodule update --init --recursive %s", s.path)
-            logger.error("")
-
     return False
 
 
@@ -564,7 +534,6 @@ def generate_step_summary(
         lines.append(
             "> One or more submodules are out of sync with their upstream tracking branches."
         )
-        lines.append("> Review the remediation steps in the workflow logs above.")
 
     summary_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     logger.info("GitHub Step Summary written to %s", summary_file)
