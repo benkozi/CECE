@@ -694,15 +694,27 @@ if(CECE_BUILD_TESTING)
 
   add_executable(test_cece_utils tests/test_cece_utils.cpp)
   target_link_libraries(test_cece_utils PRIVATE cece GTest::gtest_main)
+  set_target_properties(
+    test_cece_utils
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   add_executable(test_numerical_equivalence tests/test_numerical_equivalence.cpp)
   target_link_libraries(test_numerical_equivalence PRIVATE cece GTest::gtest_main)
+  set_target_properties(
+    test_numerical_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   add_executable(test_cece_compute tests/test_cece_compute.cpp)
   target_link_libraries(test_cece_compute PRIVATE cece GTest::gtest_main)
 
   add_executable(test_standalone_writer_attributes tests/test_standalone_writer_attributes.cpp)
   target_link_libraries(test_standalone_writer_attributes PRIVATE cece GTest::gtest)
+  set_target_properties(
+    test_standalone_writer_attributes
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # Ensure tests are run under MPI
   set_target_properties(
@@ -870,6 +882,10 @@ if(CECE_BUILD_TESTING)
     test_band_regrid_equals_global_rows
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_band_regrid_equals_global_rows
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # StreamKey Property Tests (regrid-per-stream, Property 1)
   add_executable(test_stream_key_properties tests/test_stream_key_properties.cpp)
@@ -952,6 +968,10 @@ if(CECE_BUILD_TESTING)
     test_endpoint_blend_equivalence
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_endpoint_blend_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # Endpoint Work-reduction Property Tests (temporal-endpoint-regrid-cache,
   # Property 2). Reproduces the Tier ladder with a WorkSpy counting read_slab /
@@ -972,6 +992,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_endpoint_shared_plan
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
+  )
+  set_target_properties(
+    test_endpoint_shared_plan
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
 
   # Endpoint Tier-precedence Property Tests (temporal-endpoint-regrid-cache,
@@ -1030,12 +1054,20 @@ if(CECE_BUILD_TESTING)
     test_regrid_conservation_properties
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_regrid_conservation_properties
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # Shared-plan Equivalence Property Tests (regrid-per-stream, Property 2)
   add_executable(test_shared_plan_equivalence tests/test_shared_plan_equivalence.cpp)
   target_link_libraries(
     test_shared_plan_equivalence
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
+  )
+  set_target_properties(
+    test_shared_plan_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
 
   # No-stale-data Property Tests (ingest-copy-consolidation, Property 4)
@@ -1057,6 +1089,10 @@ if(CECE_BUILD_TESTING)
     test_ingest_consolidation_equivalence
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
   )
+  set_target_properties(
+    test_ingest_consolidation_equivalence
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
 
   # MPI Collective Gate Order Property Tests (ingest-copy-consolidation, Property 3)
   add_executable(test_ingest_collective_gate_order tests/test_ingest_collective_gate_order.cpp)
@@ -1070,6 +1106,10 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(
     test_ingest_single_write
     PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest
+  )
+  set_target_properties(
+    test_ingest_single_write
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
   )
 
   # MPI cross-rank reuse-decision integration test (driver-io-regrid-perf,
@@ -1123,7 +1163,7 @@ if(CECE_BUILD_TESTING)
   # rank-invariance property is validated structurally even without a launcher.
   add_test(
     NAME test_endpoint_reuse_decision_np1
-    COMMAND $<TARGET_FILE:test_endpoint_reuse_decision>
+    COMMAND test_endpoint_reuse_decision
   )
   set_tests_properties(
     test_endpoint_reuse_decision_np1
@@ -1263,7 +1303,7 @@ if(CECE_BUILD_TESTING)
   # without a launcher.
   add_test(
     NAME test_halo_gather_equivalence_np1
-    COMMAND $<TARGET_FILE:test_halo_gather_equivalence>
+    COMMAND test_halo_gather_equivalence
   )
   set_tests_properties(
     test_halo_gather_equivalence_np1
@@ -1321,7 +1361,7 @@ if(CECE_BUILD_TESTING)
   # launcher.
   add_test(
     NAME test_collective_gate_equivalence_np1
-    COMMAND $<TARGET_FILE:test_collective_gate_equivalence>
+    COMMAND test_collective_gate_equivalence
   )
   set_tests_properties(
     test_collective_gate_equivalence_np1
@@ -1412,7 +1452,7 @@ if(CECE_BUILD_TESTING)
   # launcher.
   add_test(
     NAME test_halo_multirank_integration_np1
-    COMMAND $<TARGET_FILE:test_halo_multirank_integration>
+    COMMAND test_halo_multirank_integration
   )
   set_tests_properties(
     test_halo_multirank_integration_np1
@@ -1463,10 +1503,18 @@ if(CECE_BUILD_TESTING)
     add_executable(test_field_creation_error_handling tests/test_field_creation_error_handling.cpp)
     if(CECE_HAS_FORTRAN AND TARGET test_helpers)
       target_link_libraries(test_field_creation PRIVATE cece test_helpers GTest::gtest_main)
+  set_target_properties(
+    test_field_creation
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
       target_link_libraries(
         test_field_creation_error_handling
         PRIVATE cece test_helpers GTest::gtest_main
       )
+  set_target_properties(
+    test_field_creation_error_handling
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
     else()
       target_link_libraries(test_field_creation PRIVATE cece GTest::gtest_main)
       target_link_libraries(test_field_creation_error_handling PRIVATE cece GTest::gtest_main)
@@ -1476,6 +1524,10 @@ if(CECE_BUILD_TESTING)
     add_executable(test_field_pointer_passing tests/test_field_pointer_passing.cpp)
     if(CECE_HAS_FORTRAN AND TARGET test_helpers)
       target_link_libraries(test_field_pointer_passing PRIVATE cece test_helpers GTest::gtest_main)
+  set_target_properties(
+    test_field_pointer_passing
+    PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+  )
     else()
       target_link_libraries(test_field_pointer_passing PRIVATE cece GTest::gtest_main)
     endif()
@@ -1871,7 +1923,7 @@ if(CECE_BUILD_TESTING)
   )
   add_test(
     NAME test_output_gather_reconstruction_np1
-    COMMAND $<TARGET_FILE:test_output_gather_reconstruction>
+    COMMAND test_output_gather_reconstruction
   )
   set_tests_properties(
     test_output_gather_reconstruction_np1
