@@ -53,6 +53,7 @@ GRA2PESv2.0_config_test1.yaml
 
 # ---- AI folders ----
 docs/superpowers/
+gate-deps/
 specify/
 specs/
 .gemini/
