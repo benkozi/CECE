@@ -43,14 +43,23 @@ logger = logging.getLogger("verify_submodules")
 
 
 @dataclass(frozen=True)
-class UpstreamTargetBranchConfig:
-    """Source-of-truth mapping of expected target branches for upstream modules (hosted at bbakernoaa)."""
+class UpstreamRemoteConfig:
+    """Source-of-truth canonical upstream remote repositories (preventing unauthorized fork drift)."""
 
-    branch_maps: dict[str, dict[str, str]] = field(
+    canonical_remotes: dict[str, str] = field(
         default_factory=lambda: {
-            "extern/helm": {"develop": "develop", "main": "main"},
-            "extern/helm/libs/amio": {"develop": "develop", "main": "main"},
+            "extern/helm": "https://github.com/bbakernoaa/HELM-Project",
+            "extern/helm/libs/amio": "https://github.com/bbakernoaa/amio",
         }
+    )
+    excluded_submodules: set[str] = field(default_factory=set)
+
+
+def is_submodule_excluded(path: str, exclude_set: set[str]) -> bool:
+    """Check if path matches any excluded submodule path or prefix."""
+    return any(
+        path == excl.rstrip("/") or path.startswith(f"{excl.rstrip('/')}/")
+        for excl in exclude_set
     )
 
 
@@ -134,124 +143,113 @@ def get_submodule_remote_url(repo_root: Path, sub_path: str) -> str:
         if code == 0 and out:
             return out
 
-    # Fallback to inspecting .gitmodules from repo root or parent directories
-    # Check parent module .gitmodules for nested submodules
-    parts = Path(sub_path).parts
-    if len(parts) > 1:
-        parent_dir = repo_root / Path(*parts[:-1])
-        sub_name = parts[-1]
+    # Fallback to inspecting .gitmodules from immediate parent up to repo_root
+    sub_path_obj = Path(sub_path)
+    ancestors = [repo_root / p for p in sub_path_obj.parents]
+    if repo_root not in ancestors:
+        ancestors.append(repo_root)
+
+    for parent_dir in ancestors:
+        gitmodules_file = parent_dir / ".gitmodules"
+        if parent_dir != repo_root and not gitmodules_file.exists():
+            continue
+
+        try:
+            rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
+        except ValueError:
+            rel_path = sub_path_obj.name
+
+        # 1. Direct lookup by rel_path
         code, out, _ = run_git_cmd(
-            ["config", "-f", ".gitmodules", "--get", f"submodule.{sub_name}.url"],
+            ["config", "-f", ".gitmodules", "--get", f"submodule.{rel_path}.url"],
+            cwd=parent_dir,
+        )
+        if code == 0 and out.strip():
+            return out.strip()
+
+        # 2. Lookup by path regex match
+        code, out, _ = run_git_cmd(
+            ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
             cwd=parent_dir,
         )
         if code == 0 and out:
-            return out
-
-    # Check top-level .gitmodules
-    code, out, _ = run_git_cmd(
-        ["config", "-f", ".gitmodules", "--get", f"submodule.{sub_path}.url"],
-        cwd=repo_root,
-    )
-    if code == 0 and out:
-        return out
-
-    # If key lookup by path failed, search by value match
-    code, out, _ = run_git_cmd(
-        ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
-        cwd=repo_root,
-    )
-    if code == 0 and out:
-        for line in out.splitlines():
-            k_v = line.split(None, 1)
-            if len(k_v) == 2 and k_v[1].strip() == sub_path:
-                key_base = k_v[0].rsplit(".", 1)[0]
-                c, url_out, _ = run_git_cmd(
-                    ["config", "-f", ".gitmodules", "--get", f"{key_base}.url"],
-                    cwd=repo_root,
-                )
-                if c == 0 and url_out:
-                    return url_out
+            for line in out.splitlines():
+                k_v = line.split(None, 1)
+                if len(k_v) == 2 and k_v[1].strip() == rel_path:
+                    key_base = k_v[0].rsplit(".", 1)[0]
+                    c, url_out, _ = run_git_cmd(
+                        ["config", "-f", ".gitmodules", "--get", f"{key_base}.url"],
+                        cwd=parent_dir,
+                    )
+                    if c == 0 and url_out.strip():
+                        return url_out.strip()
 
     raise ValueError(f"Could not determine remote URL for submodule '{sub_path}'")
 
 
 def get_gitmodules_configured_branch(repo_root: Path, sub_path: str) -> str | None:
     """Retrieve the branch explicitly configured in .gitmodules for a submodule."""
-    # Check if configured in top-level repo_root/.gitmodules
-    code, out, _ = run_git_cmd(
-        ["config", "-f", ".gitmodules", "--get", f"submodule.{sub_path}.branch"],
-        cwd=repo_root,
-    )
-    if code == 0 and out.strip():
-        return out.strip()
-
-    # Search through parent directory .gitmodules (e.g. extern/helm/.gitmodules for libs/amio)
     sub_path_obj = Path(sub_path)
-    for parent in sub_path_obj.parents:
-        parent_dir = repo_root / parent
-        if parent_dir != repo_root and (parent_dir / ".gitmodules").exists():
-            rel_path = str(sub_path_obj.relative_to(parent))
-            code, out, _ = run_git_cmd(
-                [
-                    "config",
-                    "-f",
-                    ".gitmodules",
-                    "--get",
-                    f"submodule.{rel_path}.branch",
-                ],
-                cwd=parent_dir,
-            )
-            if code == 0 and out.strip():
-                return out.strip()
+    ancestors = [repo_root / p for p in sub_path_obj.parents]
+    if repo_root not in ancestors:
+        ancestors.append(repo_root)
+
+    for parent_dir in ancestors:
+        gitmodules_file = parent_dir / ".gitmodules"
+        if parent_dir != repo_root and not gitmodules_file.exists():
+            continue
+
+        try:
+            rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
+        except ValueError:
+            rel_path = sub_path_obj.name
+
+        # 1. Direct lookup by rel_path
+        code, out, _ = run_git_cmd(
+            ["config", "-f", ".gitmodules", "--get", f"submodule.{rel_path}.branch"],
+            cwd=parent_dir,
+        )
+        if code == 0 and out.strip():
+            return out.strip()
+
+        # 2. Lookup by path regex match
+        code, out, _ = run_git_cmd(
+            ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
+            cwd=parent_dir,
+        )
+        if code == 0 and out:
+            for line in out.splitlines():
+                k_v = line.split(None, 1)
+                if len(k_v) == 2 and k_v[1].strip() == rel_path:
+                    key_base = k_v[0].rsplit(".", 1)[0]
+                    c, b_out, _ = run_git_cmd(
+                        ["config", "-f", ".gitmodules", "--get", f"{key_base}.branch"],
+                        cwd=parent_dir,
+                    )
+                    if c == 0 and b_out.strip():
+                        return b_out.strip()
 
     return None
 
 
 def resolve_submodule_target_branch(
-    repo_root: Path,
-    sub_path: str,
-    remote_url: str,
-    parent_target_branch: str,
-    branch_map: dict[str, str],
-    upstream_config: UpstreamTargetBranchConfig | None = None,
+    repo_root: Path | None = None,
+    sub_path: str = "",
+    remote_url: str = "",
+    parent_target_branch: str = "develop",
+    branch_map: dict[str, str] | None = None,
+    **kwargs: object,
 ) -> str:
     """Determine the expected upstream target branch for a submodule.
 
     Precedence:
     1. Explicit branch map override (`--branch-map path=branch`).
-    2. Verify dataclass source-of-truth expected branch.
-    3. Branch configured in `.gitmodules` (if defined and validated).
-    4. Parent target branch.
+    2. Parent target branch.
     """
-    if sub_path in branch_map:
+    if branch_map and sub_path in branch_map:
         mapped = branch_map[sub_path]
         logger.info("Submodule '%s' using mapped branch '%s'", sub_path, mapped)
         return mapped
-
-    if upstream_config is None:
-        upstream_config = UpstreamTargetBranchConfig()
-
-    mapped_branch = upstream_config.branch_maps.get(sub_path, {}).get(
-        parent_target_branch
-    )
-    if mapped_branch:
-        logger.info(
-            "Submodule '%s' using branch '%s' from verify dataclass for parent branch '%s'",
-            sub_path,
-            mapped_branch,
-            parent_target_branch,
-        )
-        return mapped_branch
-
-    # Inspect .gitmodules for explicit branch configuration
-    gitmodules_branch = get_gitmodules_configured_branch(repo_root, sub_path)
-    if gitmodules_branch:
-        logger.info(
-            "Submodule '%s' using branch '%s' from .gitmodules",
-            sub_path,
-            gitmodules_branch,
-        )
-        return gitmodules_branch
 
     return parent_target_branch
 
@@ -294,40 +292,32 @@ def is_ancestor_commit(
 
 
 def get_declared_submodules(repo_root: Path) -> set[str]:
-    """Collect all submodule paths declared in .gitmodules files (including nested)."""
+    """Collect all submodule paths declared in .gitmodules files recursively to arbitrary depth."""
     declared: set[str] = set()
-    root_gitmodules = repo_root / ".gitmodules"
-    if not root_gitmodules.exists():
-        return declared
+    queue: list[str] = [""]
 
-    code, out, _ = run_git_cmd(
-        ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
-        cwd=repo_root,
-    )
-    if code == 0 and out:
+    while queue:
+        current_rel = queue.pop(0)
+        current_dir = repo_root / current_rel if current_rel else repo_root
+        gitmodules_file = current_dir / ".gitmodules"
+        if not gitmodules_file.exists():
+            continue
+
+        code, out, _ = run_git_cmd(
+            ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
+            cwd=current_dir,
+        )
+        if code != 0 or not out:
+            continue
+
         for line in out.splitlines():
             parts = line.split(None, 1)
             if len(parts) == 2:
-                declared.add(parts[1].strip())
-
-    for sub_path in list(declared):
-        sub_gitmodules = repo_root / sub_path / ".gitmodules"
-        if sub_gitmodules.exists():
-            c, nested_out, _ = run_git_cmd(
-                [
-                    "config",
-                    "-f",
-                    ".gitmodules",
-                    "--get-regexp",
-                    r"^submodule\..*\.path$",
-                ],
-                cwd=repo_root / sub_path,
-            )
-            if c == 0 and nested_out:
-                for line in nested_out.splitlines():
-                    parts = line.split(None, 1)
-                    if len(parts) == 2:
-                        declared.add(f"{sub_path}/{parts[1].strip()}")
+                child_path = parts[1].strip()
+                full_rel_path = f"{current_rel}/{child_path}".lstrip("/")
+                if full_rel_path not in declared:
+                    declared.add(full_rel_path)
+                    queue.append(full_rel_path)
 
     return declared
 
@@ -337,11 +327,11 @@ def verify_submodules(
     target_branch: str,
     branch_map: dict[str, str],
     allow_ancestor: bool = False,
-    upstream_config: UpstreamTargetBranchConfig | None = None,
+    upstream_config: UpstreamRemoteConfig | None = None,
 ) -> list[SubmoduleStatus]:
     """Execute submodule verification for all submodules in the repository."""
     if upstream_config is None:
-        upstream_config = UpstreamTargetBranchConfig()
+        upstream_config = UpstreamRemoteConfig()
 
     logger.info(
         "Verifying submodules in %s against target branch '%s'",
@@ -349,7 +339,11 @@ def verify_submodules(
         target_branch,
     )
 
-    declared_paths = get_declared_submodules(repo_root)
+    declared_paths = {
+        p
+        for p in get_declared_submodules(repo_root)
+        if not is_submodule_excluded(p, upstream_config.excluded_submodules)
+    }
 
     # 1. Run git submodule status --recursive
     code, status_out, err = run_git_cmd(
@@ -360,6 +354,13 @@ def verify_submodules(
         raise RuntimeError(f"git submodule status failed: {err}")
 
     raw_entries = parse_submodule_status_lines(status_out)
+    if upstream_config.excluded_submodules:
+        raw_entries = [
+            e
+            for e in raw_entries
+            if not is_submodule_excluded(e[2], upstream_config.excluded_submodules)
+        ]
+
     if not raw_entries and declared_paths:
         logger.error(
             "Repository has %d submodule(s) declared in .gitmodules, but none were detected by git submodule status.",
@@ -414,37 +415,48 @@ def verify_submodules(
             results.append(status_obj)
             continue
 
-        # Validate that .gitmodules does not drift from verify dataclass source of truth
-        expected_config_branch = upstream_config.branch_maps.get(sub_path, {}).get(
-            target_branch, target_branch
-        )
-        gitmodules_branch = get_gitmodules_configured_branch(repo_root, sub_path)
+        # Validate that .gitmodules remote matches canonical upstream (guard against unauthorized fork drift)
+        canonical_remote = upstream_config.canonical_remotes.get(sub_path)
+        if canonical_remote:
+            norm_remote = get_web_url_from_remote(remote_url)
+            norm_canonical = get_web_url_from_remote(canonical_remote)
+            if norm_remote != norm_canonical:
+                status_obj.status = VerificationStatus.ERROR
+                status_obj.detail = f"Remote URL '{remote_url}' differs from canonical upstream '{canonical_remote}'"
+                logger.error(
+                    "Submodule '%s' remote URL '%s' differs from canonical upstream '%s'",
+                    sub_path,
+                    remote_url,
+                    canonical_remote,
+                )
+                results.append(status_obj)
+                continue
 
+        # Validate that .gitmodules branch does not conflict with parent target branch
+        gitmodules_branch = get_gitmodules_configured_branch(repo_root, sub_path)
         if gitmodules_branch and sub_path not in branch_map:
-            if gitmodules_branch != expected_config_branch:
+            if gitmodules_branch != target_branch:
                 status_obj.status = VerificationStatus.ERROR
                 status_obj.target_branch = gitmodules_branch
                 status_obj.detail = (
                     f".gitmodules branch '{gitmodules_branch}' "
-                    f"differs from expected verify dataclass '{expected_config_branch}' for parent target branch '{target_branch}'"
+                    f"differs from parent target branch '{target_branch}'"
                 )
                 logger.error(
-                    "Submodule '%s' .gitmodules branch '%s' differs from expected verify dataclass '%s' for parent target branch '%s'",
+                    "Submodule '%s' .gitmodules branch '%s' differs from parent target branch '%s'",
                     sub_path,
                     gitmodules_branch,
-                    expected_config_branch,
                     target_branch,
                 )
                 results.append(status_obj)
                 continue
 
         sub_branch = resolve_submodule_target_branch(
-            repo_root,
-            sub_path,
-            remote_url,
-            target_branch,
-            branch_map,
-            upstream_config=upstream_config,
+            repo_root=repo_root,
+            sub_path=sub_path,
+            remote_url=remote_url,
+            parent_target_branch=target_branch,
+            branch_map=branch_map,
         )
         status_obj.target_branch = sub_branch
 

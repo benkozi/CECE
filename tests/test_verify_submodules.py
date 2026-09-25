@@ -15,11 +15,12 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from verify_submodules import (  # noqa: E402
     SubmoduleStatus,
-    UpstreamTargetBranchConfig,
+    UpstreamRemoteConfig,
     VerificationStatus,
     generate_step_summary,
     get_declared_submodules,
     get_web_url_from_remote,
+    is_submodule_excluded,
     log_verification_report,
     parse_branch_map_args,
     parse_submodule_status_lines,
@@ -247,16 +248,46 @@ class TestVerifySubmodules(unittest.TestCase):
             declared = get_declared_submodules(Path(tmp_dir))
             self.assertEqual(declared, set())
 
-    def test_gitmodules_branch_drift_from_dataclass_fails(self) -> None:
-        """Ensure verification fails if .gitmodules branch differs from UpstreamTargetBranchConfig or if commit is not on main."""
-        config = UpstreamTargetBranchConfig()
-        # Verify source of truth defaults for bbakernoaa-hosted modules map to parent branch (develop and main)
-        self.assertEqual(config.branch_maps["extern/helm"]["develop"], "develop")
-        self.assertEqual(config.branch_maps["extern/helm"]["main"], "main")
+    def test_get_declared_submodules_arbitrary_depth(self) -> None:
+        """Verify get_declared_submodules recursively discovers submodules beyond 2 levels."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            # Level 1: repo/.gitmodules -> sub1
+            (repo_root / ".gitmodules").write_text(
+                '[submodule "sub1"]\n\tpath = sub1\n\turl = https://example.com/sub1\n',
+                encoding="utf-8",
+            )
+            # Level 2: repo/sub1/.gitmodules -> sub2
+            (repo_root / "sub1").mkdir(parents=True)
+            (repo_root / "sub1" / ".gitmodules").write_text(
+                '[submodule "sub2"]\n\tpath = sub2\n\turl = https://example.com/sub2\n',
+                encoding="utf-8",
+            )
+            # Level 3: repo/sub1/sub2/.gitmodules -> sub3
+            (repo_root / "sub1" / "sub2").mkdir(parents=True)
+            (repo_root / "sub1" / "sub2" / ".gitmodules").write_text(
+                '[submodule "sub3"]\n\tpath = sub3\n\turl = https://example.com/sub3\n',
+                encoding="utf-8",
+            )
+
+            declared = get_declared_submodules(repo_root)
+            self.assertEqual(
+                declared,
+                {"sub1", "sub1/sub2", "sub1/sub2/sub3"},
+            )
+
+    def test_upstream_remote_config_and_branch_validation(self) -> None:
+        """Ensure verification enforces canonical remotes and rejects conflicting .gitmodules branches."""
+        config = UpstreamRemoteConfig()
+        # Verify canonical remotes for bbakernoaa-hosted upstream repositories
         self.assertEqual(
-            config.branch_maps["extern/helm/libs/amio"]["develop"], "develop"
+            config.canonical_remotes["extern/helm"],
+            "https://github.com/bbakernoaa/HELM-Project",
         )
-        self.assertEqual(config.branch_maps["extern/helm/libs/amio"]["main"], "main")
+        self.assertEqual(
+            config.canonical_remotes["extern/helm/libs/amio"],
+            "https://github.com/bbakernoaa/amio",
+        )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
@@ -264,38 +295,52 @@ class TestVerifySubmodules(unittest.TestCase):
             (repo_root / "extern" / "helm").mkdir(parents=True)
 
             with patch("verify_submodules.run_git_cmd") as mock_git:
+                # 1. Test unauthorized fork drift rejection
+                def fake_git_fork(args, cwd=None):
+                    if "submodule" in args and "status" in args:
+                        return (0, " 9e2f6751 extern/helm", "")
+                    if "config" in args and "submodule.extern/helm.url" in args:
+                        return (0, "https://github.com/attacker/HELM-Project.git", "")
+                    return (0, "", "")
 
-                def fake_git(args, cwd=None):
+                mock_git.side_effect = fake_git_fork
+                statuses_fork = verify_submodules(
+                    repo_root=repo_root,
+                    target_branch="develop",
+                    branch_map={},
+                    upstream_config=config,
+                )
+                self.assertEqual(statuses_fork[0].status, VerificationStatus.ERROR)
+                self.assertIn(
+                    "differs from canonical upstream", statuses_fork[0].detail
+                )
+
+                # 2. When targeting 'main', if .gitmodules has 'develop', it must fail
+                def fake_git_branch_conflict(args, cwd=None):
                     if "submodule" in args and "status" in args:
                         return (0, " 9e2f6751 extern/helm", "")
                     if "config" in args and "submodule.extern/helm.branch" in args:
-                        # Drifts from verify dataclass 'main'
                         return (0, "develop", "")
                     if "config" in args and "submodule.extern/helm.url" in args:
                         return (0, "https://github.com/bbakernoaa/HELM-Project.git", "")
                     if "config" in args and r"^submodule\..*\.path$" in args:
                         return (0, "submodule.extern/helm.path extern/helm", "")
-                    if "ls-remote" in args and any("main" in a for a in args):
-                        return (0, "11112222 refs/heads/main", "")
                     return (0, "", "")
 
-                mock_git.side_effect = fake_git
-
-                # When targeting 'main', if .gitmodules has 'develop', it must fail
+                mock_git.side_effect = fake_git_branch_conflict
                 statuses = verify_submodules(
                     repo_root=repo_root,
                     target_branch="main",
                     branch_map={},
                     upstream_config=config,
                 )
-
                 self.assertEqual(len(statuses), 1)
                 self.assertEqual(statuses[0].status, VerificationStatus.ERROR)
                 self.assertIn(
-                    "differs from expected verify dataclass 'main'", statuses[0].detail
+                    "differs from parent target branch 'main'", statuses[0].detail
                 )
 
-                # Now test without pinned .gitmodules branch: commit must match main HEAD
+                # 3. Test without pinned .gitmodules branch: commit matching main HEAD passes
                 def fake_git_unpinned(args, cwd=None):
                     if "submodule" in args and "status" in args:
                         return (0, " 11112222 extern/helm", "")
@@ -318,6 +363,44 @@ class TestVerifySubmodules(unittest.TestCase):
                 )
                 self.assertEqual(statuses_main[0].status, VerificationStatus.OK)
                 self.assertEqual(statuses_main[0].target_branch, "main")
+
+    def test_is_submodule_excluded(self) -> None:
+        """Verify is_submodule_excluded handles exact matches, trailing slashes, and prefixes."""
+        excludes = {"extern/foo", "vendor/bar/"}
+        self.assertTrue(is_submodule_excluded("extern/foo", excludes))
+        self.assertTrue(is_submodule_excluded("extern/foo/nested", excludes))
+        self.assertTrue(is_submodule_excluded("vendor/bar", excludes))
+        self.assertTrue(is_submodule_excluded("vendor/bar/sub", excludes))
+        self.assertFalse(is_submodule_excluded("extern/foo_other", excludes))
+        self.assertFalse(is_submodule_excluded("extern/baz", excludes))
+
+    def test_exclude_submodules_via_config(self) -> None:
+        """Verify submodule exclusion works via UpstreamRemoteConfig."""
+        repo_root = SCRIPTS_DIR.parent
+        # In live CECE repo, we have extern/helm and extern/helm/libs/amio
+        # 1. Exclude nested submodule via UpstreamRemoteConfig
+        config_nested = UpstreamRemoteConfig(
+            excluded_submodules={"extern/helm/libs/amio"}
+        )
+        statuses = verify_submodules(
+            repo_root=repo_root,
+            target_branch="develop",
+            branch_map={},
+            upstream_config=config_nested,
+        )
+        paths = {s.path for s in statuses}
+        self.assertIn("extern/helm", paths)
+        self.assertNotIn("extern/helm/libs/amio", paths)
+
+        # 2. Exclude top-level submodule via UpstreamRemoteConfig (which also excludes its nested children)
+        config_all = UpstreamRemoteConfig(excluded_submodules={"extern/helm"})
+        statuses_all = verify_submodules(
+            repo_root=repo_root,
+            target_branch="develop",
+            branch_map={},
+            upstream_config=config_all,
+        )
+        self.assertEqual(statuses_all, [])
 
 
 if __name__ == "__main__":
