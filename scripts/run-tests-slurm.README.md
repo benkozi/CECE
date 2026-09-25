@@ -1,15 +1,10 @@
-# CECE Scripts
+# Running the CECE test suite on Slurm
 
-Utilities for building and testing CECE. The two test-suite entry
-points are:
-
-- **`build-and-test-container.py`** — build + run the full suite in
-  the dev container (the CI path).
-- **`run-tests-slurm.sbatch`** — run the suite on an HPC Slurm
-  system with proper rank placement.
-
-(The other scripts here are data-download, benchmarking, and
-visualization helpers.)
+`scripts/run-tests-slurm.sbatch` runs the registered ctest suite on an
+HPC Slurm system with proper rank placement: ctest runs on a compute
+node inside one allocation and every MPI test launches as its own
+right-sized `srun` job step. For container and local runs see the
+top-level README.
 
 ## Launch profiles
 
@@ -23,16 +18,6 @@ variables, so the launcher is chosen once, at configure time:
 
 One CMake source of truth — no platform conditionals; the profiles
 differ only in configure flags.
-
-## Container
-
-```bash
-python3 scripts/build-and-test-container.py
-```
-
-builds the image-mounted tree and runs the full registered suite. See
-the top-level README for manual in-container configures (which need
-`-DCECE_MPIEXEC_CONTAINER_FLAGS=ON` spelled out).
 
 ## HPC Slurm
 
@@ -71,7 +56,9 @@ allocation.
 
 ### Variants
 
-Arguments after the build directory pass straight through to ctest:
+The first argument is the test build directory (the tree holding
+`CTestTestfile.cmake`); everything after it passes straight through to
+ctest:
 
 ```bash
 # Asynchronous submit: drop --wait, then watch the log / job.

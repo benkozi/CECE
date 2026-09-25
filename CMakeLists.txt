@@ -660,6 +660,24 @@ if(CECE_BUILD_TESTING)
     )
   endif()
 
+  # Shared main() + process-level MPI/HALO/Kokkos environment for the MPI test
+  # executables (tests/support/). Link `cece_test_main` (or
+  # `cece_test_main_kokkos` for Kokkos-only tests) in place of
+  # GTest::gtest_main. A test file that needs its own global environment adds
+  # it with CECE_TEST_ADD_ENVIRONMENT; it is registered after (so torn down
+  # before) the MPI/Kokkos one. Initialization happens in Environment::SetUp,
+  # which gtest skips for --gtest_list_tests, so test discovery never
+  # initializes MPI or Kokkos and no per-file discovery guard is needed.
+  add_library(cece_test_support STATIC tests/support/cece_test_environment.cpp)
+  target_include_directories(cece_test_support PUBLIC tests)
+  target_link_libraries(cece_test_support PUBLIC cece GTest::gtest)
+  add_library(cece_test_main STATIC tests/support/cece_test_main.cpp)
+  target_link_libraries(cece_test_main PUBLIC cece_test_support)
+  # Kokkos-only variant: no MPI init, for tests that never touch MPI and
+  # therefore carry no MPI TEST_LAUNCHER.
+  add_library(cece_test_main_kokkos STATIC tests/support/cece_test_main_kokkos.cpp)
+  target_link_libraries(cece_test_main_kokkos PUBLIC cece_test_support)
+
   add_executable(test_driver_configuration tests/test_driver_configuration.cpp)
   target_link_libraries(test_driver_configuration PRIVATE cece GTest::gtest_main)
 
@@ -689,14 +707,14 @@ if(CECE_BUILD_TESTING)
     target_link_libraries(test_cece_cap PRIVATE cece GTest::gtest_main)
 
     add_executable(test_diagnostics tests/test_diagnostics.cpp)
-    target_link_libraries(test_diagnostics PRIVATE cece GTest::gtest)
+    target_link_libraries(test_diagnostics PRIVATE cece cece_test_main_kokkos)
   endif()
 
   add_executable(test_cece_ingestor tests/test_cece_ingestor.cpp)
   target_link_libraries(test_cece_ingestor PRIVATE cece GTest::gtest_main)
 
   add_executable(test_cece_utils tests/test_cece_utils.cpp)
-  target_link_libraries(test_cece_utils PRIVATE cece GTest::gtest_main)
+  target_link_libraries(test_cece_utils PRIVATE cece cece_test_main)
   set_target_properties(
     test_cece_utils
     PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
@@ -713,7 +731,7 @@ if(CECE_BUILD_TESTING)
   target_link_libraries(test_cece_compute PRIVATE cece GTest::gtest_main)
 
   add_executable(test_standalone_writer_attributes tests/test_standalone_writer_attributes.cpp)
-  target_link_libraries(test_standalone_writer_attributes PRIVATE cece GTest::gtest)
+  target_link_libraries(test_standalone_writer_attributes PRIVATE cece cece_test_main)
   set_target_properties(
     test_standalone_writer_attributes
     PROPERTIES TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
@@ -806,11 +824,11 @@ if(CECE_BUILD_TESTING)
 
   # Kokkos Configuration Tests (Requirement 6.13-6.18, 6.21)
   add_executable(test_kokkos_configuration tests/test_kokkos_configuration.cpp)
-  target_link_libraries(test_kokkos_configuration PRIVATE cece GTest::gtest_main)
+  target_link_libraries(test_kokkos_configuration PRIVATE cece cece_test_main_kokkos)
 
   # Comprehensive Property-Based Test Suite (Task 11.1)
   add_executable(test_properties tests/test_properties.cpp)
-  target_link_libraries(test_properties PRIVATE cece GTest::gtest_main)
+  target_link_libraries(test_properties PRIVATE cece cece_test_main_kokkos)
 
   # Test Suite Idempotence (Requirement 8.16)
   add_executable(test_suite_idempotence tests/test_suite_idempotence.cpp)
@@ -843,7 +861,10 @@ if(CECE_BUILD_TESTING)
 
   # Speciation Config Property Tests (MEGAN3)
   add_executable(test_speciation tests/test_speciation.cpp)
-  target_link_libraries(test_speciation PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+  target_link_libraries(
+    test_speciation
+    PRIVATE cece cece_test_main_kokkos rapidcheck rapidcheck_gtest
+  )
   target_compile_definitions(test_speciation PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
   # CeceClock Property Tests
@@ -890,7 +911,7 @@ if(CECE_BUILD_TESTING)
 
   # CeceClock Run Loop Unit Tests
   add_executable(test_cece_clock_run_loop tests/test_cece_clock_run_loop.cpp)
-  target_link_libraries(test_cece_clock_run_loop PRIVATE cece GTest::gtest_main)
+  target_link_libraries(test_cece_clock_run_loop PRIVATE cece cece_test_main_kokkos)
 
   # Bracket-equality Property Tests (driver-io-regrid-perf, Property 5)
   add_executable(test_bracket_equal_properties tests/test_bracket_equal_properties.cpp)
@@ -1514,21 +1535,21 @@ if(CECE_BUILD_TESTING)
 
   # MEGAN3 Canopy Model Property Tests
   add_executable(test_megan3 tests/test_megan3.cpp)
-  target_link_libraries(test_megan3 PRIVATE cece GTest::gtest_main rapidcheck rapidcheck_gtest)
+  target_link_libraries(test_megan3 PRIVATE cece cece_test_main_kokkos rapidcheck rapidcheck_gtest)
 
   # BDSNP Soil NO Property Tests
   add_executable(test_bdsnp tests/test_bdsnp.cpp)
-  target_link_libraries(test_bdsnp PRIVATE cece GTest::gtest rapidcheck rapidcheck_gtest)
+  target_link_libraries(test_bdsnp PRIVATE cece cece_test_main_kokkos rapidcheck rapidcheck_gtest)
 
   # Canonical BDSNP production-kernel regression tests
   add_executable(test_bdsnp_runtime tests/test_bdsnp_runtime.cpp)
-  target_link_libraries(test_bdsnp_runtime PRIVATE cece GTest::gtest)
+  target_link_libraries(test_bdsnp_runtime PRIVATE cece cece_test_main_kokkos)
 
   if(ESMF_FOUND)
     add_executable(test_field_creation tests/test_field_creation.cpp)
     add_executable(test_field_creation_error_handling tests/test_field_creation_error_handling.cpp)
     if(CECE_HAS_FORTRAN AND TARGET test_helpers)
-      target_link_libraries(test_field_creation PRIVATE cece test_helpers GTest::gtest_main)
+      target_link_libraries(test_field_creation PRIVATE cece test_helpers cece_test_main)
       set_target_properties(
         test_field_creation
         PROPERTIES
@@ -1536,7 +1557,7 @@ if(CECE_BUILD_TESTING)
       )
       target_link_libraries(
         test_field_creation_error_handling
-        PRIVATE cece test_helpers GTest::gtest_main
+        PRIVATE cece test_helpers cece_test_main
       )
       set_target_properties(
         test_field_creation_error_handling
@@ -1544,21 +1565,21 @@ if(CECE_BUILD_TESTING)
           TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
       )
     else()
-      target_link_libraries(test_field_creation PRIVATE cece GTest::gtest_main)
-      target_link_libraries(test_field_creation_error_handling PRIVATE cece GTest::gtest_main)
+      target_link_libraries(test_field_creation PRIVATE cece cece_test_main)
+      target_link_libraries(test_field_creation_error_handling PRIVATE cece cece_test_main)
     endif()
 
     # Unit tests for field pointer passing (Requirement R5)
     add_executable(test_field_pointer_passing tests/test_field_pointer_passing.cpp)
     if(CECE_HAS_FORTRAN AND TARGET test_helpers)
-      target_link_libraries(test_field_pointer_passing PRIVATE cece test_helpers GTest::gtest_main)
+      target_link_libraries(test_field_pointer_passing PRIVATE cece test_helpers cece_test_main)
       set_target_properties(
         test_field_pointer_passing
         PROPERTIES
           TEST_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
       )
     else()
-      target_link_libraries(test_field_pointer_passing PRIVATE cece GTest::gtest_main)
+      target_link_libraries(test_field_pointer_passing PRIVATE cece cece_test_main)
     endif()
 
     set_target_properties(
@@ -1573,7 +1594,7 @@ if(CECE_BUILD_TESTING)
   add_executable(test_helm_cpp tests/test_helm_cpp.cpp)
   target_link_libraries(
     test_helm_cpp
-    PRIVATE cece HELM::DAGR HELM::HALO HELM::TICK HELM::SPAN GTest::gtest
+    PRIVATE cece HELM::DAGR HELM::HALO HELM::TICK HELM::SPAN cece_test_main
   )
   target_compile_definitions(test_helm_cpp PRIVATE CECE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -1807,11 +1828,21 @@ if(CECE_BUILD_TESTING)
   # PREPENDED: discovery serializes PROPERTIES as a flat list and re-pairs
   # it name/value, so a semicolon-list value at a call site (see the
   # FI_PROVIDER note below) silently corrupts every pair after it —
-  # prepending keeps LABELS/np1 ahead of any such value. Directly-registered
-  # tests get their labels from the `_np<N>` suffix sweep at the end of
-  # this block.
+  # prepending keeps the injected pairs ahead of any such value.
+  # Directly-registered tests get the same two properties from the `_np<N>`
+  # suffix sweep at the end of this block.
+  #
+  # ENVIRONMENT_MODIFICATION OMP_PROC_BIND=set:false is Kokkos's own
+  # unit-testing recommendation (silences the OpenMP-backend warning). It is a
+  # separate property from ENVIRONMENT, so call-site ENVIRONMENT values are
+  # untouched. Discovery itself needs no such default: gtest lists tests
+  # before any Environment::SetUp runs, so no test binary initializes Kokkos
+  # while being enumerated.
   function(gtest_discover_tests target)
-    _gtest_discover_tests(${target} PROPERTIES LABELS np1 ${ARGN})
+    _gtest_discover_tests(
+      ${target}
+      PROPERTIES LABELS np1 ENVIRONMENT_MODIFICATION "OMP_PROC_BIND=set:false" ${ARGN}
+    )
   endfunction()
 
   gtest_discover_tests(test_driver_configuration)
@@ -1909,7 +1940,7 @@ if(CECE_BUILD_TESTING)
   add_executable(test_band_boundary_conservation tests/test_band_boundary_conservation.cpp)
   target_link_libraries(
     test_band_boundary_conservation
-    PRIVATE cece GTest::gtest MPI::MPI_CXX Kokkos::kokkos HELM::AXIS rapidcheck rapidcheck_gtest
+    PRIVATE cece cece_test_main MPI::MPI_CXX Kokkos::kokkos HELM::AXIS rapidcheck rapidcheck_gtest
   )
   set_target_properties(
     test_band_boundary_conservation
@@ -1923,7 +1954,7 @@ if(CECE_BUILD_TESTING)
   add_executable(test_band_boundary_curvilinear tests/test_band_boundary_curvilinear.cpp)
   target_link_libraries(
     test_band_boundary_curvilinear
-    PRIVATE cece GTest::gtest MPI::MPI_CXX Kokkos::kokkos HELM::AXIS rapidcheck rapidcheck_gtest
+    PRIVATE cece cece_test_main MPI::MPI_CXX Kokkos::kokkos HELM::AXIS rapidcheck rapidcheck_gtest
   )
   set_target_properties(
     test_band_boundary_curvilinear
@@ -1983,7 +2014,7 @@ if(CECE_BUILD_TESTING)
   add_executable(test_column_local_band_invariance tests/test_column_local_band_invariance.cpp)
   target_link_libraries(
     test_column_local_band_invariance
-    PRIVATE cece GTest::gtest Kokkos::kokkos rapidcheck rapidcheck_gtest
+    PRIVATE cece cece_test_main_kokkos Kokkos::kokkos rapidcheck rapidcheck_gtest
   )
   add_test(
     NAME test_column_local_band_invariance
@@ -2055,18 +2086,10 @@ if(CECE_BUILD_TESTING)
     )
   endif()
 
-  # Pre-main test-environment defaults, linked into EVERY test/benchmark
-  # executable. Currently: OMP_PROC_BIND=false (Kokkos's own unit-testing
-  # recommendation; overwrite=0, so an exported value wins), applied before
-  # main so gtest discovery re-runs are covered too — ctest ENVIRONMENT
-  # properties only apply when a test runs, never during discovery. An
-  # OBJECT library so the otherwise-unreferenced initializer object always
-  # reaches the link line (a static archive member would be dropped). The
-  # loop keys on target type + name rather than a hand-kept list, so new
-  # test targets are covered automatically.
-  # Rank-count labels/processors for the directly-registered (non-discovered)
-  # tests, keyed on the `_np<N>` name-suffix convention rather than a
-  # hand-kept list. LABELS enable rank-count selection (`ctest -L np2`);
+  # Rank-count labels/processors and the OMP_PROC_BIND default for the
+  # directly-registered (non-discovered) tests — the counterpart of the
+  # gtest_discover_tests wrapper above — keyed on the `_np<N>` name-suffix
+  # convention rather than a hand-kept list. LABELS enable rank-count selection (`ctest -L np2`);
   # PROCESSORS makes `ctest -j` budget ranks correctly (e.g. `-j 4` packs
   # 4x np1, 2x np2, or 1x np4 without oversubscribing a 4-task allocation).
   # Tests without the suffix default to np1 unless their registration
@@ -2082,6 +2105,12 @@ if(CECE_BUILD_TESTING)
     list(APPEND _cece_label_dir_queue ${_cece_label_subdirs})
     get_property(_cece_registered_tests DIRECTORY "${_cece_label_dir}" PROPERTY TESTS)
     foreach(_cece_test IN LISTS _cece_registered_tests)
+      set_property(
+        TEST ${_cece_test}
+        DIRECTORY "${_cece_label_dir}"
+        APPEND
+        PROPERTY ENVIRONMENT_MODIFICATION "OMP_PROC_BIND=set:false"
+      )
       if(_cece_test MATCHES "_np([0-9]+)$")
         set_property(
           TEST ${_cece_test}
@@ -2107,18 +2136,6 @@ if(CECE_BUILD_TESTING)
       endif()
     endforeach()
   endwhile()
-
-  add_library(cece_test_default_env OBJECT tests/support/test_default_env.cpp)
-  get_property(_cece_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-  foreach(_cece_target IN LISTS _cece_dir_targets)
-    get_target_property(_cece_target_type ${_cece_target} TYPE)
-    if(
-      _cece_target_type STREQUAL "EXECUTABLE"
-      AND _cece_target MATCHES "^(test_|benchmark_|hemco_comparison_driver$)"
-    )
-      target_link_libraries(${_cece_target} PRIVATE cece_test_default_env)
-    endif()
-  endforeach()
 endif() # CECE_BUILD_TESTING
 
 # Standalone NUOPC driver

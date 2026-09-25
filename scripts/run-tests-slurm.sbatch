@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run the CECE test suite on a Slurm system. See scripts/README.md.
+# Run the CECE test suite on a Slurm system. See scripts/run-tests-slurm.README.md.
 #
 # Usage:
-#   sbatch [--wait] <site flags> scripts/run-tests-slurm.sbatch <build-dir> [ctest args...]
+#   sbatch [--wait] <site flags> scripts/run-tests-slurm.sbatch <test-build-dir> [ctest args...]
 #
 # The directives below carry only suite-owned topology: --ntasks is the
 # suite's largest per-test rank count (the _np4 tests), so every
@@ -26,11 +26,11 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "usage: sbatch [--wait] <site flags> $0 <build-dir> [ctest args...]" >&2
+  echo "usage: sbatch [--wait] <site flags> $0 <test-build-dir> [ctest args...]" >&2
   exit 2
 fi
 
-build_dir="$1"
+test_build_dir="$1"
 shift
 
-exec ctest --test-dir "${build_dir}" --output-on-failure "$@"
+exec ctest --test-dir "${test_build_dir}" --output-on-failure "$@"
