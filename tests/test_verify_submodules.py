@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from verify_submodules import (  # noqa: E402
     SubmoduleStatus,
+    UpstreamTargetBranchConfig,
     VerificationStatus,
     generate_step_summary,
     get_declared_submodules,
@@ -22,6 +23,7 @@ from verify_submodules import (  # noqa: E402
     parse_branch_map_args,
     parse_submodule_status_lines,
     resolve_submodule_target_branch,
+    verify_submodules,
 )
 
 
@@ -214,6 +216,78 @@ class TestVerifySubmodules(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             declared = get_declared_submodules(Path(tmp_dir))
             self.assertEqual(declared, set())
+
+    def test_gitmodules_branch_drift_from_dataclass_fails(self) -> None:
+        """Ensure verification fails if .gitmodules branch differs from UpstreamTargetBranchConfig or if commit is not on main."""
+        config = UpstreamTargetBranchConfig()
+        # Verify source of truth defaults for bbakernoaa-hosted modules map to parent branch (develop and main)
+        self.assertEqual(config.branch_maps["extern/helm"]["develop"], "develop")
+        self.assertEqual(config.branch_maps["extern/helm"]["main"], "main")
+        self.assertEqual(
+            config.branch_maps["extern/helm/libs/amio"]["develop"], "develop"
+        )
+        self.assertEqual(config.branch_maps["extern/helm/libs/amio"]["main"], "main")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            (repo_root / ".git").mkdir()
+            (repo_root / "extern" / "helm").mkdir(parents=True)
+
+            with patch("verify_submodules.run_git_cmd") as mock_git:
+
+                def fake_git(args, cwd=None):
+                    if "submodule" in args and "status" in args:
+                        return (0, " 9e2f6751 extern/helm", "")
+                    if "config" in args and "submodule.extern/helm.branch" in args:
+                        # Drifts from verify dataclass 'main'
+                        return (0, "develop", "")
+                    if "config" in args and "submodule.extern/helm.url" in args:
+                        return (0, "https://github.com/bbakernoaa/HELM-Project.git", "")
+                    if "config" in args and r"^submodule\..*\.path$" in args:
+                        return (0, "submodule.extern/helm.path extern/helm", "")
+                    if "ls-remote" in args and any("main" in a for a in args):
+                        return (0, "11112222 refs/heads/main", "")
+                    return (0, "", "")
+
+                mock_git.side_effect = fake_git
+
+                # When targeting 'main', if .gitmodules has 'develop', it must fail
+                statuses = verify_submodules(
+                    repo_root=repo_root,
+                    target_branch="main",
+                    branch_map={},
+                    upstream_config=config,
+                )
+
+                self.assertEqual(len(statuses), 1)
+                self.assertEqual(statuses[0].status, VerificationStatus.ERROR)
+                self.assertIn(
+                    "differs from expected verify dataclass 'main'", statuses[0].detail
+                )
+
+                # Now test without pinned .gitmodules branch: commit must match main HEAD
+                def fake_git_unpinned(args, cwd=None):
+                    if "submodule" in args and "status" in args:
+                        return (0, " 11112222 extern/helm", "")
+                    if "config" in args and "submodule.extern/helm.branch" in args:
+                        return (1, "", "key not found")
+                    if "config" in args and "submodule.extern/helm.url" in args:
+                        return (0, "https://github.com/bbakernoaa/HELM-Project.git", "")
+                    if "config" in args and r"^submodule\..*\.path$" in args:
+                        return (0, "submodule.extern/helm.path extern/helm", "")
+                    if "ls-remote" in args and any("main" in a for a in args):
+                        return (0, "11112222 refs/heads/main", "")
+                    return (0, "", "")
+
+                mock_git.side_effect = fake_git_unpinned
+                statuses_main = verify_submodules(
+                    repo_root=repo_root,
+                    target_branch="main",
+                    branch_map={},
+                    upstream_config=config,
+                )
+                self.assertEqual(statuses_main[0].status, VerificationStatus.OK)
+                self.assertEqual(statuses_main[0].target_branch, "main")
 
 
 if __name__ == "__main__":
