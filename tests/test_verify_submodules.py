@@ -19,6 +19,7 @@ from verify_submodules import (  # noqa: E402
     VerificationStatus,
     generate_step_summary,
     get_declared_submodules,
+    get_web_url_from_remote,
     log_verification_report,
     parse_branch_map_args,
     parse_submodule_status_lines,
@@ -188,9 +189,38 @@ class TestVerifySubmodules(unittest.TestCase):
             self.assertTrue(summary_file.exists())
             content = summary_file.read_text(encoding="utf-8")
             self.assertIn("## Submodule Verification Report", content)
-            self.assertIn("`extern/helm`", content)
+            self.assertIn("[`extern/helm`](https://github.com/example/helm)", content)
+            self.assertIn(
+                "[`develop`](https://github.com/example/helm/tree/develop)", content
+            )
+            self.assertIn(
+                "[`9e2f6751`](https://github.com/example/helm/commit/9e2f6751)",
+                content,
+            )
+            self.assertIn(
+                "[`c4d2b5ab`](https://github.com/example/helm/commit/c4d2b5ab)",
+                content,
+            )
+            self.assertIn(
+                "https://github.com/example/helm/compare/9e2f6751...c4d2b5ab", content
+            )
             self.assertIn("OUT_OF_SYNC", content)
             self.assertIn("[!WARNING]", content)
+
+    def test_get_web_url_from_remote(self) -> None:
+        self.assertEqual(
+            get_web_url_from_remote("https://github.com/bbakernoaa/HELM-Project.git"),
+            "https://github.com/bbakernoaa/HELM-Project",
+        )
+        self.assertEqual(
+            get_web_url_from_remote("git@github.com:bbakernoaa/amio.git"),
+            "https://github.com/bbakernoaa/amio",
+        )
+        self.assertEqual(
+            get_web_url_from_remote("ssh://git@github.com/owner/repo.git"),
+            "https://github.com/owner/repo",
+        )
+        self.assertIsNone(get_web_url_from_remote(""))
 
     def test_cli_help(self) -> None:
         """Test CLI --help exits with 0 using subprocess.check_output."""

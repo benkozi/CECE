@@ -18,6 +18,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Sequence
@@ -571,27 +572,157 @@ def log_verification_report(
     return False
 
 
+def get_web_url_from_remote(remote_url: str) -> str | None:
+    """Convert a Git remote URL (HTTPS or SSH) to a web browse URL."""
+    if not remote_url:
+        return None
+    url = remote_url.strip()
+    if url.endswith(".git"):
+        url = url[:-4]
+
+    # Handle SSH format: git@github.com:owner/repo
+    if url.startswith("git@"):
+        parts = url.split("@", 1)[1]
+        if ":" in parts:
+            host, path = parts.split(":", 1)
+            return f"https://{host}/{path.lstrip('/')}"
+        return f"https://{parts}"
+
+    # Handle ssh://git@github.com/owner/repo
+    if url.startswith("ssh://"):
+        url = url[6:]
+        if "@" in url:
+            url = url.split("@", 1)[1]
+        if ":" in url:
+            host, path = url.split(":", 1)
+            return f"https://{host}/{path.lstrip('/')}"
+        return f"https://{url}"
+
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+
+    return None
+
+
+def format_sha_link(sha: str, web_url: str | None) -> str:
+    """Format a commit SHA (first 8 characters) as a Markdown link if web_url is provided."""
+    if not sha:
+        return "`none`"
+    short_sha = sha[:8]
+    if web_url and len(sha) >= 7:
+        return f"[`{short_sha}`]({web_url}/commit/{sha})"
+    return f"`{short_sha}`"
+
+
+def format_branch_link(branch: str, web_url: str | None) -> str:
+    """Format a branch name as a Markdown link if web_url is provided."""
+    if not branch or branch == "-":
+        return "`-`"
+    if web_url:
+        return f"[`{branch}`]({web_url}/tree/{branch})"
+    return f"`{branch}`"
+
+
+def format_detail_with_links(
+    detail: str,
+    web_url: str | None,
+    current_sha: str = "",
+    expected_sha: str = "",
+) -> str:
+    """Enhance verification detail message with Markdown links to branches, commits, or compare views."""
+    if not detail:
+        return detail
+
+    result = detail
+
+    if web_url:
+        # Add compare link for commits behind upstream
+        if (
+            "Behind" in result
+            and current_sha
+            and expected_sha
+            and current_sha != expected_sha
+        ):
+            compare_url = f"{web_url}/compare/{current_sha}...{expected_sha}"
+            result = re.sub(
+                r"(\bBehind\s+(?:upstream\s+)?by\s+)(\d+\s+commit(?:\(s\))?)",
+                rf"\1[\2]({compare_url})",
+                result,
+            )
+
+        # Link quoted branch names: branch 'main' -> branch [`main`](web_url/tree/main)
+        def replace_quoted_branch(match: re.Match) -> str:
+            prefix = match.group(1)
+            b_name = match.group(2)
+            return f"{prefix}[`{b_name}`]({web_url}/tree/{b_name})"
+
+        result = re.sub(
+            r"(\bbranch\s+)'([a-zA-Z0-9_./-]+)'",
+            replace_quoted_branch,
+            result,
+        )
+
+        # Link 40-character or 7-12 character hex hashes if preceded by SHA/commit
+        def replace_hash(match: re.Match) -> str:
+            prefix = match.group(1)
+            h = match.group(2)
+            return f"{prefix}[`{h[:8]}`]({web_url}/commit/{h})"
+
+        result = re.sub(
+            r"(\b(?:commit|SHA|sha)\s+)([0-9a-f]{7,40})\b",
+            replace_hash,
+            result,
+        )
+
+    return result
+
+
 def generate_step_summary(
-    statuses: list[SubmoduleStatus], target_branch: str, summary_file: Path
+    statuses: list[SubmoduleStatus],
+    target_branch: str,
+    summary_file: Path,
+    repo_root: Path | None = None,
 ) -> None:
     """Write GitHub Actions step summary markdown table to summary_file."""
+    parent_web_url = None
+    if repo_root:
+        code, out, _ = run_git_cmd(["config", "remote.origin.url"], cwd=repo_root)
+        if code == 0 and out.strip():
+            parent_web_url = get_web_url_from_remote(out.strip())
+
+    parent_branch_display = (
+        f"[`{target_branch}`]({parent_web_url}/tree/{target_branch})"
+        if parent_web_url
+        else f"`{target_branch}`"
+    )
+
     lines: list[str] = [
         "## Submodule Verification Report",
         "",
-        f"**Target Parent Branch:** `{target_branch}`",
+        f"**Target Parent Branch:** {parent_branch_display}",
         "",
         "| Submodule Path | Target Branch | Current SHA | Expected SHA | Status | Details |",
         "|---|---|---|---|---|---|",
     ]
 
     for s in statuses:
-        cur_short = f"`{s.current_sha[:8]}`" if s.current_sha else "`none`"
-        exp_short = f"`{s.expected_sha[:8]}`" if s.expected_sha else "`unknown`"
+        web_url = get_web_url_from_remote(s.remote_url)
+        path_display = f"[`{s.path}`]({web_url})" if web_url else f"`{s.path}`"
+        branch_display = format_branch_link(s.target_branch, web_url)
+        cur_display = (
+            format_sha_link(s.current_sha, web_url) if s.current_sha else "`none`"
+        )
+        exp_display = (
+            format_sha_link(s.expected_sha, web_url) if s.expected_sha else "`unknown`"
+        )
         status_badge = (
             "✅ OK" if s.status == VerificationStatus.OK else f"❌ **{s.status.value}**"
         )
+        detail_display = format_detail_with_links(
+            s.detail, web_url, s.current_sha, s.expected_sha
+        )
         lines.append(
-            f"| `{s.path}` | `{s.target_branch or '-'}` | {cur_short} | {exp_short} | {status_badge} | {s.detail} |"
+            f"| {path_display} | {branch_display} | {cur_display} | {exp_display} | {status_badge} | {detail_display} |"
         )
 
     lines.append("")
@@ -710,7 +841,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Write Step Summary if configured
         if opts.step_summary:
             summary_path = Path(opts.step_summary)
-            generate_step_summary(statuses, opts.target_branch, summary_path)
+            generate_step_summary(
+                statuses, opts.target_branch, summary_path, repo_root=repo_root
+            )
 
         return 0 if all_ok else 1
 
