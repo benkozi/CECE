@@ -141,13 +141,13 @@ function(cece_add_mpi_tests target)
     set(_name ${target}_np${np})
     set(_env ${ARG_ENVIRONMENT} ${CECE_TEST_MPI_ENVIRONMENT})
     if(np EQUAL 1)
-      # Runs the binary directly, so the single-rank paths are validated even
-      # without a launcher.
-      add_test(
-        NAME ${_name}
-        COMMAND $<TARGET_FILE:${target}>
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-      )
+      # Single-rank registration. COMMAND is the target NAME, not
+      # $<TARGET_FILE:...>: TEST_LAUNCHER is applied only to target-name
+      # commands, and on HPC (srun launcher) a raw MPI_Init outside a job step
+      # aborts (PMI2_Job_GetId). Where the launcher is absent or ignored
+      # (CMake < 3.29) the binary runs directly, validating the single-rank
+      # paths without a launcher.
+      add_test(NAME ${_name} COMMAND ${target} WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
     else()
       add_test(
         NAME ${_name}
