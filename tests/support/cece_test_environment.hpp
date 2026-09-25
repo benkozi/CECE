@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE - Chemical Emissions Coupling Engine
 #pragma once
 
 // Shared process-level test environment for CECE's MPI + Kokkos test

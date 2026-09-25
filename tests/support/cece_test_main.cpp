@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE - Chemical Emissions Coupling Engine
-//
 // main() for CECE's MPI + Kokkos test executables (see cece_test_environment.hpp).
 // Kokkos-only executables link cece_test_main_kokkos instead.
 #include <gtest/gtest.h>
