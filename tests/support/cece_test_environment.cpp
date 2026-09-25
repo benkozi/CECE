@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-// CECE - Chemical Emissions Coupling Engine
 #include "support/cece_test_environment.hpp"
 
 #include <mpi.h>
