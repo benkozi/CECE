@@ -67,29 +67,24 @@ class TestVerifySubmodules(unittest.TestCase):
             parse_branch_map_args(["invalid_format"])
         self.assertIn("Invalid branch map format", str(ctx.exception))
 
-    def test_resolve_submodule_target_branch_map_override(self) -> None:
-        branch_map = {"extern/helm": "feature/custom"}
-        resolved = resolve_submodule_target_branch(
-            repo_root=Path("/fake/repo"),
-            sub_path="extern/helm",
-            remote_url="https://github.com/example/helm.git",
-            parent_target_branch="develop",
-            branch_map=branch_map,
-        )
-        self.assertEqual(resolved, "feature/custom")
-
-    def test_resolve_submodule_target_branch_remote_match(self) -> None:
-        with patch("verify_submodules.run_git_cmd") as mock_git:
-            # Mock ls-remote finding develop
-            mock_git.return_value = (0, "c4d2b5ab refs/heads/develop", "")
-            resolved = resolve_submodule_target_branch(
-                repo_root=Path("/fake/repo"),
+    def test_resolve_submodule_target_branch(self) -> None:
+        """Verify target branch resolution with and without branch map override."""
+        self.assertEqual(
+            resolve_submodule_target_branch(
                 sub_path="extern/helm",
-                remote_url="https://github.com/example/helm.git",
                 parent_target_branch="develop",
                 branch_map={},
-            )
-            self.assertEqual(resolved, "develop")
+            ),
+            "develop",
+        )
+        self.assertEqual(
+            resolve_submodule_target_branch(
+                sub_path="extern/helm",
+                parent_target_branch="develop",
+                branch_map={"extern/helm": "feature/custom"},
+            ),
+            "feature/custom",
+        )
 
     def test_log_verification_report_all_ok(self) -> None:
         statuses = [
@@ -135,15 +130,10 @@ class TestVerifySubmodules(unittest.TestCase):
 
     def test_verification_status_strenum(self) -> None:
         """Test that VerificationStatus is a StrEnum and behaves correctly with SubmoduleStatus."""
-        # Enum values
-        self.assertEqual(VerificationStatus.PENDING, "PENDING")
-        self.assertEqual(VerificationStatus.OK, "OK")
-        self.assertEqual(VerificationStatus.OUT_OF_SYNC, "OUT_OF_SYNC")
-        self.assertEqual(VerificationStatus.UNINITIALIZED, "UNINITIALIZED")
-        self.assertEqual(VerificationStatus.ERROR, "ERROR")
-
-        # Subclass of str
-        self.assertIsInstance(VerificationStatus.OK, str)
+        # Enum values and str subclass
+        for name in ("PENDING", "OK", "OUT_OF_SYNC", "UNINITIALIZED", "ERROR"):
+            self.assertEqual(VerificationStatus[name], name)
+            self.assertIsInstance(VerificationStatus[name], str)
 
         # Unique enum members (verified by @unique)
         self.assertEqual(len(VerificationStatus), 5)
@@ -252,23 +242,17 @@ class TestVerifySubmodules(unittest.TestCase):
         """Verify get_declared_submodules recursively discovers submodules beyond 2 levels."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
-            # Level 1: repo/.gitmodules -> sub1
-            (repo_root / ".gitmodules").write_text(
-                '[submodule "sub1"]\n\tpath = sub1\n\turl = https://example.com/sub1\n',
-                encoding="utf-8",
-            )
-            # Level 2: repo/sub1/.gitmodules -> sub2
-            (repo_root / "sub1").mkdir(parents=True)
-            (repo_root / "sub1" / ".gitmodules").write_text(
-                '[submodule "sub2"]\n\tpath = sub2\n\turl = https://example.com/sub2\n',
-                encoding="utf-8",
-            )
-            # Level 3: repo/sub1/sub2/.gitmodules -> sub3
-            (repo_root / "sub1" / "sub2").mkdir(parents=True)
-            (repo_root / "sub1" / "sub2" / ".gitmodules").write_text(
-                '[submodule "sub3"]\n\tpath = sub3\n\turl = https://example.com/sub3\n',
-                encoding="utf-8",
-            )
+            for parent_rel, child in [
+                ("", "sub1"),
+                ("sub1", "sub2"),
+                ("sub1/sub2", "sub3"),
+            ]:
+                target_dir = repo_root / parent_rel if parent_rel else repo_root
+                target_dir.mkdir(parents=True, exist_ok=True)
+                (target_dir / ".gitmodules").write_text(
+                    f'[submodule "{child}"]\n\tpath = {child}\n\turl = https://example.com/{child}\n',
+                    encoding="utf-8",
+                )
 
             declared = get_declared_submodules(repo_root)
             self.assertEqual(
@@ -289,6 +273,33 @@ class TestVerifySubmodules(unittest.TestCase):
             "https://github.com/bbakernoaa/amio",
         )
 
+        def _mock_git(
+            url: str = "https://github.com/bbakernoaa/HELM-Project.git",
+            branch: str | None = None,
+            sha: str = "9e2f6751",
+            remote_head: str | None = None,
+        ):
+            def fake_git(
+                args: list[str], cwd: Path | None = None
+            ) -> tuple[int, str, str]:
+                if "submodule" in args and "status" in args:
+                    return (0, f" {sha} extern/helm", "")
+                if "config" in args and "submodule.extern/helm.url" in args:
+                    return (0, url, "")
+                if "config" in args and "submodule.extern/helm.branch" in args:
+                    return (0, branch, "") if branch else (1, "", "key not found")
+                if "config" in args and r"^submodule\..*\.path$" in args:
+                    return (0, "submodule.extern/helm.path extern/helm", "")
+                if "ls-remote" in args and remote_head:
+                    return (
+                        0,
+                        f"{remote_head} refs/heads/{args[-1].split('/')[-1]}",
+                        "",
+                    )
+                return (0, "", "")
+
+            return fake_git
+
         with tempfile.TemporaryDirectory() as tmp_dir:
             repo_root = Path(tmp_dir)
             (repo_root / ".git").mkdir()
@@ -296,14 +307,9 @@ class TestVerifySubmodules(unittest.TestCase):
 
             with patch("verify_submodules.run_git_cmd") as mock_git:
                 # 1. Test unauthorized fork drift rejection
-                def fake_git_fork(args, cwd=None):
-                    if "submodule" in args and "status" in args:
-                        return (0, " 9e2f6751 extern/helm", "")
-                    if "config" in args and "submodule.extern/helm.url" in args:
-                        return (0, "https://github.com/attacker/HELM-Project.git", "")
-                    return (0, "", "")
-
-                mock_git.side_effect = fake_git_fork
+                mock_git.side_effect = _mock_git(
+                    url="https://github.com/attacker/HELM-Project.git"
+                )
                 statuses_fork = verify_submodules(
                     repo_root=repo_root,
                     target_branch="develop",
@@ -316,18 +322,7 @@ class TestVerifySubmodules(unittest.TestCase):
                 )
 
                 # 2. When targeting 'main', if .gitmodules has 'develop', it must fail
-                def fake_git_branch_conflict(args, cwd=None):
-                    if "submodule" in args and "status" in args:
-                        return (0, " 9e2f6751 extern/helm", "")
-                    if "config" in args and "submodule.extern/helm.branch" in args:
-                        return (0, "develop", "")
-                    if "config" in args and "submodule.extern/helm.url" in args:
-                        return (0, "https://github.com/bbakernoaa/HELM-Project.git", "")
-                    if "config" in args and r"^submodule\..*\.path$" in args:
-                        return (0, "submodule.extern/helm.path extern/helm", "")
-                    return (0, "", "")
-
-                mock_git.side_effect = fake_git_branch_conflict
+                mock_git.side_effect = _mock_git(branch="develop")
                 statuses = verify_submodules(
                     repo_root=repo_root,
                     target_branch="main",
@@ -341,20 +336,7 @@ class TestVerifySubmodules(unittest.TestCase):
                 )
 
                 # 3. Test without pinned .gitmodules branch: commit matching main HEAD passes
-                def fake_git_unpinned(args, cwd=None):
-                    if "submodule" in args and "status" in args:
-                        return (0, " 11112222 extern/helm", "")
-                    if "config" in args and "submodule.extern/helm.branch" in args:
-                        return (1, "", "key not found")
-                    if "config" in args and "submodule.extern/helm.url" in args:
-                        return (0, "https://github.com/bbakernoaa/HELM-Project.git", "")
-                    if "config" in args and r"^submodule\..*\.path$" in args:
-                        return (0, "submodule.extern/helm.path extern/helm", "")
-                    if "ls-remote" in args and any("main" in a for a in args):
-                        return (0, "11112222 refs/heads/main", "")
-                    return (0, "", "")
-
-                mock_git.side_effect = fake_git_unpinned
+                mock_git.side_effect = _mock_git(sha="11112222", remote_head="11112222")
                 statuses_main = verify_submodules(
                     repo_root=repo_root,
                     target_branch="main",

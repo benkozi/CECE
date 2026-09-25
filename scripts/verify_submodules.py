@@ -133,6 +133,51 @@ def parse_submodule_status_lines(status_output: str) -> list[tuple[str, str, str
     return entries
 
 
+def _get_gitmodules_property(repo_root: Path, sub_path: str, prop: str) -> str | None:
+    """Retrieve property ('url' or 'branch') from .gitmodules across ancestor paths."""
+    sub_path_obj = Path(sub_path)
+    ancestors = [repo_root / p for p in sub_path_obj.parents]
+    if repo_root not in ancestors:
+        ancestors.append(repo_root)
+
+    for parent_dir in ancestors:
+        gitmodules_file = parent_dir / ".gitmodules"
+        if parent_dir != repo_root and not gitmodules_file.exists():
+            continue
+
+        try:
+            rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
+        except ValueError:
+            rel_path = sub_path_obj.name
+
+        # 1. Direct lookup by rel_path
+        code, out, _ = run_git_cmd(
+            ["config", "-f", ".gitmodules", "--get", f"submodule.{rel_path}.{prop}"],
+            cwd=parent_dir,
+        )
+        if code == 0 and out.strip():
+            return out.strip()
+
+        # 2. Lookup by path regex match
+        code, out, _ = run_git_cmd(
+            ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
+            cwd=parent_dir,
+        )
+        if code == 0 and out:
+            for line in out.splitlines():
+                k_v = line.split(None, 1)
+                if len(k_v) == 2 and k_v[1].strip() == rel_path:
+                    key_base = k_v[0].rsplit(".", 1)[0]
+                    c, prop_out, _ = run_git_cmd(
+                        ["config", "-f", ".gitmodules", "--get", f"{key_base}.{prop}"],
+                        cwd=parent_dir,
+                    )
+                    if c == 0 and prop_out.strip():
+                        return prop_out.strip()
+
+    return None
+
+
 def get_submodule_remote_url(repo_root: Path, sub_path: str) -> str:
     """Retrieve the remote URL for a given submodule path."""
     sub_dir = repo_root / sub_path
@@ -143,93 +188,16 @@ def get_submodule_remote_url(repo_root: Path, sub_path: str) -> str:
         if code == 0 and out:
             return out
 
-    # Fallback to inspecting .gitmodules from immediate parent up to repo_root
-    sub_path_obj = Path(sub_path)
-    ancestors = [repo_root / p for p in sub_path_obj.parents]
-    if repo_root not in ancestors:
-        ancestors.append(repo_root)
-
-    for parent_dir in ancestors:
-        gitmodules_file = parent_dir / ".gitmodules"
-        if parent_dir != repo_root and not gitmodules_file.exists():
-            continue
-
-        try:
-            rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
-        except ValueError:
-            rel_path = sub_path_obj.name
-
-        # 1. Direct lookup by rel_path
-        code, out, _ = run_git_cmd(
-            ["config", "-f", ".gitmodules", "--get", f"submodule.{rel_path}.url"],
-            cwd=parent_dir,
-        )
-        if code == 0 and out.strip():
-            return out.strip()
-
-        # 2. Lookup by path regex match
-        code, out, _ = run_git_cmd(
-            ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
-            cwd=parent_dir,
-        )
-        if code == 0 and out:
-            for line in out.splitlines():
-                k_v = line.split(None, 1)
-                if len(k_v) == 2 and k_v[1].strip() == rel_path:
-                    key_base = k_v[0].rsplit(".", 1)[0]
-                    c, url_out, _ = run_git_cmd(
-                        ["config", "-f", ".gitmodules", "--get", f"{key_base}.url"],
-                        cwd=parent_dir,
-                    )
-                    if c == 0 and url_out.strip():
-                        return url_out.strip()
+    url = _get_gitmodules_property(repo_root, sub_path, "url")
+    if url:
+        return url
 
     raise ValueError(f"Could not determine remote URL for submodule '{sub_path}'")
 
 
 def get_gitmodules_configured_branch(repo_root: Path, sub_path: str) -> str | None:
     """Retrieve the branch explicitly configured in .gitmodules for a submodule."""
-    sub_path_obj = Path(sub_path)
-    ancestors = [repo_root / p for p in sub_path_obj.parents]
-    if repo_root not in ancestors:
-        ancestors.append(repo_root)
-
-    for parent_dir in ancestors:
-        gitmodules_file = parent_dir / ".gitmodules"
-        if parent_dir != repo_root and not gitmodules_file.exists():
-            continue
-
-        try:
-            rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
-        except ValueError:
-            rel_path = sub_path_obj.name
-
-        # 1. Direct lookup by rel_path
-        code, out, _ = run_git_cmd(
-            ["config", "-f", ".gitmodules", "--get", f"submodule.{rel_path}.branch"],
-            cwd=parent_dir,
-        )
-        if code == 0 and out.strip():
-            return out.strip()
-
-        # 2. Lookup by path regex match
-        code, out, _ = run_git_cmd(
-            ["config", "-f", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$"],
-            cwd=parent_dir,
-        )
-        if code == 0 and out:
-            for line in out.splitlines():
-                k_v = line.split(None, 1)
-                if len(k_v) == 2 and k_v[1].strip() == rel_path:
-                    key_base = k_v[0].rsplit(".", 1)[0]
-                    c, b_out, _ = run_git_cmd(
-                        ["config", "-f", ".gitmodules", "--get", f"{key_base}.branch"],
-                        cwd=parent_dir,
-                    )
-                    if c == 0 and b_out.strip():
-                        return b_out.strip()
-
-    return None
+    return _get_gitmodules_property(repo_root, sub_path, "branch")
 
 
 def resolve_submodule_target_branch(
@@ -353,36 +321,22 @@ def verify_submodules(
         logger.error("Failed to query git submodule status: %s", err)
         raise RuntimeError(f"git submodule status failed: {err}")
 
-    raw_entries = parse_submodule_status_lines(status_out)
-    if upstream_config.excluded_submodules:
-        raw_entries = [
-            e
-            for e in raw_entries
-            if not is_submodule_excluded(e[2], upstream_config.excluded_submodules)
-        ]
+    raw_entries = [
+        e
+        for e in parse_submodule_status_lines(status_out)
+        if not is_submodule_excluded(e[2], upstream_config.excluded_submodules)
+    ]
 
-    if not raw_entries and declared_paths:
+    if not raw_entries:
+        if not declared_paths:
+            logger.info("No submodules found in repository.")
+            return []
         logger.error(
             "Repository has %d submodule(s) declared in .gitmodules, but none were detected by git submodule status.",
             len(declared_paths),
         )
-        return [
-            SubmoduleStatus(
-                path=p,
-                current_sha="",
-                target_branch=target_branch,
-                remote_url="",
-                status=VerificationStatus.ERROR,
-                detail="Declared in .gitmodules but missing from git submodule status (run 'git submodule update --init --recursive')",
-            )
-            for p in sorted(declared_paths)
-        ]
-
-    if not raw_entries:
-        logger.info("No submodules found in repository.")
-        return []
-
-    logger.info("Discovered %d submodule(s) (direct and nested)", len(raw_entries))
+    else:
+        logger.info("Discovered %d submodule(s) (direct and nested)", len(raw_entries))
     all_sub_paths = [entry[2] for entry in raw_entries]
     results: list[SubmoduleStatus] = []
     for status_char, current_sha, sub_path in raw_entries:
@@ -588,32 +542,21 @@ def get_web_url_from_remote(remote_url: str) -> str | None:
     """Convert a Git remote URL (HTTPS or SSH) to a web browse URL."""
     if not remote_url:
         return None
-    url = remote_url.strip()
-    if url.endswith(".git"):
-        url = url[:-4]
-
-    # Handle SSH format: git@github.com:owner/repo
-    if url.startswith("git@"):
-        parts = url.split("@", 1)[1]
-        if ":" in parts:
-            host, path = parts.split(":", 1)
-            return f"https://{host}/{path.lstrip('/')}"
-        return f"https://{parts}"
-
-    # Handle ssh://git@github.com/owner/repo
-    if url.startswith("ssh://"):
-        url = url[6:]
-        if "@" in url:
-            url = url.split("@", 1)[1]
-        if ":" in url:
-            host, path = url.split(":", 1)
-            return f"https://{host}/{path.lstrip('/')}"
-        return f"https://{url}"
-
+    url = remote_url.strip().removesuffix(".git")
     if url.startswith("http://") or url.startswith("https://"):
         return url
 
-    return None
+    # Strip ssh:// and git@ prefixes
+    if url.startswith("ssh://"):
+        url = url[6:]
+    if "@" in url:
+        url = url.split("@", 1)[1]
+
+    # Convert SCP-style host:path or standard host/path
+    if ":" in url:
+        host, path = url.split(":", 1)
+        return f"https://{host}/{path.lstrip('/')}"
+    return f"https://{url}"
 
 
 def format_sha_link(sha: str, web_url: str | None) -> str:
@@ -642,51 +585,38 @@ def format_detail_with_links(
     expected_sha: str = "",
 ) -> str:
     """Enhance verification detail message with Markdown links to branches, commits, or compare views."""
-    if not detail:
+    if not detail or not web_url:
         return detail
 
     result = detail
 
-    if web_url:
-        # Add compare link for commits behind upstream
-        if (
-            "Behind" in result
-            and current_sha
-            and expected_sha
-            and current_sha != expected_sha
-        ):
-            compare_url = f"{web_url}/compare/{current_sha}...{expected_sha}"
-            result = re.sub(
-                r"(\bBehind\s+(?:upstream\s+)?by\s+)(\d+\s+commit(?:\(s\))?)",
-                rf"\1[\2]({compare_url})",
-                result,
-            )
-
-        # Link quoted branch names: branch 'main' -> branch [`main`](web_url/tree/main)
-        def replace_quoted_branch(match: re.Match) -> str:
-            prefix = match.group(1)
-            b_name = match.group(2)
-            return f"{prefix}[`{b_name}`]({web_url}/tree/{b_name})"
-
+    # Add compare link for commits behind upstream
+    if (
+        "Behind" in result
+        and current_sha
+        and expected_sha
+        and current_sha != expected_sha
+    ):
+        compare_url = f"{web_url}/compare/{current_sha}...{expected_sha}"
         result = re.sub(
-            r"(\bbranch\s+)'([a-zA-Z0-9_./-]+)'",
-            replace_quoted_branch,
+            r"(\bBehind\s+(?:upstream\s+)?by\s+)(\d+\s+commit(?:\(s\))?)",
+            rf"\1[\2]({compare_url})",
             result,
         )
 
-        # Link 40-character or 7-12 character hex hashes if preceded by SHA/commit
-        def replace_hash(match: re.Match) -> str:
-            prefix = match.group(1)
-            h = match.group(2)
-            return f"{prefix}[`{h[:8]}`]({web_url}/commit/{h})"
+    # Link quoted branch names: branch 'main' -> branch [`main`](web_url/tree/main)
+    result = re.sub(
+        r"(\bbranch\s+)'([a-zA-Z0-9_./-]+)'",
+        rf"\1[`\2`]({web_url}/tree/\2)",
+        result,
+    )
 
-        result = re.sub(
-            r"(\b(?:commit|SHA|sha)\s+)([0-9a-f]{7,40})\b",
-            replace_hash,
-            result,
-        )
-
-    return result
+    # Link commit/SHA hex hashes
+    return re.sub(
+        r"(\b(?:commit|SHA|sha)\s+)([0-9a-f]{7,40})\b",
+        lambda m: f"{m.group(1)}[`{m.group(2)[:8]}`]({web_url}/commit/{m.group(2)})",
+        result,
+    )
 
 
 def generate_step_summary(
