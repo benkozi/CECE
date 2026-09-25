@@ -2096,42 +2096,43 @@ if(CECE_BUILD_TESTING)
   # already set an explicit np label (e.g. the self-driving
   # test_distributed_output_equivalence). The sweep walks the whole
   # directory tree — the vendored HELM libs register tests in their own
-  # subdirectories — via the DIRECTORY-scoped test-property API (CMake
-  # 3.28; older CMakes would need per-directory edits instead).
+  # subdirectories — via the DIRECTORY-scoped test-property API. That API
+  # (the DIRECTORY argument of get_property/set_property for TEST) needs
+  # CMake 3.28; on older CMakes only this directory's tests are swept, and
+  # the vendored subdirectories' tests keep their own registrations.
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+    set(_cece_sweep_subdirs ON)
+  else()
+    set(_cece_sweep_subdirs OFF)
+  endif()
   set(_cece_label_dir_queue "${CMAKE_CURRENT_SOURCE_DIR}")
   while(_cece_label_dir_queue)
     list(POP_FRONT _cece_label_dir_queue _cece_label_dir)
-    get_property(_cece_label_subdirs DIRECTORY "${_cece_label_dir}" PROPERTY SUBDIRECTORIES)
-    list(APPEND _cece_label_dir_queue ${_cece_label_subdirs})
+    if(_cece_sweep_subdirs)
+      get_property(_cece_label_subdirs DIRECTORY "${_cece_label_dir}" PROPERTY SUBDIRECTORIES)
+      list(APPEND _cece_label_dir_queue ${_cece_label_subdirs})
+      set(_cece_dir_arg DIRECTORY "${_cece_label_dir}")
+    else()
+      set(_cece_dir_arg)
+    endif()
     get_property(_cece_registered_tests DIRECTORY "${_cece_label_dir}" PROPERTY TESTS)
     foreach(_cece_test IN LISTS _cece_registered_tests)
       set_property(
-        TEST ${_cece_test}
-        DIRECTORY "${_cece_label_dir}"
+        TEST ${_cece_test} ${_cece_dir_arg}
         APPEND
         PROPERTY ENVIRONMENT_MODIFICATION "OMP_PROC_BIND=set:false"
       )
       if(_cece_test MATCHES "_np([0-9]+)$")
         set_property(
-          TEST ${_cece_test}
-          DIRECTORY "${_cece_label_dir}"
+          TEST ${_cece_test} ${_cece_dir_arg}
           APPEND
           PROPERTY LABELS "np${CMAKE_MATCH_1}"
         )
-        set_property(
-          TEST ${_cece_test}
-          DIRECTORY "${_cece_label_dir}"
-          PROPERTY PROCESSORS "${CMAKE_MATCH_1}"
-        )
+        set_property(TEST ${_cece_test} ${_cece_dir_arg} PROPERTY PROCESSORS "${CMAKE_MATCH_1}")
       else()
-        get_property(
-          _cece_test_labels
-          TEST ${_cece_test}
-          DIRECTORY "${_cece_label_dir}"
-          PROPERTY LABELS
-        )
+        get_property(_cece_test_labels TEST ${_cece_test} ${_cece_dir_arg} PROPERTY LABELS)
         if(NOT _cece_test_labels MATCHES "np[0-9]")
-          set_property(TEST ${_cece_test} DIRECTORY "${_cece_label_dir}" APPEND PROPERTY LABELS np1)
+          set_property(TEST ${_cece_test} ${_cece_dir_arg} APPEND PROPERTY LABELS np1)
         endif()
       endif()
     endforeach()
