@@ -145,10 +145,7 @@ def _get_gitmodules_property(repo_root: Path, sub_path: str, prop: str) -> str |
         if parent_dir != repo_root and not gitmodules_file.exists():
             continue
 
-        try:
-            rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
-        except ValueError:
-            rel_path = sub_path_obj.name
+        rel_path = str(sub_path_obj.relative_to(parent_dir.relative_to(repo_root)))
 
         # 1. Direct lookup by rel_path
         code, out, _ = run_git_cmd(
@@ -178,7 +175,7 @@ def _get_gitmodules_property(repo_root: Path, sub_path: str, prop: str) -> str |
     return None
 
 
-def get_submodule_remote_url(repo_root: Path, sub_path: str) -> str:
+def get_submodule_remote_url(repo_root: Path, sub_path: str) -> str | None:
     """Retrieve the remote URL for a given submodule path."""
     sub_dir = repo_root / sub_path
     if sub_dir.is_dir() and (sub_dir / ".git").exists():
@@ -188,11 +185,7 @@ def get_submodule_remote_url(repo_root: Path, sub_path: str) -> str:
         if code == 0 and out:
             return out
 
-    url = _get_gitmodules_property(repo_root, sub_path, "url")
-    if url:
-        return url
-
-    raise ValueError(f"Could not determine remote URL for submodule '{sub_path}'")
+    return _get_gitmodules_property(repo_root, sub_path, "url")
 
 
 def get_gitmodules_configured_branch(repo_root: Path, sub_path: str) -> str | None:
@@ -235,28 +228,8 @@ def get_remote_branch_head_sha(remote_url: str, branch: str) -> str | None:
         if len(parts) >= 2 and parts[1] == ref:
             return parts[0]
 
-    # If exact ref didn't match, check if bare branch matched
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            return parts[0]
-
     logger.error("Branch '%s' not found on remote %s", branch, remote_url)
     return None
-
-
-def is_ancestor_commit(
-    repo_root: Path, sub_path: str, ancestor: str, descendant: str
-) -> bool:
-    """Check if `ancestor` commit is an ancestor of `descendant` in the local submodule repo."""
-    sub_dir = repo_root / sub_path
-    if not (sub_dir / ".git").exists():
-        return False
-    code, _, _ = run_git_cmd(
-        ["merge-base", "--is-ancestor", ancestor, descendant],
-        cwd=sub_dir,
-    )
-    return code == 0
 
 
 def get_declared_submodules(repo_root: Path) -> set[str]:
@@ -294,7 +267,6 @@ def verify_submodules(
     repo_root: Path,
     target_branch: str,
     branch_map: dict[str, str],
-    allow_ancestor: bool = False,
     upstream_config: UpstreamRemoteConfig | None = None,
 ) -> list[SubmoduleStatus]:
     """Execute submodule verification for all submodules in the repository."""
@@ -359,15 +331,16 @@ def verify_submodules(
             results.append(status_obj)
             continue
 
-        try:
-            remote_url = get_submodule_remote_url(repo_root, sub_path)
-            status_obj.remote_url = remote_url
-        except Exception as ex:
+        remote_url = get_submodule_remote_url(repo_root, sub_path)
+        if not remote_url:
             status_obj.status = VerificationStatus.ERROR
-            status_obj.detail = f"Failed to get remote URL: {ex}"
-            logger.error("Error getting remote URL for '%s': %s", sub_path, ex)
+            status_obj.detail = (
+                f"Could not determine remote URL for submodule '{sub_path}'"
+            )
+            logger.error("Could not determine remote URL for submodule '%s'", sub_path)
             results.append(status_obj)
             continue
+        status_obj.remote_url = remote_url
 
         # Validate that .gitmodules remote matches canonical upstream (guard against unauthorized fork drift)
         canonical_remote = upstream_config.canonical_remotes.get(sub_path)
@@ -430,26 +403,20 @@ def verify_submodules(
             status_obj.status = VerificationStatus.OK
             status_obj.detail = "Pointers match upstream HEAD"
         else:
-            if allow_ancestor and is_ancestor_commit(
-                repo_root, sub_path, current_sha, expected_sha
-            ):
-                status_obj.status = VerificationStatus.OK
-                status_obj.detail = "Committed commit is ancestor of upstream HEAD"
+            status_obj.status = VerificationStatus.OUT_OF_SYNC
+            # Check how many commits behind/ahead if objects exist locally
+            sub_dir = repo_root / sub_path
+            count_code, count_out, _ = run_git_cmd(
+                ["rev-list", "--count", f"{current_sha}..{expected_sha}"],
+                cwd=sub_dir,
+            )
+            if count_code == 0 and count_out.isdigit():
+                behind_count = int(count_out)
+                status_obj.detail = f"Behind upstream by {behind_count} commit(s)"
             else:
-                status_obj.status = VerificationStatus.OUT_OF_SYNC
-                # Check how many commits behind/ahead if objects exist locally
-                sub_dir = repo_root / sub_path
-                count_code, count_out, _ = run_git_cmd(
-                    ["rev-list", "--count", f"{current_sha}..{expected_sha}"],
-                    cwd=sub_dir,
+                status_obj.detail = (
+                    "Drift detected (different commit from upstream HEAD)"
                 )
-                if count_code == 0 and count_out.isdigit():
-                    behind_count = int(count_out)
-                    status_obj.detail = f"Behind upstream by {behind_count} commit(s)"
-                else:
-                    status_obj.detail = (
-                        "Drift detected (different commit from upstream HEAD)"
-                    )
 
         results.append(status_obj)
 
@@ -721,11 +688,6 @@ def parse_args(args: Sequence[str] | None = None) -> argparse.Namespace:
         help="Custom branch mapping overrides (e.g. extern/helm=develop)",
     )
     parser.add_argument(
-        "--allow-ancestor",
-        action="store_true",
-        help="Allow submodule commit to be an ancestor of upstream HEAD rather than exact match",
-    )
-    parser.add_argument(
         "--json",
         action="store_true",
         help="Output JSON formatted status array to stdout",
@@ -766,7 +728,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo_root=repo_root,
             target_branch=opts.target_branch,
             branch_map=branch_map,
-            allow_ancestor=opts.allow_ancestor,
         )
 
         all_ok = log_verification_report(statuses, opts.target_branch)

@@ -19,6 +19,8 @@ from verify_submodules import (  # noqa: E402
     VerificationStatus,
     generate_step_summary,
     get_declared_submodules,
+    get_remote_branch_head_sha,
+    get_submodule_remote_url,
     get_web_url_from_remote,
     is_submodule_excluded,
     log_verification_report,
@@ -223,7 +225,6 @@ class TestVerifySubmodules(unittest.TestCase):
         )
         self.assertIn("Verify that Git submodules", stdout)
         self.assertIn("--target-branch", stdout)
-        self.assertIn("--allow-ancestor", stdout)
 
     def test_get_declared_submodules_live_repo(self) -> None:
         """Verify get_declared_submodules finds both direct and nested submodules in CECE."""
@@ -383,6 +384,105 @@ class TestVerifySubmodules(unittest.TestCase):
             upstream_config=config_all,
         )
         self.assertEqual(statuses_all, [])
+
+    def test_get_gitmodules_property_nested_submodule(self) -> None:
+        """Verify _get_gitmodules_property resolves properties across nested .gitmodules files."""
+        from verify_submodules import _get_gitmodules_property
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            helm_dir = repo_root / "extern" / "helm"
+            amio_dir = helm_dir / "libs" / "amio"
+            amio_dir.mkdir(parents=True, exist_ok=True)
+
+            # Top-level .gitmodules declares extern/helm
+            (repo_root / ".gitmodules").write_text(
+                '[submodule "extern/helm"]\n\tpath = extern/helm\n\turl = https://github.com/bbakernoaa/HELM-Project.git\n',
+                encoding="utf-8",
+            )
+            # Nested .gitmodules declares libs/amio
+            (helm_dir / ".gitmodules").write_text(
+                '[submodule "libs/amio"]\n\tpath = libs/amio\n\turl = https://github.com/bbakernoaa/amio.git\n\tbranch = develop\n',
+                encoding="utf-8",
+            )
+
+            # Query top-level submodule
+            self.assertEqual(
+                _get_gitmodules_property(repo_root, "extern/helm", "url"),
+                "https://github.com/bbakernoaa/HELM-Project.git",
+            )
+            # Query nested submodule
+            self.assertEqual(
+                _get_gitmodules_property(repo_root, "extern/helm/libs/amio", "url"),
+                "https://github.com/bbakernoaa/amio.git",
+            )
+            self.assertEqual(
+                _get_gitmodules_property(repo_root, "extern/helm/libs/amio", "branch"),
+                "develop",
+            )
+
+    def test_get_submodule_remote_url(self) -> None:
+        """Verify get_submodule_remote_url handles local git dir, .gitmodules fallback, and missing paths."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_root = Path(tmp_dir)
+            sub_dir = repo_root / "extern" / "submod"
+            sub_dir.mkdir(parents=True, exist_ok=True)
+
+            # 1. Primary path: sub_dir has .git directory and git config returns URL
+            (sub_dir / ".git").mkdir()
+            with patch("verify_submodules.run_git_cmd") as mock_git:
+                mock_git.return_value = (
+                    0,
+                    "https://github.com/example/submod-local.git",
+                    "",
+                )
+                url = get_submodule_remote_url(repo_root, "extern/submod")
+                self.assertEqual(url, "https://github.com/example/submod-local.git")
+                mock_git.assert_called_with(
+                    ["config", "--get", "remote.origin.url"], cwd=sub_dir
+                )
+
+            # 2. Fallback path: sub_dir / .git absent, read from .gitmodules
+            (sub_dir / ".git").rmdir()
+            (repo_root / ".gitmodules").write_text(
+                '[submodule "extern/submod"]\n\tpath = extern/submod\n\turl = https://github.com/example/submod-fallback.git\n',
+                encoding="utf-8",
+            )
+            url_fallback = get_submodule_remote_url(repo_root, "extern/submod")
+            self.assertEqual(
+                url_fallback, "https://github.com/example/submod-fallback.git"
+            )
+
+            # 3. Missing path: submodule not in .gitmodules returns None
+            self.assertIsNone(get_submodule_remote_url(repo_root, "nonexistent/submod"))
+
+    def test_get_remote_branch_head_sha(self) -> None:
+        """Verify get_remote_branch_head_sha parses git ls-remote output and handles missing branches."""
+        with patch("verify_submodules.run_git_cmd") as mock_git:
+            # Successful match
+            mock_git.return_value = (0, "c4d2b5ab12345678\trefs/heads/develop\n", "")
+            sha = get_remote_branch_head_sha(
+                "https://github.com/example/repo.git", "develop"
+            )
+            self.assertEqual(sha, "c4d2b5ab12345678")
+
+            # Branch not found in output
+            mock_git.return_value = (
+                0,
+                "1111222233334444\trefs/heads/other-branch\n",
+                "",
+            )
+            sha_none = get_remote_branch_head_sha(
+                "https://github.com/example/repo.git", "develop"
+            )
+            self.assertIsNone(sha_none)
+
+            # Command error
+            mock_git.return_value = (1, "", "fatal: repository not found")
+            sha_err = get_remote_branch_head_sha(
+                "https://github.com/example/repo.git", "develop"
+            )
+            self.assertIsNone(sha_err)
 
 
 if __name__ == "__main__":
