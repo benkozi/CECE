@@ -12,10 +12,12 @@
 # compiler/MPI environment must be loaded in the submitting shell;
 # sbatch's default --export=ALL carries it into the job.
 #
-# The build must be configured for srun launch:
+# Either MPI launch profile works inside this allocation. OpenMPI /
+# cray-mpich builds configured for srun launch,
 #   -DMPIEXEC_EXECUTABLE=$(command -v srun) -DMPIEXEC_NUMPROC_FLAG=-n
-# Each test then runs as its own right-sized job step inside this
-# allocation.
+# run each test as its own right-sized job step. Intel MPI builds keep the
+# default launcher (Intel's mpiexec), which forks the ranks inside the
+# allocation instead — see the README; --ntasks below bounds both.
 #
 #SBATCH --job-name=cece-tests
 #SBATCH --nodes=1

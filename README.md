@@ -27,8 +27,8 @@ The maintained container workflows (`scripts/build-and-test-container.py`,
 CI) pass it automatically; only manual in-container configures like the
 one above need it spelled out.
 
-To run the test suite on an HPC Slurm system (srun-launched ranks
-instead of the container's mpiexec), see
+To run the test suite on an HPC Slurm system (inside an sbatch
+allocation, with `srun` or the MPI's own `mpiexec` as the launcher), see
 [scripts/run-tests-slurm.README.md](scripts/run-tests-slurm.README.md).
 
 ### 3. Run Examples

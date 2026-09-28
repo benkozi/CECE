@@ -52,7 +52,13 @@ class UpstreamRemoteConfig:
             "extern/helm/libs/amio": "https://github.com/bbakernoaa/amio",
         }
     )
-    excluded_submodules: set[str] = field(default_factory=set)
+    # Third-party submodules pinned to an upstream release rather than tracked
+    # against a CECE-governed branch; they have no "develop" to verify against.
+    excluded_submodules: set[str] = field(
+        default_factory=lambda: {
+            "extern/yaml-cpp",
+        }
+    )
 
 
 def is_submodule_excluded(path: str, exclude_set: set[str]) -> bool:
