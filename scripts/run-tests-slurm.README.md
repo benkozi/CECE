@@ -14,7 +14,8 @@ variables, so the launcher is chosen once, at configure time:
 | Profile | Configure with | Launcher |
 |---|---|---|
 | Container / local | `-DCECE_MPIEXEC_CONTAINER_FLAGS=ON` (container only) | `mpiexec`, ranks forked locally |
-| HPC Slurm | `-DMPIEXEC_EXECUTABLE=$(command -v srun) -DMPIEXEC_NUMPROC_FLAG=-n` | `srun`, ranks placed by Slurm |
+| HPC Slurm, OpenMPI / cray-mpich | `-DMPIEXEC_EXECUTABLE=$(command -v srun) -DMPIEXEC_NUMPROC_FLAG=-n` | `srun`, ranks placed by Slurm |
+| HPC Slurm, Intel MPI | (defaults) | Intel `mpiexec`, ranks forked inside the sbatch allocation |
 
 One CMake source of truth — no platform conditionals; the profiles
 differ only in configure flags.
@@ -31,11 +32,25 @@ sbatch's default `--export=ALL` carries it into the job. Inside the
 allocation, ctest runs each test as its own right-sized `srun` job
 step (`-n 1`, `-n 2`, or `-n 4`).
 
+### Intel MPI: use `mpiexec`, not `srun`
+
+With Intel MPI leave the launcher at CMake's default (Intel's `mpiexec`):
+do **not** pass `-DMPIEXEC_EXECUTABLE=srun`. Hydra bootstraps through the
+allocation on its own and forks each test's ranks inside it; the script's
+`--ntasks` bounds them. Under `srun`, Intel MPI has no Slurm PMI client and
+`MPI_Init` aborts with `PMI_Init returned 14` (slurmd:
+`pmirank missing in fullinit command`); making that work needs the site's
+`libpmi2.so` via `I_MPI_PMI_LIBRARY` plus `-DMPIEXEC_PREFLAGS=--mpi=pmi2`,
+which is not worth it for a single-node test allocation.
+
 ### Example: Ursa
 
 ```bash
+# gcc / OpenMPI: srun places every test in its own job step
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DMPIEXEC_EXECUTABLE=$(command -v srun) -DMPIEXEC_NUMPROC_FLAG=-n
+# oneapi / Intel MPI: keep the default launcher (Intel's mpiexec)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 8
 sbatch --wait --account=epic --output=cece-tests-%j.log \
   scripts/run-tests-slurm.sbatch build
