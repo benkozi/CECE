@@ -36,12 +36,14 @@
 include_guard(GLOBAL)
 include(GoogleTest)
 
-# Defer GTest test enumeration from build time to test (ctest) run time. With
-# the default POST_BUILD mode, CMake runs each test binary during `make` to
-# list its cases; on HPC/MPI systems that aborts for MPI-initializing binaries
-# when built on a login/build node with no Slurm PMI context (e.g.
-# "PMI2_Job_GetId returned 14"), breaking the build. PRE_TEST enumerates at
-# `ctest` time instead — inside the job allocation where MPI can initialize.
+# Enumerate GTest cases at ctest time (PRE_TEST) rather than during the build
+# (POST_BUILD). Listing itself is harmless anywhere — the shared test
+# environment initializes MPI/Kokkos only in Environment::SetUp, which gtest
+# skips for --gtest_list_tests — but on CMake >= 3.29 discovery runs through
+# the target's TEST_LAUNCHER, so a build-time listing would invoke `srun -n 1`
+# (or `mpiexec`) on the login/build node. Enumerating at ctest time keeps
+# those launches inside the job allocation. (Cost is small: discovery is a
+# few seconds of a full run.)
 set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
 set(
