@@ -111,8 +111,17 @@ class TestVerifySubmodules(unittest.TestCase):
             ),
         ]
 
-        all_ok = log_verification_report(statuses, target_branch="develop")
+        with self.assertLogs("verify_submodules", level="INFO") as captured:
+            all_ok = log_verification_report(
+                statuses, target_branch="develop", excluded=["extern/yaml-cpp"]
+            )
         self.assertTrue(all_ok)
+        self.assertTrue(
+            any(
+                "Excluded from verification (1): extern/yaml-cpp" in line
+                for line in captured.output
+            )
+        )
 
     def test_log_verification_report_mismatch(self) -> None:
         statuses = [
@@ -178,10 +187,15 @@ class TestVerifySubmodules(unittest.TestCase):
                 )
             ]
 
-            generate_step_summary(statuses, "develop", summary_file)
+            generate_step_summary(
+                statuses, "develop", summary_file, excluded=["extern/yaml-cpp"]
+            )
             self.assertTrue(summary_file.exists())
             content = summary_file.read_text(encoding="utf-8")
             self.assertIn("## Submodule Verification Report", content)
+            self.assertIn(
+                "**Excluded from verification (1):** `extern/yaml-cpp`", content
+            )
             self.assertIn("[`extern/helm`](https://github.com/example/helm)", content)
             self.assertIn(
                 "[`develop`](https://github.com/example/helm/tree/develop)", content
