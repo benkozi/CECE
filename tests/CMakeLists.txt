@@ -58,6 +58,55 @@ endif()
 
 include(CeceTesting)
 
+# --- Test data -----------------------------------------------------------------
+# The FV3/cubed-sphere regrid tests in test_cece_utils.cpp need the real C96
+# grid_spec and native-grid files for tile 1. They are NetCDF fixtures that are
+# not committed (*.nc is gitignored), so fetch them into <repo>/data at
+# configure time when missing — the same NOAA download that
+# test_all_cubed_sphere_tiles.sh uses. Skipped under CECE_FETCH_DEPS=OFF
+# (offline configures); a failed fetch leaves the tests reporting a clear
+# "Missing test file" assertion rather than breaking configure.
+set(CECE_C96_BASE_URL "https://ftp.emc.ncep.noaa.gov/static_files/public/UFS/GFS/fix/fix_fv3/C96")
+set(_cece_c96_dir "${PROJECT_SOURCE_DIR}/data")
+set(_cece_c96_missing)
+foreach(_c96_file C96_grid_spec.tile1.nc C96_grid.tile1.nc)
+  if(NOT EXISTS "${_cece_c96_dir}/${_c96_file}")
+    list(APPEND _cece_c96_missing ${_c96_file})
+  endif()
+endforeach()
+if(NOT _cece_c96_missing)
+  cece_register_dep("C96 test fixtures" "present (${_cece_c96_dir})")
+elseif(CECE_FETCH_DEPS)
+  file(MAKE_DIRECTORY "${_cece_c96_dir}")
+  set(_cece_c96_fetched ON)
+  foreach(_c96_file IN LISTS _cece_c96_missing)
+    message(STATUS "Downloading ${_c96_file} for C96 regrid tests...")
+    file(
+      DOWNLOAD "${CECE_C96_BASE_URL}/${_c96_file}"
+      "${_cece_c96_dir}/${_c96_file}"
+      STATUS _c96_status
+      TIMEOUT 120
+    )
+    list(GET _c96_status 0 _c96_code)
+    if(NOT _c96_code EQUAL 0)
+      list(GET _c96_status 1 _c96_msg)
+      file(REMOVE "${_cece_c96_dir}/${_c96_file}")
+      message(
+        WARNING
+        "Failed to download ${_c96_file}: ${_c96_msg}. C96 regrid tests will report a missing-file failure."
+      )
+      set(_cece_c96_fetched OFF)
+    endif()
+  endforeach()
+  if(_cece_c96_fetched)
+    cece_register_dep("C96 test fixtures" "downloaded (${CECE_C96_BASE_URL})")
+  else()
+    cece_register_dep("C96 test fixtures" "download failed (C96 regrid tests will fail)")
+  endif()
+else()
+  cece_register_dep("C96 test fixtures" "missing, CECE_FETCH_DEPS=OFF (C96 regrid tests will fail)")
+endif()
+
 # --- Shared test harness (support/) ------------------------------------------
 # Shared main() + process-level MPI/HALO/Kokkos environment. Link
 # `cece_test_main` (MAIN MPI) or `cece_test_main_kokkos` (MAIN KOKKOS) in
@@ -85,7 +134,7 @@ cece_add_gtest(test_driver_clock_management NO_CECE)
 cece_add_gtest(test_clock_operations_unit NO_CECE)
 cece_add_gtest(test_driver_integration_end_to_end NO_CECE)
 cece_add_gtest(test_cece_ingestor)
-cece_add_gtest(test_cece_utils MAIN MPI MPI_LAUNCHER PROPERTIES PROCESSORS 1)
+cece_add_gtest(test_cece_utils MAIN MPI MPI_LAUNCHER SOURCE_DIR_DEFINE PROPERTIES PROCESSORS 1)
 cece_add_gtest(test_numerical_equivalence MPI_LAUNCHER)
 cece_add_gtest(test_cece_compute)
 cece_add_gtest(test_standalone_writer_attributes MAIN MPI MPI_LAUNCHER PROPERTIES PROCESSORS 1)
