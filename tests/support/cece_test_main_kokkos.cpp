@@ -5,6 +5,9 @@
 
 #include "support/cece_test_environment.hpp"
 
+// No test-discovery guard is needed: gtest answers --gtest_list_tests and
+// returns before it runs any Environment::SetUp, and Kokkos is initialized
+// only inside SetUp (cece_test_environment.hpp), so listing never touches them.
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     ::testing::AddGlobalTestEnvironment(new cece::test::TestEnvironment(argc, argv, /*with_mpi=*/false));

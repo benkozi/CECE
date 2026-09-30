@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # CECE test-registration helpers. Included from tests/CMakeLists.txt.
 #
-#   cece_add_gtest(<target> [SOURCES ...] [LINK ...] [MAIN GTEST|MPI|KOKKOS|OWN]
+#   cece_add_gtest(<target> [SOURCES ...] [LINK ...] [MAIN GTEST|MPI_KOKKOS|KOKKOS|OWN]
 #                  [MPI_LAUNCHER] [SOURCE_DIR_DEFINE] [NO_AS_NEEDED] [NO_CECE]
 #                  [NO_DISCOVER] [PROPERTIES ...])
 #     Defines a GoogleTest executable and (unless NO_DISCOVER) registers its
 #     cases with gtest_discover_tests. MAIN selects the main():
-#       GTEST  (default) GTest::gtest_main — plain tests, no MPI/Kokkos
-#       MPI    cece_test_main        — MPI + HALO + Kokkos environment (tests/support)
-#       KOKKOS cece_test_main_kokkos — Kokkos only, no MPI
-#       OWN    GTest::gtest          — the source file provides main()
+#       GTEST      (default) GTest::gtest_main — plain tests, no MPI/Kokkos
+#       MPI_KOKKOS cece_test_main        — MPI + HALO + Kokkos environment (tests/support)
+#       KOKKOS     cece_test_main_kokkos — Kokkos only, no MPI
+#       OWN        GTest::gtest          — the source file provides main()
 #     MPI_LAUNCHER runs the binary through `${MPIEXEC_EXECUTABLE} -n 1` under
 #     ctest (TEST_LAUNCHER). SOURCE_DIR_DEFINE adds CECE_SOURCE_DIR (the repo
 #     root) as a compile definition. NO_AS_NEEDED keeps libcece_core in
@@ -22,7 +22,12 @@
 #     Registers <target>_np<n> for each rank count: np1 runs the binary
 #     directly, np>1 launches it through ${MPIEXEC_*}. ENVIRONMENT entries
 #     are prepended to the MPI fabric defaults; multi-rank registrations also
-#     get the OpenMPI run-as-root allowances for container runs.
+#     get the OpenMPI run-as-root allowances for container runs. Every MPI
+#     launch line (TEST_LAUNCHER and these) takes its flags from
+#     MPIEXEC_PREFLAGS, so implementation-specific flags are set once, at
+#     configure: -DCECE_MPIEXEC_CONTAINER_FLAGS=ON appends
+#     --allow-run-as-root/--oversubscribe for container runs (each only if
+#     not already present), or pass -DMPIEXEC_PREFLAGS=... explicitly.
 #
 #   cece_apply_test_defaults()
 #     Call once after all registrations: gives every directly-registered test
@@ -39,7 +44,10 @@ include(GoogleTest)
 # `ctest` time instead — inside the job allocation where MPI can initialize.
 set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
-set(CECE_TEST_MPI_LAUNCHER "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}")
+set(
+  CECE_SERIAL_TEST_MPI_LAUNCHER
+  "${MPIEXEC_EXECUTABLE};${MPIEXEC_NUMPROC_FLAG};1;${MPIEXEC_PREFLAGS}"
+)
 # Loopback-only fabrics so single-node test launches never probe HPC fabrics.
 set(CECE_TEST_MPI_ENVIRONMENT "FI_PROVIDER=tcp" "I_MPI_FABRICS=shm")
 # Multi-rank launches in the dev container run as root.
@@ -94,7 +102,7 @@ function(cece_add_gtest target)
   endif()
   if(ARG_MAIN STREQUAL "GTEST")
     set(_main GTest::gtest_main)
-  elseif(ARG_MAIN STREQUAL "MPI")
+  elseif(ARG_MAIN STREQUAL "MPI_KOKKOS")
     set(_main cece_test_main)
   elseif(ARG_MAIN STREQUAL "KOKKOS")
     set(_main cece_test_main_kokkos)
@@ -103,7 +111,7 @@ function(cece_add_gtest target)
   else()
     message(
       FATAL_ERROR
-      "cece_add_gtest(${target}): MAIN must be GTEST, MPI, KOKKOS or OWN (got '${ARG_MAIN}')"
+      "cece_add_gtest(${target}): MAIN must be GTEST, MPI_KOKKOS, KOKKOS or OWN (got '${ARG_MAIN}')"
     )
   endif()
 
@@ -115,7 +123,7 @@ function(cece_add_gtest target)
   list(APPEND _libs ${ARG_LINK} ${_main})
   target_link_libraries(${target} PRIVATE ${_libs})
   if(ARG_MPI_LAUNCHER)
-    set_target_properties(${target} PROPERTIES TEST_LAUNCHER "${CECE_TEST_MPI_LAUNCHER}")
+    set_target_properties(${target} PROPERTIES TEST_LAUNCHER "${CECE_SERIAL_TEST_MPI_LAUNCHER}")
   endif()
   if(ARG_SOURCE_DIR_DEFINE)
     target_compile_definitions(${target} PRIVATE CECE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
