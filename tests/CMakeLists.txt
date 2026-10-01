@@ -134,10 +134,21 @@ cece_add_gtest(test_driver_clock_management NO_CECE)
 cece_add_gtest(test_clock_operations_unit NO_CECE)
 cece_add_gtest(test_driver_integration_end_to_end NO_CECE)
 cece_add_gtest(test_cece_ingestor)
-cece_add_gtest(test_cece_utils MAIN MPI_KOKKOS MPI_LAUNCHER SOURCE_DIR_DEFINE PROPERTIES PROCESSORS 1)
+cece_add_gtest(
+  test_cece_utils
+  MAIN MPI_KOKKOS
+  MPI_LAUNCHER
+  SOURCE_DIR_DEFINE
+  PROPERTIES PROCESSORS 1
+)
 cece_add_gtest(test_numerical_equivalence MAIN MPI_KOKKOS MPI_LAUNCHER)
 cece_add_gtest(test_cece_compute)
-cece_add_gtest(test_standalone_writer_attributes MAIN MPI_KOKKOS MPI_LAUNCHER PROPERTIES PROCESSORS 1)
+cece_add_gtest(
+  test_standalone_writer_attributes
+  MAIN MPI_KOKKOS
+  MPI_LAUNCHER
+  PROPERTIES PROCESSORS 1
+)
 cece_add_gtest(test_rectilinear_gridspec MAIN MPI_KOKKOS MPI_LAUNCHER PROPERTIES PROCESSORS 1)
 cece_add_gtest(test_physics)
 cece_add_gtest(test_hemco_mimic)
@@ -195,7 +206,13 @@ cece_add_gtest(test_cece_calendar NO_AS_NEEDED)
 # AMIO View Widening Unit Tests
 cece_add_gtest(test_cece_amio_utils NO_AS_NEEDED)
 # Time Axis Integration Tests (real NetCDF fixtures read through AMIO).
-cece_add_gtest(test_cece_time_axis_netcdf MAIN MPI_KOKKOS NO_AS_NEEDED MPI_LAUNCHER PROPERTIES PROCESSORS 1)
+cece_add_gtest(
+  test_cece_time_axis_netcdf
+  MAIN MPI_KOKKOS
+  NO_AS_NEEDED
+  MPI_LAUNCHER
+  PROPERTIES PROCESSORS 1
+)
 # CeceClock Run Loop Unit Tests
 cece_add_gtest(test_cece_clock_run_loop MAIN KOKKOS)
 # Bracket-equality Property Tests (driver-io-regrid-perf, Property 5)
@@ -207,9 +224,15 @@ cece_add_gtest(
   LINK ${RAPIDCHECK}
   PROPERTIES ENVIRONMENT "RC_PARAMS=max_success=100"
 )
-cece_add_gtest(test_band_single_rank_properties MAIN MPI_KOKKOS LINK MPI::MPI_CXX ${RAPIDCHECK} MPI_LAUNCHER)
 cece_add_gtest(
-  test_band_regrid_equals_global_rows MAIN MPI_KOKKOS
+  test_band_single_rank_properties
+  MAIN MPI_KOKKOS
+  LINK MPI::MPI_CXX ${RAPIDCHECK}
+  MPI_LAUNCHER
+)
+cece_add_gtest(
+  test_band_regrid_equals_global_rows
+  MAIN MPI_KOKKOS
   LINK ${RAPIDCHECK}
   MPI_LAUNCHER
   PROPERTIES ENVIRONMENT "RC_PARAMS=max_success=100"
@@ -273,14 +296,24 @@ cece_add_gtest(test_endpoint_tier_precedence LINK ${RAPIDCHECK})
 # Endpoint Sizing and Tier-3 Population Unit/Example Tests (Task 12.1).
 cece_add_gtest(test_endpoint_sizing MAIN MPI_KOKKOS LINK MPI::MPI_CXX Kokkos::kokkos MPI_LAUNCHER)
 # Endpoint Invalidation and Failure unit/example tests (Task 12.2).
-cece_add_gtest(test_endpoint_invalidation MAIN MPI_KOKKOS LINK MPI::MPI_CXX Kokkos::kokkos MPI_LAUNCHER)
+cece_add_gtest(
+  test_endpoint_invalidation
+  MAIN MPI_KOKKOS
+  LINK MPI::MPI_CXX Kokkos::kokkos
+  MPI_LAUNCHER
+)
 
 # --- Ingest copy consolidation ----------------------------------------------
 # No-stale-data Property Tests (Property 4)
 cece_add_gtest(test_ingest_no_stale_data MAIN KOKKOS LINK ${RAPIDCHECK})
 # Ingest Consolidation Equivalence Property Tests (Property 1). Uses Kokkos
 # DualView3D + deep_copy.
-cece_add_gtest(test_ingest_consolidation_equivalence MAIN MPI_KOKKOS LINK ${RAPIDCHECK} MPI_LAUNCHER)
+cece_add_gtest(
+  test_ingest_consolidation_equivalence
+  MAIN MPI_KOKKOS
+  LINK ${RAPIDCHECK}
+  MPI_LAUNCHER
+)
 # MPI Collective Gate Order Property Tests (Property 3)
 cece_add_gtest(test_ingest_collective_gate_order LINK ${RAPIDCHECK})
 # Ingest single-write Property Tests (Property 2)
@@ -359,7 +392,13 @@ cece_add_mpi_tests(test_collective_gate_equivalence NP 1 2)
 # HALO-adoption unit / example / edge-case tests (cece-halo-collective-adoption,
 # Task 10.6): Replicated_Gather_Plan accessors, send_buf index math, the
 # halo_comm_ wrapping decision and the cache-clear invalidation invariant.
-cece_add_gtest(test_halo_adoption_units MAIN MPI_KOKKOS LINK MPI::MPI_CXX HELM::HALO MPI_LAUNCHER NO_DISCOVER)
+cece_add_gtest(
+  test_halo_adoption_units
+  MAIN MPI_KOKKOS
+  LINK MPI::MPI_CXX HELM::HALO
+  MPI_LAUNCHER
+  NO_DISCOVER
+)
 cece_add_mpi_tests(test_halo_adoption_units NP 1 2 4)
 
 # HALO-adoption multi-rank integration test (cece-halo-collective-adoption,
@@ -385,12 +424,21 @@ cece_add_gtest(
   MPI_LAUNCHER
   NO_DISCOVER
 )
-cece_add_mpi_tests(test_output_gather_reconstruction NP 1 2 4 ENVIRONMENT "RC_PARAMS=max_success=100")
+cece_add_mpi_tests(
+  test_output_gather_reconstruction
+  NP 1 2 4
+  ENVIRONMENT "RC_PARAMS=max_success=100"
+)
 
 # 10.3 Column-local band invariance (Property 7). Drives the REAL Ginoux scheme
 # over the full global range vs a band and asserts bit-for-bit equality of the
 # band-owned cells. Single-process, Kokkos only.
-cece_add_gtest(test_column_local_band_invariance MAIN KOKKOS LINK Kokkos::kokkos ${RAPIDCHECK} NO_DISCOVER)
+cece_add_gtest(
+  test_column_local_band_invariance
+  MAIN KOKKOS
+  LINK Kokkos::kokkos ${RAPIDCHECK}
+  NO_DISCOVER
+)
 add_test(
   NAME test_column_local_band_invariance
   COMMAND $<TARGET_FILE:test_column_local_band_invariance>
@@ -404,7 +452,13 @@ set_tests_properties(
 # 10.4 Collective lock-step with a surplus rank (Property 8). Needs np >= 4 to
 # produce a surplus rank (ny = 2 and ny = 3): registered at np1 (structural)
 # and np4 (surplus path).
-cece_add_gtest(test_surplus_rank_lockstep MAIN MPI_KOKKOS LINK MPI::MPI_CXX MPI_LAUNCHER NO_DISCOVER)
+cece_add_gtest(
+  test_surplus_rank_lockstep
+  MAIN MPI_KOKKOS
+  LINK MPI::MPI_CXX
+  MPI_LAUNCHER
+  NO_DISCOVER
+)
 cece_add_mpi_tests(test_surplus_rank_lockstep NP 1 4)
 
 # 10.2 Distributed output equivalence (Property 5 & 6). End-to-end: runs the
@@ -694,8 +748,18 @@ if(Python3_Interpreter_FOUND)
     cece_add_pytest(test_enum_config_bindings test_enum_config_bindings.py "${_bindings_pkg}" -v)
     cece_add_pytest(test_state_bindings test_state_bindings.py "${_bindings_pkg}" -v)
     cece_add_pytest(test_compute_bindings test_compute_bindings.py "${_bindings_pkg}" -v)
-    cece_add_pytest(test_validator_logger_bindings test_validator_logger_bindings.py "${_bindings_pkg}" -v)
-    cece_add_pytest(test_python_api_rewired test_python_api_rewired.py "${CMAKE_BINARY_DIR}/src/python" -v)
+    cece_add_pytest(
+      test_validator_logger_bindings
+      test_validator_logger_bindings.py
+      "${_bindings_pkg}"
+      -v
+    )
+    cece_add_pytest(
+      test_python_api_rewired
+      test_python_api_rewired.py
+      "${CMAKE_BINARY_DIR}/src/python"
+      -v
+    )
   endif()
 endif()
 
