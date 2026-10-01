@@ -488,8 +488,6 @@ if(CECE_HAS_FORTRAN)
     src/core/physics/legacy_fortran.F90
     src/core/physics/cece_sea_salt_fortran_bridge.cpp
     src/core/physics/sea_salt_kernel.F90
-    src/core/physics/cece_megan_fortran_bridge.cpp
-    src/core/physics/megan_kernel.F90
     src/core/physics/cece_dms_fortran_bridge.cpp
     src/core/physics/dms_kernel.F90
     src/core/physics/cece_lightning_fortran_bridge.cpp
@@ -506,8 +504,6 @@ if(CECE_HAS_FORTRAN)
     src/core/physics/k14_kernel.F90
     src/core/physics/cece_volcano_fortran_bridge.cpp
     src/core/physics/volcano_kernel.F90
-    src/core/physics/cece_megan3_fortran_bridge.cpp
-    src/core/physics/megan3_kernel.F90
     src/core/physics/cece_bdsnp_fortran_bridge.cpp
     src/core/physics/bdsnp_kernel.F90
     src/core/cece_ingestor_bridge.cpp

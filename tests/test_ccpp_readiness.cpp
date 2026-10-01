@@ -18,11 +18,10 @@ TEST(CCPPLinkTest, CompileIsolation) {
     void* data_ptr = nullptr;
     int rc = -1;
 
-    // Resolve the mock configuration against the source tree so the test works
-    // from any build directory (out-of-source builds put the ctest cwd where no
-    // cwd-relative guess can reach tests/).
-    std::string config_file = std::string(CECE_SOURCE_DIR) + "/tests/cece_control_mock.yaml";
-    ASSERT_TRUE(std::filesystem::exists(config_file)) << "missing " << config_file;
+    // CMake supplies the fixture path; out-of-source builds and arbitrary
+    // working directories must exercise the same core-link isolation test.
+    const std::string config_file = CECE_TEST_CONFIG;
+    ASSERT_TRUE(std::filesystem::is_regular_file(config_file));
     cece_set_config_file_path(config_file.c_str(), static_cast<int>(config_file.length()));
 
     // Phase 1 Initialization
