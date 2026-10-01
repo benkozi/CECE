@@ -138,6 +138,7 @@ cece_add_gtest(test_cece_utils MAIN MPI_KOKKOS MPI_LAUNCHER SOURCE_DIR_DEFINE PR
 cece_add_gtest(test_numerical_equivalence MAIN MPI_KOKKOS MPI_LAUNCHER)
 cece_add_gtest(test_cece_compute)
 cece_add_gtest(test_standalone_writer_attributes MAIN MPI_KOKKOS MPI_LAUNCHER PROPERTIES PROCESSORS 1)
+cece_add_gtest(test_rectilinear_gridspec MAIN MPI_KOKKOS MPI_LAUNCHER PROPERTIES PROCESSORS 1)
 cece_add_gtest(test_physics)
 cece_add_gtest(test_hemco_mimic)
 cece_add_gtest(test_stacking_engine)
@@ -156,7 +157,11 @@ cece_add_gtest(test_suite_idempotence)
 # Temporary Reproduction Test
 cece_add_gtest(test_repro_failure SOURCES repro_failure.cpp)
 # CCPP Readiness and Core Link Isolation Test
-cece_add_gtest(test_ccpp_readiness NO_CECE LINK cece_core SOURCE_DIR_DEFINE)
+cece_add_gtest(test_ccpp_readiness NO_CECE LINK cece_core)
+target_compile_definitions(
+  test_ccpp_readiness
+  PRIVATE CECE_TEST_CONFIG="${PROJECT_SOURCE_DIR}/tests/cece_control_mock.yaml"
+)
 
 # --- Physics schemes ---------------------------------------------------------
 # FENGSHA Dust Scheme Property Tests
@@ -173,6 +178,10 @@ cece_add_gtest(test_megan3 MAIN KOKKOS LINK ${RAPIDCHECK})
 cece_add_gtest(test_bdsnp MAIN KOKKOS LINK ${RAPIDCHECK})
 # Canonical BDSNP production-kernel regression tests
 cece_add_gtest(test_bdsnp_runtime MAIN KOKKOS)
+# HEMCO 3.12.1 MEGAN isoprene stateless source-conformance tests
+cece_add_gtest(test_hemco_megan_runtime MAIN KOKKOS SOURCE_DIR_DEFINE)
+# HEMCO 3.12.1 MEGAN synthetic global 4°×5° invariant tests
+cece_add_gtest(test_hemco_megan_global SOURCE_DIR_DEFINE)
 
 # --- Clock / time axis -------------------------------------------------------
 # CeceClock Property Tests
@@ -572,7 +581,14 @@ if(Python3_Interpreter_FOUND)
 
   # Python packages the pytest-based tests need — single source of truth for
   # the configure-time prefetch and the install_python_deps fixture test.
-  set(CECE_PYTHON_TEST_DEPS pytest PyYAML matplotlib numpy)
+  set(
+    CECE_PYTHON_TEST_DEPS
+    pytest
+    PyYAML
+    matplotlib
+    netCDF4
+    numpy
+  )
 
   # Prefetch the venv + packages at configure time: configure typically runs
   # where the network is available (e.g. HPC login nodes) while ctest may run
@@ -656,21 +672,22 @@ if(Python3_Interpreter_FOUND)
       ENVIRONMENT "${CECE_PIP_TEST_ENV}"
   )
 
-  # pytest suites: <name> <script> <PYTHONPATH>
+  # pytest suites: <name> <script> <PYTHONPATH, or "" for none>
   function(cece_add_pytest name script pythonpath)
     add_test(
       NAME ${name}
       COMMAND ${VENV_PYTHON} -m pytest ${CMAKE_CURRENT_SOURCE_DIR}/${script} ${ARGN}
       WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
-    set_tests_properties(
-      ${name}
-      PROPERTIES ENVIRONMENT "PYTHONPATH=${pythonpath}" FIXTURES_REQUIRED "python_deps_installed"
-    )
+    set_tests_properties(${name} PROPERTIES FIXTURES_REQUIRED "python_deps_installed")
+    if(pythonpath)
+      set_tests_properties(${name} PROPERTIES ENVIRONMENT "PYTHONPATH=${pythonpath}")
+    endif()
   endfunction()
 
   cece_add_pytest(test_hemco_to_cece_python test_converters.py "${PROJECT_SOURCE_DIR}/scripts")
   cece_add_pytest(test_scripts_python test_scripts.py "${PROJECT_SOURCE_DIR}/scripts")
+  cece_add_pytest(test_megan_global_source_conformance_python test_megan_global_parity.py "")
 
   if(BUILD_PYTHON_BINDINGS)
     set(_bindings_pkg "${CMAKE_BINARY_DIR}/src/python/cece")
