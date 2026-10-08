@@ -1180,8 +1180,9 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     // historical binary search probed amio_read at ~20 record
                     // indices, each probe a full-record read — exactly the
                     // traffic this band-scoped design exists to avoid — and
-                    // CECE always builds against the pinned AMIO submodule,
-                    // which provides amio_describe. Fail the step instead:
+                    // CECE always builds against the AMIO pinned through HELM's
+                    // submodule pointer, which provides amio_describe. Fail the
+                    // step instead:
                     // file_nt = 0 makes the collective readiness gate below
                     // report a detailed error for this variable.
                     CECE_LOG_WARNING("[DRIVER] amio_describe failed for '" + input_var_name + "' in '" + cfg.input_file_path +

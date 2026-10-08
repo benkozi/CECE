@@ -27,6 +27,15 @@ The maintained container workflows (`scripts/build-and-test-container.py`,
 CI) pass it automatically; only manual in-container configures like the
 one above need it spelled out.
 
+`scripts/build-and-test-container.py` builds and tests in the container
+from the host. Build only what you need and bound the parallelism with
+`--target` (repeatable) and `--jobs`:
+```bash
+python3 scripts/build-and-test-container.py --no-test --target cece_standalone_driver --jobs 4
+```
+Without `--target` it builds everything (the `all` target); without `--jobs`
+it uses the CPU count.
+
 To run the test suite on an HPC Slurm system (inside an sbatch
 allocation, with `srun` or the MPI's own `mpiexec` as the launcher), see
 [scripts/run-tests-slurm.README.md](scripts/run-tests-slurm.README.md).

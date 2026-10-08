@@ -49,7 +49,6 @@ class UpstreamRemoteConfig:
     canonical_remotes: dict[str, str] = field(
         default_factory=lambda: {
             "extern/helm": "https://github.com/bbakernoaa/HELM-Project",
-            "extern/helm/libs/amio": "https://github.com/bbakernoaa/amio",
         }
     )
     # Third-party submodules pinned to an upstream release rather than tracked
@@ -585,7 +584,7 @@ def format_detail_with_links(
     detail: str,
     web_url: str | None,
     current_sha: str = "",
-    expected_sha: str = "",
+    expected_sha: str | None = None,
 ) -> str:
     """Enhance verification detail message with Markdown links to branches, commits, or compare views."""
     if not detail or not web_url:

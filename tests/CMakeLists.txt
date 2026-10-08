@@ -754,6 +754,11 @@ if(Python3_Interpreter_FOUND)
     test_validate_cece_config.py
     "${PROJECT_SOURCE_DIR}/scripts"
   )
+  cece_add_pytest(
+    test_verify_submodules_python
+    test_verify_submodules.py
+    "${PROJECT_SOURCE_DIR}/scripts"
+  )
   cece_add_pytest(test_megan_global_source_conformance_python test_megan_global_parity.py "")
 
   if(BUILD_PYTHON_BINDINGS)
