@@ -19,6 +19,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Configure safe Git directory
+        run: git config --global --add safe.directory '*'
+
       - name: Cache dependencies and build
         uses: actions/cache@v6
         with:

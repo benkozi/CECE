@@ -48,7 +48,7 @@ class UpstreamRemoteConfig:
 
     canonical_remotes: dict[str, str] = field(
         default_factory=lambda: {
-            "extern/helm": "https://github.com/bbakernoaa/HELM-Project",
+            "extern/helm": "https://github.com/NOAA-EMC/HELM",
         }
     )
     # Third-party submodules pinned to an upstream release rather than tracked

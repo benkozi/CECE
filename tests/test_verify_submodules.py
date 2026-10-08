@@ -257,8 +257,8 @@ class TestVerifySubmodules(unittest.TestCase):
 
     def test_get_web_url_from_remote(self) -> None:
         self.assertEqual(
-            get_web_url_from_remote("https://github.com/bbakernoaa/HELM-Project.git"),
-            "https://github.com/bbakernoaa/HELM-Project",
+            get_web_url_from_remote("https://github.com/NOAA-EMC/HELM.git"),
+            "https://github.com/NOAA-EMC/HELM",
         )
         self.assertEqual(
             get_web_url_from_remote("git@github.com:bbakernoaa/amio.git"),
@@ -325,11 +325,11 @@ class TestVerifySubmodules(unittest.TestCase):
         self.assertEqual(set(config.canonical_remotes), {"extern/helm"})
         self.assertEqual(
             config.canonical_remotes["extern/helm"],
-            "https://github.com/bbakernoaa/HELM-Project",
+            "https://github.com/NOAA-EMC/HELM",
         )
 
         def _mock_git(
-            url: str = "https://github.com/bbakernoaa/HELM-Project.git",
+            url: str = "https://github.com/NOAA-EMC/HELM.git",
             branch: str | None = None,
             sha: str = "9e2f6751",
             remote_head: str | None = None,
@@ -363,7 +363,7 @@ class TestVerifySubmodules(unittest.TestCase):
             with patch("verify_submodules.run_git_cmd") as mock_git:
                 # 1. Test unauthorized fork drift rejection
                 mock_git.side_effect = _mock_git(
-                    url="https://github.com/attacker/HELM-Project.git"
+                    url="https://github.com/attacker/HELM.git"
                 )
                 statuses_fork = verify_submodules(
                     repo_root=repo_root,
@@ -508,7 +508,7 @@ class TestVerifySubmodules(unittest.TestCase):
 
             # Top-level .gitmodules declares extern/helm
             (repo_root / ".gitmodules").write_text(
-                '[submodule "extern/helm"]\n\tpath = extern/helm\n\turl = https://github.com/bbakernoaa/HELM-Project.git\n',
+                '[submodule "extern/helm"]\n\tpath = extern/helm\n\turl = https://github.com/NOAA-EMC/HELM.git\n',
                 encoding="utf-8",
             )
             # Nested .gitmodules declares libs/amio
@@ -520,7 +520,7 @@ class TestVerifySubmodules(unittest.TestCase):
             # Query top-level submodule
             self.assertEqual(
                 _get_gitmodules_property(repo_root, "extern/helm", "url"),
-                "https://github.com/bbakernoaa/HELM-Project.git",
+                "https://github.com/NOAA-EMC/HELM.git",
             )
             # Query nested submodule
             self.assertEqual(
