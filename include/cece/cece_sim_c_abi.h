@@ -68,6 +68,15 @@ typedef struct CeceGridSpec {
     int lat_len;                ///< Number of elements in lat_coords.
     const char* gridspec_file;  ///< Optional path, may be NULL or empty.
     int gridspec_file_len;      ///< Length of gridspec_file (0 if NULL).
+    /* Host-block extension (zero/NULL for every other grid; value-initialize the struct). */
+    const double* corner_lon_coords;  ///< Explicit corners, (nx+1)*(ny+1), x fastest; NULL when absent.
+    int corner_lon_len;               ///< Number of elements in corner_lon_coords.
+    const double* corner_lat_coords;  ///< Explicit corners, (nx+1)*(ny+1), x fastest; NULL when absent.
+    int corner_lat_len;               ///< Number of elements in corner_lat_coords.
+    int host_block;                   ///< 1: one PET's DE block of a parent grid (no band decomposition).
+    int tile;                         ///< Parent-grid tile of the block (1-based), 0 otherwise.
+    int origin_i;                     ///< Tile-global index of the block's first cell along x (1-based).
+    int origin_j;                     ///< Tile-global index of the block's first cell along y (1-based).
 } CeceGridSpec;
 
 // NOLINTEND(modernize-use-using)
@@ -227,6 +236,40 @@ void cece_sim_grid_from_esmf(int nx, int ny, int nz, int is_rad, const double* l
  */
 void cece_sim_create_from_esmf(const char* config_path, int path_len, int nx, int ny, int nz, int is_rad, const double* lon_coords, int lon_len,
                                const double* lat_coords, int lat_len, int mpi_comm_f, CeceSimulation** out_sim, int* rc);
+
+/**
+ * @brief Validate/normalize one PET's DE block of a multi-tile parent ESMF
+ * grid without building a simulation (the cap's host-block unit path).
+ *
+ * Centres are nx*ny and corners (nx+1)*(ny+1), both flattened x fastest.
+ * Wraps longitudes, converts radians when is_rad != 0, validates the shapes
+ * and the 1-based tile/origin indices. On success *rc == 0 and the
+ * normalized centre/corner arrays are written (probe-then-fill as in
+ * cece_sim_grid_from_esmf: NULL/short buffers return the required lengths);
+ * on a bad shape *rc < 0 with a logged diagnostic — never a silent fallback.
+ */
+void cece_sim_grid_from_esmf_block(int nx, int ny, int nz, int is_rad, const double* lon_coords, int lon_len, const double* lat_coords, int lat_len,
+                                   const double* corner_lon_coords, int corner_lon_len, const double* corner_lat_coords, int corner_lat_len, int tile,
+                                   int origin_i, int origin_j, double* lon_out, int lon_out_max, int* lon_len_out, double* lat_out, int lat_out_max,
+                                   int* lat_len_out, int* rc);
+
+/**
+ * @brief Build the simulation from one PET's DE block of a multi-tile parent
+ * ESMF grid (the coupled multi-tile branch): GridSpec::from_esmf_block +
+ * cece_sim_create in one call.
+ *
+ * The cap reads the DE-local centre block and corner block with
+ * ESMF_GridGetCoord and passes them unchanged; the block becomes the core's
+ * whole grid (no latitude-band decomposition) and the regrid destination
+ * carries the explicit corners. nz must come from the YAML. The MPI
+ * communicator is still used for the collective readiness gates, so every
+ * PET of the component must call this. On success *out_sim is set and
+ * *rc = 0; on failure *out_sim is NULL and *rc < 0.
+ */
+void cece_sim_create_from_esmf_block(const char* config_path, int path_len, int nx, int ny, int nz, int is_rad, const double* lon_coords, int lon_len,
+                                     const double* lat_coords, int lat_len, const double* corner_lon_coords, int corner_lon_len,
+                                     const double* corner_lat_coords, int corner_lat_len, int tile, int origin_i, int origin_j, int mpi_comm_f,
+                                     CeceSimulation** out_sim, int* rc);
 
 /**
  * @brief Bind a realized export field's ESMF-owned memory as the persistent

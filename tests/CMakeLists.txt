@@ -158,6 +158,8 @@ cece_add_gtest(
   PROPERTIES PROCESSORS 1
 )
 cece_add_gtest(test_rectilinear_gridspec MAIN MPI_KOKKOS MPI_LAUNCHER PROPERTIES PROCESSORS 1)
+# Host block of a multi-tile parent grid: GridSpec::from_esmf_block and the explicit-corner block mesh.
+cece_add_gtest(test_grid_spec_block MAIN MPI_KOKKOS MPI_LAUNCHER PROPERTIES PROCESSORS 1)
 cece_add_gtest(test_physics)
 cece_add_gtest(test_hemco_mimic)
 cece_add_gtest(test_stacking_engine)

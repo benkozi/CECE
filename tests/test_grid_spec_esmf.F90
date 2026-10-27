@@ -47,12 +47,45 @@ program test_grid_spec_esmf
       integer(c_int), intent(out) :: lat_len_out
       integer(c_int), intent(out) :: rc
     end subroutine
+
+    ! void cece_sim_grid_from_esmf_block(int nx, int ny, int nz, int is_rad,
+    !   const double* lon, int lon_len, const double* lat, int lat_len,
+    !   const double* corner_lon, int corner_lon_len, const double* corner_lat, int corner_lat_len,
+    !   int tile, int origin_i, int origin_j,
+    !   double* lon_out, int lon_out_max, int* lon_len_out,
+    !   double* lat_out, int lat_out_max, int* lat_len_out, int* rc)
+    subroutine cece_sim_grid_from_esmf_block(nx, ny, nz, is_rad, lon_coords, lon_len, &
+                                             lat_coords, lat_len, corner_lon, corner_lon_len, &
+                                             corner_lat, corner_lat_len, tile, origin_i, origin_j, &
+                                             lon_out, lon_out_max, lon_len_out, &
+                                             lat_out, lat_out_max, lat_len_out, rc) &
+                                             bind(C, name="cece_sim_grid_from_esmf_block")
+      import :: c_int, c_double
+      integer(c_int), value :: nx, ny, nz, is_rad
+      real(c_double), intent(in) :: lon_coords(*)
+      integer(c_int), value :: lon_len
+      real(c_double), intent(in) :: lat_coords(*)
+      integer(c_int), value :: lat_len
+      real(c_double), intent(in) :: corner_lon(*)
+      integer(c_int), value :: corner_lon_len
+      real(c_double), intent(in) :: corner_lat(*)
+      integer(c_int), value :: corner_lat_len
+      integer(c_int), value :: tile, origin_i, origin_j
+      real(c_double), intent(out) :: lon_out(*)
+      integer(c_int), value :: lon_out_max
+      integer(c_int), intent(out) :: lon_len_out
+      real(c_double), intent(out) :: lat_out(*)
+      integer(c_int), value :: lat_out_max
+      integer(c_int), intent(out) :: lat_len_out
+      integer(c_int), intent(out) :: rc
+    end subroutine
   end interface
 
   real(c_double) :: in_lon(MAX_COORDS), in_lat(MAX_COORDS)
   real(c_double) :: out_lon(MAX_COORDS), out_lat(MAX_COORDS)
+  real(c_double) :: in_klon(MAX_COORDS), in_klat(MAX_COORDS)
   integer :: nfail, rank, err
-  integer :: i
+  integer :: i, j
 
   call MPI_Init(err)
   call MPI_Comm_rank(MPI_COMM_WORLD, rank, err)
@@ -146,6 +179,38 @@ program test_grid_spec_esmf
   end do
   call expect_reject("ny=1 with 4 coords for nx=3", 3, 1, 4, 0, in_lon, 4, in_lat, 4, nfail)
 
+  ! --- Case 9: host block (one DE of a multi-tile parent grid) -------------
+  ! A 4x3 block of cells with its closed 5x4 corner ring, centres in [0, 360)
+  ! as ESMF holds them: accepted, normalized to [-180, 180), lengths 12.
+  in_lon = 0.0d0
+  in_lat = 0.0d0
+  in_klon = 0.0d0
+  in_klat = 0.0d0
+  do j = 1, 3
+    do i = 1, 4
+      in_lon((j - 1) * 4 + i) = 300.0d0 + 10.0d0 * (i - 1) + 5.0d0   ! 305 .. 335
+      in_lat((j - 1) * 4 + i) = -10.0d0 + 10.0d0 * (j - 1) + 5.0d0   ! -5, 5, 15
+    end do
+  end do
+  do j = 1, 4
+    do i = 1, 5
+      in_klon((j - 1) * 5 + i) = 300.0d0 + 10.0d0 * (i - 1)          ! 300 .. 340
+      in_klat((j - 1) * 5 + i) = -10.0d0 + 10.0d0 * (j - 1)          ! -10 .. 20
+    end do
+  end do
+  call check_block("host block 4x3 with 5x4 corners", 4, 3, 1, 0, in_lon, 12, in_lat, 12, &
+                   in_klon, 20, in_klat, 20, 3, 1, 25, 12, 12, nfail)
+
+  ! --- Case 10: an open corner ring is rejected -----------------------------
+  ! 5x3 corners (the upper corner row missing: a DE that does not reach the
+  ! tile's upper edge) must be refused by name, never padded.
+  call expect_reject_block("host block with open corner ring 5x3", 4, 3, 1, 0, in_lon, 12, in_lat, 12, &
+                           in_klon, 15, in_klat, 15, 3, 1, 1, nfail)
+  call expect_reject_block("host block with zero tile", 4, 3, 1, 0, in_lon, 12, in_lat, 12, &
+                           in_klon, 20, in_klat, 20, 0, 1, 1, nfail)
+  call expect_reject_block("host block with 1-D centres", 4, 3, 1, 0, in_lon, 4, in_lat, 3, &
+                           in_klon, 20, in_klat, 20, 1, 1, 1, nfail)
+
   if (nfail == 0) then
     if (rank == 0) print *, "test_grid_spec_esmf: ALL CASES PASSED"
     call MPI_Finalize(err)
@@ -223,6 +288,81 @@ contains
       nfail = nfail + 1
     end if
   end subroutine check_case
+
+  !> Run an accepted host-block case through the block ABI and assert the result.
+  subroutine check_block(name, nx, ny, nz, is_rad, lon, lon_len, lat, lat_len, klon, klon_len, klat, klat_len, &
+                         tile, origin_i, origin_j, want_lon_len, want_lat_len, nfail)
+    character(len=*), intent(in) :: name
+    integer(c_int), intent(in) :: nx, ny, nz, is_rad
+    real(c_double), intent(in) :: lon(*), lat(*), klon(*), klat(*)
+    integer(c_int), intent(in) :: lon_len, lat_len, klon_len, klat_len, tile, origin_i, origin_j
+    integer(c_int), intent(in) :: want_lon_len, want_lat_len
+    integer, intent(inout) :: nfail
+
+    integer(c_int) :: got_lon_len, got_lat_len, got_rc
+    integer :: i, bad
+
+    got_lon_len = -999
+    got_lat_len = -999
+    got_rc = -999
+    out_lon = -1.0d0
+    out_lat = -1.0d0
+
+    call cece_sim_grid_from_esmf_block(nx, ny, nz, is_rad, lon, lon_len, lat, lat_len, klon, klon_len, klat, klat_len, &
+                                       tile, origin_i, origin_j, out_lon, MAX_COORDS, got_lon_len, &
+                                       out_lat, MAX_COORDS, got_lat_len, got_rc)
+
+    bad = 0
+    if (got_rc /= 0) then
+      print *, "FAIL [", trim(name), "]: expected acceptance, got rc=", int(got_rc)
+      bad = 1
+    end if
+    if (got_lon_len /= want_lon_len .or. got_lat_len /= want_lat_len) then
+      print *, "FAIL [", trim(name), "]: coord lengths (", int(got_lon_len), ",", &
+               int(got_lat_len), ") expected (", int(want_lon_len), ",", &
+               int(want_lat_len), ")"
+      bad = 1
+    end if
+    if (got_rc == 0) then
+      do i = 1, int(got_lon_len)
+        if (.not. (out_lon(i) >= -180.0d0 .and. out_lon(i) < 180.0d0)) then
+          print *, "FAIL [", trim(name), "]: lon(", i, ")=", out_lon(i), &
+                   " outside [-180, 180)"
+          bad = 1
+          exit
+        end if
+      end do
+    end if
+
+    if (bad == 0) then
+      print *, "PASS [", trim(name), "]"
+    else
+      nfail = nfail + 1
+    end if
+  end subroutine check_block
+
+  !> Run a rejected host-block case through the block ABI and assert rc /= 0.
+  subroutine expect_reject_block(name, nx, ny, nz, is_rad, lon, lon_len, lat, lat_len, klon, klon_len, klat, klat_len, &
+                                 tile, origin_i, origin_j, nfail)
+    character(len=*), intent(in) :: name
+    integer(c_int), intent(in) :: nx, ny, nz, is_rad
+    real(c_double), intent(in) :: lon(*), lat(*), klon(*), klat(*)
+    integer(c_int), intent(in) :: lon_len, lat_len, klon_len, klat_len, tile, origin_i, origin_j
+    integer, intent(inout) :: nfail
+
+    integer(c_int) :: got_lon_len, got_lat_len, got_rc
+
+    got_rc = -999
+    call cece_sim_grid_from_esmf_block(nx, ny, nz, is_rad, lon, lon_len, lat, lat_len, klon, klon_len, klat, klat_len, &
+                                       tile, origin_i, origin_j, out_lon, MAX_COORDS, got_lon_len, &
+                                       out_lat, MAX_COORDS, got_lat_len, got_rc)
+    if (got_rc == 0) then
+      print *, "FAIL [", trim(name), "]: expected rejection, got rc=0"
+      nfail = nfail + 1
+    else
+      print *, "PASS [", trim(name), "] (rejected as expected)"
+    end if
+  end subroutine expect_reject_block
 
   !> Run a rejected-shape case through the ABI and assert rc /= 0.
   subroutine expect_reject(name, nx, ny, nz, is_rad, lon, lon_len, lat, lat_len, nfail)

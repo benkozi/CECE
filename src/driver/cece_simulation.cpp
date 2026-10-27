@@ -19,6 +19,7 @@
 #include <mpi.h>
 
 #include <Kokkos_Core.hpp>
+#include <algorithm>
 #include <ctime>
 #include <memory>
 #include <string>
@@ -174,22 +175,48 @@ std::unique_ptr<CeceSimulation> CeceSimulation::create_internal(const std::strin
     //    only the rank's band via SyncAndCopyState, and the writer assembles
     //    the global field at output time. On a single rank ny_local == ny,
     //    byte-identical to the replicated allocation.
-    sim->band_ = BandDecomposition::compute(ny, comm);
+    //    A host block (one PET's DE of a parent grid) is never decomposed further: the block is the
+    //    whole local grid and every rank holds a different block, so the band formula does not apply.
+    //    The writer and the local-time service gather by latitude band and are not block-aware yet;
+    //    both are refused loudly on a host block instead of assembling a wrong global field.
+    if (grid.host_block) {
+        if (parsed_config.output_config.enabled) {
+            return fail(-1, "output.enabled is not supported on a host-block grid (coupled multi-tile run): set output.enabled: false");
+        }
+        if (parsed_config.local_time.enabled) {
+            return fail(-1, "local_time.enabled is not supported on a host-block grid (coupled multi-tile run)");
+        }
+    }
+    sim->band_ = grid.host_block ? BandDecomposition::whole_grid(ny) : BandDecomposition::compute(ny, comm);
+    //    The export state also needs a field for every species the NUOPC cap exports: the cap binds the
+    //    realized ESMF field's storage to that managed view (bind_export_field), and a coupled run has no
+    //    reason to configure NetCDF output just to create it. Species named in both lists get one field.
+    std::vector<std::string> export_names;
     for (const cece::CeceOutputField& field : parsed_config.output_config.fields.GetDataFields()) {
-        std::vector<double>& buffer = sim->export_buffers_[field.name] =
-            std::vector<double>(static_cast<std::size_t>(nx) * sim->band_.ny_local * nz, 0.0);
-        cece_core_set_export_field(sim->core_data_ptr_, field.name.c_str(), static_cast<int>(field.name.length()), buffer.data(), nx,
-                                   sim->band_.ny_local, nz, &rc);
+        export_names.push_back(field.name);
+    }
+    for (const auto& [species, spec] : parsed_config.nuopc.export_fields) {
+        (void)spec;
+        if (std::find(export_names.begin(), export_names.end(), species) == export_names.end()) {
+            export_names.push_back(species);
+        }
+    }
+    for (const std::string& name : export_names) {
+        std::vector<double>& buffer = sim->export_buffers_[name] = std::vector<double>(static_cast<std::size_t>(nx) * sim->band_.ny_local * nz, 0.0);
+        cece_core_set_export_field(sim->core_data_ptr_, name.c_str(), static_cast<int>(name.length()), buffer.data(), nx, sim->band_.ny_local, nz,
+                                   &rc);
         if (rc < 0) {
-            return fail(rc, "cece_core_set_export_field failed for '" + field.name + "' with rc=" + std::to_string(rc));
+            return fail(rc, "cece_core_set_export_field failed for '" + name + "' with rc=" + std::to_string(rc));
         }
     }
 
     // 6. Create the driver orchestrator facade (offline AMIO reading + AXIS
     //    regridding pipeline) on the resolved grid coordinates.
-    cece_driver_create(config_path.c_str(), static_cast<int>(config_path.length()), nx, ny, nz, grid.lon_coords.data(),
-                       static_cast<int>(grid.lon_coords.size()), grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), mpi_comm_f,
-                       &sim->driver_ptr_, &rc);
+    cece_driver_create_block(
+        config_path.c_str(), static_cast<int>(config_path.length()), nx, ny, nz, grid.lon_coords.data(), static_cast<int>(grid.lon_coords.size()),
+        grid.lat_coords.data(), static_cast<int>(grid.lat_coords.size()), grid.corner_lon_coords.empty() ? nullptr : grid.corner_lon_coords.data(),
+        static_cast<int>(grid.corner_lon_coords.size()), grid.corner_lat_coords.empty() ? nullptr : grid.corner_lat_coords.data(),
+        static_cast<int>(grid.corner_lat_coords.size()), grid.host_block ? 1 : 0, mpi_comm_f, &sim->driver_ptr_, &rc);
     if (rc < 0) {
         return fail(rc, "cece_driver_create failed with rc=" + std::to_string(rc));
     }

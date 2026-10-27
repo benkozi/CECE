@@ -46,6 +46,17 @@ struct GridSpec {
     std::vector<double> lat_coords;
     std::string gridspec_file;  ///< Optional; forwarded to the writer for bounds.
 
+    /// Explicit cell corners, (nx+1)*(ny+1) each, x fastest (corner (i, j) at i + j*(nx+1)); empty
+    /// when the regridder synthesizes corners from the centres. Present only on a host block.
+    std::vector<double> corner_lon_coords;
+    std::vector<double> corner_lat_coords;
+    /// The grid is one PET's DE block of a parent (NUOPC) grid: the core runs the block as its whole
+    /// grid (no latitude-band decomposition) and the regrid destination carries the explicit corners.
+    bool host_block = false;
+    int tile = 0;      ///< Parent-grid tile the block lies on (1-based); 0 when not a host block.
+    int origin_i = 0;  ///< Tile-global index of the block's first cell along x (1-based).
+    int origin_j = 0;  ///< Tile-global index of the block's first cell along y (1-based).
+
     /// Resolve the target grid from the CECE YAML configuration, exactly as
     /// the standalone driver has always done: named regular grids (F/R via
     /// axis::topology::NamedGridRegistry), an explicit or stream-inferred
@@ -83,6 +94,20 @@ struct GridSpec {
      */
     static GridSpec from_esmf(int nx, int ny, int nz, bool is_rad, const std::vector<double>& lon, const std::vector<double>& lat,
                               const std::string& gridspec_file = "");
+
+    /**
+     * @brief Build the target grid from one PET's DE block of a multi-tile parent ESMF grid.
+     *
+     * The cap reads the DE-local centre block (nx x ny, flattened x fastest) and the DE-local corner
+     * block ((nx+1) x (ny+1), same layout) with ESMF_GridGetCoord and passes them unchanged; longitudes
+     * are wrapped and radians converted here as in from_esmf. The block is always curvilinear. The
+     * result has host_block set: the core decomposes nothing further (BandDecomposition::whole_grid)
+     * and the regrid destination mesh uses the explicit corners, so tile edges and DE seams keep the
+     * host's true cell geometry. Throws std::invalid_argument on any shape mismatch.
+     */
+    static GridSpec from_esmf_block(int nx, int ny, int nz, bool is_rad, const std::vector<double>& lon, const std::vector<double>& lat,
+                                    const std::vector<double>& corner_lon, const std::vector<double>& corner_lat, int tile, int origin_i,
+                                    int origin_j);
 
     /// Human-readable identity (topology + dims + coordinate counts), used
     /// in the precedence warning so a run names the grid it ignored.

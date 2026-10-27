@@ -56,6 +56,15 @@ axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_band_mesh_curvilinear_
                                                                                                     const std::vector<double>& band_center_lon,
                                                                                                     const std::vector<double>& band_center_lat);
 
+/// Build the destination mesh of a HOST BLOCK: a logically rectangular nx x ny block of cells whose
+/// corners are known exactly (the parent ESMF grid's corner stagger), so nothing is synthesized or
+/// extrapolated at the block's edges. `center_lon`/`center_lat` are nx*ny (x fastest) and
+/// `corner_lon`/`corner_lat` are (nx+1)*(ny+1) (x fastest, corner (i, j) at i + j*(nx+1)).
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_block_mesh_with_corners(int nx, int ny, const std::vector<double>& center_lon,
+                                                                                  const std::vector<double>& center_lat,
+                                                                                  const std::vector<double>& corner_lon,
+                                                                                  const std::vector<double>& corner_lat);
+
 /// A precomputed, reusable regridding plan for one stream variable.
 ///
 /// The interpolation weights are expensive to build (ArborX BVH + polygon
@@ -98,9 +107,11 @@ bool same_spherical_grid_coordinates(int nx, int ny, const std::vector<double>& 
 /// sub-mesh for the band, and generates the sparse weight matrix.
 ///
 /// @return true on success; false if coordinates could not be read.
+/// `corner_lon`/`corner_lat`, when given, are the explicit destination corners of a host block
+/// ((nx+1)*(ny+1) each) and require the whole block as the band ([j0, j1) == [0, ny)).
 bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const std::vector<double>& target_lons,
                        const std::vector<double>& target_lats, const std::string& map_algo, int j0, int j1, const std::string& gridspec_file,
-                       RegridPlan& plan);
+                       RegridPlan& plan, const std::vector<double>* corner_lon = nullptr, const std::vector<double>* corner_lat = nullptr);
 
 /// Apply a previously built plan to one source field snapshot, producing the
 /// rank-local destination slice `local_dst` of size nx * (j1 - j0), laid out

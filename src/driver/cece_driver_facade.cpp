@@ -581,12 +581,23 @@ AmioHandleSet* CeceDriverOrchestrator::GetOrOpenHandleSet(const std::string& han
 
 CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len,
                                                const double* lat_coords, int lat_len, MPI_Comm comm_c)
+    : CeceDriverOrchestrator(config_file, nx, ny, nz, lon_coords, lon_len, lat_coords, lat_len, nullptr, 0, nullptr, 0, /*host_block=*/false,
+                             comm_c) {}
+
+CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len,
+                                               const double* lat_coords, int lat_len, const double* corner_lon_coords, int corner_lon_len,
+                                               const double* corner_lat_coords, int corner_lat_len, bool host_block, MPI_Comm comm_c)
     : config_file_(config_file),
       nx_(nx),
       ny_(ny),
       nz_(nz),
       target_lons_(lon_coords, lon_coords + lon_len),
       target_lats_(lat_coords, lat_coords + lat_len),
+      target_corner_lons_(corner_lon_coords == nullptr ? nullptr : corner_lon_coords,
+                          corner_lon_coords == nullptr ? nullptr : corner_lon_coords + corner_lon_len),
+      target_corner_lats_(corner_lat_coords == nullptr ? nullptr : corner_lat_coords,
+                          corner_lat_coords == nullptr ? nullptr : corner_lat_coords + corner_lat_len),
+      host_block_(host_block),
       comm_c_(comm_c) {
     // Build the long-lived HALO wrapper over comm_c_ now that it is set, so the
     // fused gate and cached gather plans have a valid Communicator to reference
@@ -597,7 +608,14 @@ CeceDriverOrchestrator::CeceDriverOrchestrator(const std::string& config_file, i
     // This is the single source of truth for the band geometry, replacing the
     // inline band_start j0/j1 computations. Recomputed wherever comm_c_ is
     // reassigned (Req 1.1, 1.2, 1.5).
-    band_ = BandDecomposition::compute(ny_, comm_c_);
+    // A host block is one PET's DE of a parent grid: it is the whole local destination, and the band
+    // formula over the communicator size would split it wrongly. The communicator stays in use for
+    // the collective gates, which every rank still enters in lock-step.
+    band_ = host_block_ ? BandDecomposition::whole_grid(ny_) : BandDecomposition::compute(ny_, comm_c_);
+    if (host_block_) {
+        CECE_LOG_INFO("[DRIVER] host-block destination: " + std::to_string(nx_) + "x" + std::to_string(ny_) + " cells with " +
+                      std::to_string(target_corner_lons_.size()) + " explicit corners; band j0=0 j1=" + std::to_string(band_.j1));
+    }
 
     // Parse the YAML once and resolve the StreamConfig for every stream
     // variable, plus driver-level values and gridspec_file_ (Req 1.1). This
@@ -1337,7 +1355,9 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     bool local_plan_built = false;
                     try {
                         local_plan_built =
-                            cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, gridspec_file_, plan);
+                            cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, gridspec_file_, plan,
+                                                        target_corner_lons_.empty() ? nullptr : &target_corner_lons_,
+                                                        target_corner_lats_.empty() ? nullptr : &target_corner_lats_);
                     } catch (const std::exception& error) {
                         failure_detail = "regrid plan construction threw an exception: " + std::string(error.what());
                     } catch (...) {
@@ -1892,8 +1912,9 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
 extern "C" {
 void amio_set_parent_communicator(MPI_Fint comm);
 
-void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
-                        int lat_len, int mpi_comm_f, void** driver_ptr_out, int* rc) {
+void cece_driver_create_block(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, int lon_len,
+                              const double* lat_coords, int lat_len, const double* corner_lon_coords, int corner_lon_len,
+                              const double* corner_lat_coords, int corner_lat_len, int host_block, int mpi_comm_f, void** driver_ptr_out, int* rc) {
     if (rc) *rc = 0;
     try {
         std::string path(yaml_path, path_len);
@@ -1905,12 +1926,19 @@ void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int
         MPI_Comm comm_c = MPI_Comm_f2c(static_cast<MPI_Fint>(mpi_comm_f));
 
         // 3. Create orchestrator using the custom communicator
-        auto* driver = new cece::CeceDriverOrchestrator(path, nx, ny, nz, lon_coords, lon_len, lat_coords, lat_len, comm_c);
+        auto* driver = new cece::CeceDriverOrchestrator(path, nx, ny, nz, lon_coords, lon_len, lat_coords, lat_len, corner_lon_coords, corner_lon_len,
+                                                        corner_lat_coords, corner_lat_len, host_block != 0, comm_c);
         *driver_ptr_out = static_cast<void*>(driver);
     } catch (const std::exception& e) {
         CECE_LOG_ERROR(std::string("cece_driver_create: ") + e.what());
         if (rc) *rc = -1;
     }
+}
+
+void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
+                        int lat_len, int mpi_comm_f, void** driver_ptr_out, int* rc) {
+    cece_driver_create_block(yaml_path, path_len, nx, ny, nz, lon_coords, lon_len, lat_coords, lat_len, nullptr, 0, nullptr, 0, /*host_block=*/0,
+                             mpi_comm_f, driver_ptr_out, rc);
 }
 
 void cece_driver_advance_time(void* driver_ptr, const char* time_iso8601, int time_len, void* cece_core_data_ptr, int* rc) {

@@ -156,6 +156,30 @@ module cece_cap_mod
 
     ! Rebinds the core's persistent write-back target for `species` to the
     ! ESMF field's own storage. Pointer-map update only; ESMF owns the memory.
+    subroutine cece_sim_create_from_esmf_block(config_path, path_len, nx, ny, nz, is_rad, &
+                                               lon_coords, lon_len, lat_coords, lat_len, &
+                                               corner_lon_coords, corner_lon_len, &
+                                               corner_lat_coords, corner_lat_len, &
+                                               tile, origin_i, origin_j, mpi_comm_f, out_sim, rc) &
+                                               bind(C, name="cece_sim_create_from_esmf_block")
+      import :: c_char, c_int, c_double, c_ptr
+      character(kind=c_char), dimension(*), intent(in) :: config_path
+      integer(c_int), value :: path_len
+      integer(c_int), value :: nx, ny, nz, is_rad
+      real(c_double), intent(in) :: lon_coords(*)
+      integer(c_int), value :: lon_len
+      real(c_double), intent(in) :: lat_coords(*)
+      integer(c_int), value :: lat_len
+      real(c_double), intent(in) :: corner_lon_coords(*)
+      integer(c_int), value :: corner_lon_len
+      real(c_double), intent(in) :: corner_lat_coords(*)
+      integer(c_int), value :: corner_lat_len
+      integer(c_int), value :: tile, origin_i, origin_j
+      integer(c_int), value :: mpi_comm_f
+      type(c_ptr), intent(out) :: out_sim
+      integer(c_int), intent(out) :: rc
+    end subroutine
+
     subroutine cece_sim_bind_export_field(sim, species, species_len, data_ptr, &
                                           nx, ny_local, nz, rc) &
                                           bind(C, name="cece_sim_bind_export_field")
@@ -555,6 +579,9 @@ contains
     type(ESMF_Mesh) :: parent_mesh
     integer :: gx_nx, gx_ny, gx_is_rad, gx_rc
     real(ESMF_KIND_R8), allocatable :: gx_lon(:), gx_lat(:)
+    ! Multi-tile (host-block) parent grid state
+    integer :: gx_tile_count, gx_tile, gx_i0, gx_j0
+    real(ESMF_KIND_R8), allocatable :: gx_corner_lon(:), gx_corner_lat(:)
     integer(c_int) :: nz_cfg
     integer(c_int) :: desc_len
     character(len=512) :: yaml_desc
@@ -668,6 +695,61 @@ contains
           wmsg = '[Cap] Parent ESMF grid takes precedence; ignoring the CECE config grid.'
         end if
         call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_WARNING)
+      end if
+
+      ! A multi-tile parent grid (a cubed sphere: tileCount > 1) takes the
+      ! host-block path: this PET's single DE, with the grid's true cell
+      ! corners, becomes the core's whole local grid and nothing is gathered
+      ! across PETs. The single-tile paths below are unchanged.
+      gx_tile_count = 1
+      if (grid_is_present) then
+        call ESMF_GridGet(parent_grid, tileCount=gx_tile_count, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+      end if
+      if (grid_is_present .and. gx_tile_count > 1) then
+        call cece_cap_extract_local_block(parent_grid, gx_tile_count, gx_tile, gx_i0, gx_j0, &
+          gx_nx, gx_ny, gx_is_rad, gx_lon, gx_lat, gx_corner_lon, gx_corner_lat, gx_rc)
+        if (gx_rc /= ESMF_SUCCESS) then
+          call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+            msg='[Cap] Multi-tile parent grid: DE block extraction failed;'// &
+            ' no fallback to a single tile.', &
+            line=__LINE__, file=__FILE__, rcToReturn=rc)
+          return  ! bail out
+        end if
+        write(wmsg, '(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0)') &
+          '[Cap] Parent grid: tileCount=', gx_tile_count, ', local DE on tile ', gx_tile, &
+          ', block i=', gx_i0, '..', gx_i0 + gx_nx - 1, ' j=', gx_j0, '..', gx_j0 + gx_ny - 1, &
+          ' (', gx_nx, 'x', gx_ny, '), corners ', gx_nx + 1, 'x', gx_ny + 1
+        call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+        call cece_sim_create_from_esmf_block(trim(g_config_file_path)//c_null_char, &
+          int(len_trim(g_config_file_path), c_int), &
+          int(gx_nx, c_int), int(gx_ny, c_int), nz_cfg, int(gx_is_rad, c_int), &
+          gx_lon, int(size(gx_lon), c_int), gx_lat, int(size(gx_lat), c_int), &
+          gx_corner_lon, int(size(gx_corner_lon), c_int), &
+          gx_corner_lat, int(size(gx_corner_lat), c_int), &
+          int(gx_tile, c_int), int(gx_i0, c_int), int(gx_j0, c_int), &
+          int(mpi_comm_val, c_int), g_sim_ptr, c_rc)
+        if (allocated(gx_lon)) deallocate(gx_lon)
+        if (allocated(gx_lat)) deallocate(gx_lat)
+        if (allocated(gx_corner_lon)) deallocate(gx_corner_lon)
+        if (allocated(gx_corner_lat)) deallocate(gx_corner_lat)
+        if (c_rc /= 0 .or. .not. c_associated(g_sim_ptr)) then
+          write(wmsg, '(A,I0)') &
+            '[Cap] Failed to create CECE simulation on the parent-provided DE block rc=', int(c_rc)
+          g_sim_ptr = c_null_ptr
+          call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+            line=__LINE__, file=__FILE__, rcToReturn=rc)
+          return  ! bail out
+        end if
+        write(wmsg, '(A,I0,A,I0,A,I0,A,I0)') '[Cap] Simulation grid from parent ESMF DE block: ', &
+          gx_nx, 'x', gx_ny, 'x', int(nz_cfg), ' on tile ', gx_tile
+        call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+        call realize_export_fields(comp, parent_grid, grid_is_present, int(nz_cfg), rc)
+        if (rc /= ESMF_SUCCESS) return  ! bail out
+        call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
+          ESMF_LOGMSG_INFO)
+        return
       end if
 
       ! Extract the global coordinate arrays across PETs. ESMF coordinate

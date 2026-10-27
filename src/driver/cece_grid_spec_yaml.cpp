@@ -443,6 +443,18 @@ void GridSpec::validate() const {
     } else {
         throw std::invalid_argument("GridSpec: unrecognized topology value " + std::to_string(static_cast<int>(topology)));
     }
+    // Explicit corners come in pairs and only for a logically rectangular (nx x ny) grid.
+    if (!corner_lon_coords.empty() || !corner_lat_coords.empty()) {
+        if (topology == GridTopology::Unstructured) {
+            throw std::invalid_argument("GridSpec: explicit corners are only supported on rectilinear/curvilinear grids");
+        }
+        const size_t want = static_cast<size_t>(nx + 1) * static_cast<size_t>(ny + 1);
+        expect_size(want, "corner lon", corner_lon_coords.size());
+        expect_size(want, "corner lat", corner_lat_coords.size());
+    }
+    if (host_block && corner_lon_coords.empty()) {
+        throw std::invalid_argument("GridSpec: a host block must carry explicit corners");
+    }
 }
 
 }  // namespace cece

@@ -819,9 +819,46 @@ bool same_spherical_grid_coordinates(int nx, int ny, const std::vector<double>& 
     return true;
 }
 
+axis::topology::UnstructuredMesh<Kokkos::HostSpace> build_block_mesh_with_corners(int nx, int ny, const std::vector<double>& center_lon,
+                                                                                  const std::vector<double>& center_lat,
+                                                                                  const std::vector<double>& corner_lon,
+                                                                                  const std::vector<double>& corner_lat) {
+    const std::size_t n_cells = static_cast<std::size_t>(nx) * ny;
+    const std::size_t n_corners = static_cast<std::size_t>(nx + 1) * (ny + 1);
+    if (nx <= 0 || ny <= 0 || center_lon.size() != n_cells || center_lat.size() != n_cells) {
+        throw std::invalid_argument("build_block_mesh_with_corners: centre arrays must carry nx*ny values (nx=" + std::to_string(nx) +
+                                    ", ny=" + std::to_string(ny) + ", lon=" + std::to_string(center_lon.size()) +
+                                    ", lat=" + std::to_string(center_lat.size()) + ")");
+    }
+    if (corner_lon.size() != n_corners || corner_lat.size() != n_corners) {
+        throw std::invalid_argument("build_block_mesh_with_corners: corner arrays must carry (nx+1)*(ny+1)=" + std::to_string(n_corners) +
+                                    " values (lon=" + std::to_string(corner_lon.size()) + ", lat=" + std::to_string(corner_lat.size()) + ")");
+    }
+    Kokkos::View<double*, Kokkos::HostSpace> clon("block_center_lon", n_cells);
+    Kokkos::View<double*, Kokkos::HostSpace> clat("block_center_lat", n_cells);
+    for (std::size_t k = 0; k < n_cells; ++k) {
+        clon(k) = center_lon[k];
+        clat(k) = center_lat[k];
+    }
+    Kokkos::View<double*, Kokkos::HostSpace> klon("block_corner_lon", n_corners);
+    Kokkos::View<double*, Kokkos::HostSpace> klat("block_corner_lat", n_corners);
+    for (std::size_t k = 0; k < n_corners; ++k) {
+        klon(k) = corner_lon[k];
+        klat(k) = corner_lat[k];
+    }
+    axis::topology::StructuredGrid<Kokkos::HostSpace> grid(nx, ny, clon, clat, axis::topology::CoordinateSystem::SphericalDeg);
+    grid.set_corners(std::move(klon), std::move(klat));
+    return grid.to_unstructured();
+}
+
 bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const std::vector<double>& target_lons,
                        const std::vector<double>& target_lats, const std::string& map_algo, int j0, int j1, const std::string& gridspec_file,
-                       RegridPlan& plan) {
+                       RegridPlan& plan, const std::vector<double>* corner_lon, const std::vector<double>* corner_lat) {
+    const bool explicit_corners = corner_lon != nullptr && corner_lat != nullptr && !corner_lon->empty();
+    if (explicit_corners && (j0 != 0 || j1 != ny)) {
+        throw std::invalid_argument("build_regrid_plan: explicit destination corners require the whole block as the band (j0=" + std::to_string(j0) +
+                                    ", j1=" + std::to_string(j1) + ", ny=" + std::to_string(ny) + ")");
+    }
     // Read a 1-D, 2-D or 3-D coordinate variable, trying several common naming conventions.
     auto read_coord = [&](const std::vector<std::string>& candidate_names, std::vector<double>& out, int& nx_val, int& ny_val, bool wrap_lon) {
         for (const auto& name : candidate_names) {
@@ -1059,11 +1096,33 @@ bool build_regrid_plan(amio_dataset_handle read_dataset, int nx, int ny, const s
         normalize_lons(band_lons);
     }
 
-    axis::topology::UnstructuredMesh<Kokkos::HostSpace> dst_mesh =
-        gridspec_file.empty()
-            ? (curvilinear_target ? build_band_mesh_curvilinear_with_global_corners(nx, j0, j1, full_center_lon, target_lats, band_lons, band_lats)
-                                  : build_band_mesh_with_global_corners(nx, j0, j1, band_lons, target_lats))
-            : build_axis_mesh(nx, nband, j0, band_lons, band_lats, gridspec_file);
+    axis::topology::UnstructuredMesh<Kokkos::HostSpace> dst_mesh = [&]() {
+        if (explicit_corners) {
+            // Host block: the parent grid's true corners, wrapped into the source file's longitude
+            // convention like the centres, so a block straddling the dateline stays consistent.
+            std::vector<double> block_corner_lons = *corner_lon;
+            normalize_lons(block_corner_lons);
+            std::vector<double> block_center_lons = band_lons;
+            std::vector<double> block_center_lats = band_lats;
+            if (!curvilinear_target) {
+                // A rectilinear block arrives as lon[nx], lat[ny]: expand to the x-fastest cell list.
+                block_center_lons.assign(static_cast<std::size_t>(nx) * ny, 0.0);
+                block_center_lats.assign(static_cast<std::size_t>(nx) * ny, 0.0);
+                for (int j = 0; j < ny; ++j) {
+                    for (int i = 0; i < nx; ++i) {
+                        block_center_lons[static_cast<std::size_t>(j) * nx + i] = band_lons[i];
+                        block_center_lats[static_cast<std::size_t>(j) * nx + i] = band_lats[j];
+                    }
+                }
+            }
+            return build_block_mesh_with_corners(nx, ny, block_center_lons, block_center_lats, block_corner_lons, *corner_lat);
+        }
+        if (!gridspec_file.empty()) {
+            return build_axis_mesh(nx, nband, j0, band_lons, band_lats, gridspec_file);
+        }
+        return curvilinear_target ? build_band_mesh_curvilinear_with_global_corners(nx, j0, j1, full_center_lon, target_lats, band_lons, band_lats)
+                                  : build_band_mesh_with_global_corners(nx, j0, j1, band_lons, target_lats);
+    }();
 
     // B. Configure weight generation method.
     axis::solver::RegridConfig regrid_cfg;

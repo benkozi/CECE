@@ -89,6 +89,58 @@ GridSpec GridSpec::from_esmf(int nx, int ny, int nz, bool is_rad, const std::vec
     return spec;
 }
 
+GridSpec GridSpec::from_esmf_block(int nx, int ny, int nz, bool is_rad, const std::vector<double>& lon, const std::vector<double>& lat,
+                                   const std::vector<double>& corner_lon, const std::vector<double>& corner_lat, int tile, int origin_i,
+                                   int origin_j) {
+    if (nx <= 0 || ny <= 0 || nz <= 0) {
+        throw std::invalid_argument("[GRID] ESMF host block: nx, ny, and nz must be positive (got nx=" + std::to_string(nx) +
+                                    ", ny=" + std::to_string(ny) + ", nz=" + std::to_string(nz) + ")");
+    }
+    const size_t n_centres = static_cast<size_t>(nx) * static_cast<size_t>(ny);
+    const size_t n_corners = static_cast<size_t>(nx + 1) * static_cast<size_t>(ny + 1);
+    if (lon.size() != n_centres || lat.size() != n_centres) {
+        throw std::invalid_argument("[GRID] ESMF host block: centre arrays must carry nx*ny=" + std::to_string(n_centres) +
+                                    " values each (got lon=" + std::to_string(lon.size()) + ", lat=" + std::to_string(lat.size()) + ")");
+    }
+    if (corner_lon.size() != n_corners || corner_lat.size() != n_corners) {
+        throw std::invalid_argument("[GRID] ESMF host block: corner arrays must carry (nx+1)*(ny+1)=" + std::to_string(n_corners) +
+                                    " values each (got lon=" + std::to_string(corner_lon.size()) + ", lat=" + std::to_string(corner_lat.size()) +
+                                    "); a DE whose corner ring is open (several DEs per tile) is not supported");
+    }
+    if (tile < 1 || origin_i < 1 || origin_j < 1) {
+        throw std::invalid_argument("[GRID] ESMF host block: tile and origin indices are 1-based and must be positive (got tile=" +
+                                    std::to_string(tile) + ", origin=" + std::to_string(origin_i) + "," + std::to_string(origin_j) + ")");
+    }
+
+    auto normalize = [&](const std::vector<double>& in, bool wrap_lon) {
+        std::vector<double> out(in.size(), 0.0);
+        for (size_t i = 0; i < in.size(); ++i) {
+            double v = in[i];
+            if (is_rad) {
+                v = detail::radians_to_degrees(v);
+            }
+            out[i] = wrap_lon ? detail::wrap_longitude(v) : v;
+        }
+        return out;
+    };
+
+    GridSpec spec;
+    spec.nx = nx;
+    spec.ny = ny;
+    spec.nz = nz;
+    spec.topology = GridTopology::Curvilinear;
+    spec.lon_coords = normalize(lon, /*wrap_lon=*/true);
+    spec.lat_coords = normalize(lat, /*wrap_lon=*/false);
+    spec.corner_lon_coords = normalize(corner_lon, /*wrap_lon=*/true);
+    spec.corner_lat_coords = normalize(corner_lat, /*wrap_lon=*/false);
+    spec.host_block = true;
+    spec.tile = tile;
+    spec.origin_i = origin_i;
+    spec.origin_j = origin_j;
+    spec.validate();
+    return spec;
+}
+
 std::string GridSpec::describe() const {
     const char* topo = "rectilinear";
     switch (topology) {
@@ -104,6 +156,10 @@ std::string GridSpec::describe() const {
     std::string s = std::string(topo) + " " + std::to_string(nx) + "x" + std::to_string(ny) + "x" + std::to_string(nz);
     if (!gridspec_file.empty()) {
         s += " (gridspec '" + gridspec_file + "')";
+    }
+    if (host_block) {
+        s +=
+            " (host block, tile " + std::to_string(tile) + " at " + std::to_string(origin_i) + "," + std::to_string(origin_j) + ", explicit corners)";
     }
     return s;
 }

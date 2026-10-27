@@ -66,7 +66,49 @@ cece::GridSpec to_grid_spec(const CeceGridSpec& c) {
         spec.lat_coords.assign(c.lat_coords, c.lat_coords + c.lat_len);
     }
     spec.gridspec_file = cstr_to_string(c.gridspec_file, c.gridspec_file_len);
+    if (c.corner_lon_coords != nullptr && c.corner_lon_len > 0) {
+        spec.corner_lon_coords.assign(c.corner_lon_coords, c.corner_lon_coords + c.corner_lon_len);
+    }
+    if (c.corner_lat_coords != nullptr && c.corner_lat_len > 0) {
+        spec.corner_lat_coords.assign(c.corner_lat_coords, c.corner_lat_coords + c.corner_lat_len);
+    }
+    spec.host_block = c.host_block != 0;
+    spec.tile = c.tile;
+    spec.origin_i = c.origin_i;
+    spec.origin_j = c.origin_j;
     return spec;
+}
+
+/// Fill the C struct from a GridSpec (the inverse of to_grid_spec; pointers borrow the spec's storage).
+CeceGridSpec to_c_grid(const cece::GridSpec& spec, int topology) {
+    CeceGridSpec c_grid{};
+    c_grid.nx = spec.nx;
+    c_grid.ny = spec.ny;
+    c_grid.nz = spec.nz;
+    c_grid.topology = topology;
+    c_grid.lon_coords = spec.lon_coords.data();
+    c_grid.lon_len = static_cast<int>(spec.lon_coords.size());
+    c_grid.lat_coords = spec.lat_coords.data();
+    c_grid.lat_len = static_cast<int>(spec.lat_coords.size());
+    c_grid.gridspec_file = nullptr;
+    c_grid.gridspec_file_len = 0;
+    c_grid.corner_lon_coords = spec.corner_lon_coords.empty() ? nullptr : spec.corner_lon_coords.data();
+    c_grid.corner_lon_len = static_cast<int>(spec.corner_lon_coords.size());
+    c_grid.corner_lat_coords = spec.corner_lat_coords.empty() ? nullptr : spec.corner_lat_coords.data();
+    c_grid.corner_lat_len = static_cast<int>(spec.corner_lat_coords.size());
+    c_grid.host_block = spec.host_block ? 1 : 0;
+    c_grid.tile = spec.tile;
+    c_grid.origin_i = spec.origin_i;
+    c_grid.origin_j = spec.origin_j;
+    return c_grid;
+}
+
+std::vector<double> span_to_vector(const double* data, int len) {
+    std::vector<double> out;
+    if (data != nullptr && len > 0) {
+        out.assign(data, data + len);
+    }
+    return out;
 }
 
 /// Map the C++ topology enum to the C ABI integer (same enumerant order).
@@ -338,6 +380,57 @@ void cece_sim_create_from_esmf(const char* config_path, int path_len, int nx, in
         cece_sim_create(path.c_str(), static_cast<int>(path.length()), &c_grid, mpi_comm_f, out_sim, rc);
     } catch (const std::exception& e) {
         cece::LogFatal(std::string("[SIM FATAL] cece_sim_create_from_esmf rejected the grid: ") + e.what());
+        set_out(rc, -1);
+        set_out(out_sim, nullptr);
+    }
+}
+
+void cece_sim_grid_from_esmf_block(int nx, int ny, int nz, int is_rad, const double* lon_coords, int lon_len, const double* lat_coords, int lat_len,
+                                   const double* corner_lon_coords, int corner_lon_len, const double* corner_lat_coords, int corner_lat_len, int tile,
+                                   int origin_i, int origin_j, double* lon_out, int lon_out_max, int* lon_len_out, double* lat_out, int lat_out_max,
+                                   int* lat_len_out, int* rc) {
+    set_out(rc, 0);
+    set_out(lon_len_out, 0);
+    set_out(lat_len_out, 0);
+    cece::GridSpec spec;
+    try {
+        spec = cece::GridSpec::from_esmf_block(nx, ny, nz, is_rad != 0, span_to_vector(lon_coords, lon_len), span_to_vector(lat_coords, lat_len),
+                                               span_to_vector(corner_lon_coords, corner_lon_len), span_to_vector(corner_lat_coords, corner_lat_len),
+                                               tile, origin_i, origin_j);
+    } catch (const std::exception& e) {
+        cece::LogFatal(std::string("[SIM FATAL] cece_sim_grid_from_esmf_block rejected the block: ") + e.what());
+        set_out(rc, -1);
+        return;
+    }
+    set_out(lon_len_out, static_cast<int>(spec.lon_coords.size()));
+    set_out(lat_len_out, static_cast<int>(spec.lat_coords.size()));
+    if (lon_out != nullptr && lon_out_max >= static_cast<int>(spec.lon_coords.size())) {
+        std::memcpy(lon_out, spec.lon_coords.data(), spec.lon_coords.size() * sizeof(double));
+    }
+    if (lat_out != nullptr && lat_out_max >= static_cast<int>(spec.lat_coords.size())) {
+        std::memcpy(lat_out, spec.lat_coords.data(), spec.lat_coords.size() * sizeof(double));
+    }
+}
+
+void cece_sim_create_from_esmf_block(const char* config_path, int path_len, int nx, int ny, int nz, int is_rad, const double* lon_coords, int lon_len,
+                                     const double* lat_coords, int lat_len, const double* corner_lon_coords, int corner_lon_len,
+                                     const double* corner_lat_coords, int corner_lat_len, int tile, int origin_i, int origin_j, int mpi_comm_f,
+                                     CeceSimulation** out_sim, int* rc) {
+    set_out(rc, 0);
+    set_out(out_sim, nullptr);
+    if (config_path == nullptr || out_sim == nullptr || rc == nullptr) {
+        set_out(rc, -1);
+        return;
+    }
+    try {
+        const cece::GridSpec spec = cece::GridSpec::from_esmf_block(
+            nx, ny, nz, is_rad != 0, span_to_vector(lon_coords, lon_len), span_to_vector(lat_coords, lat_len),
+            span_to_vector(corner_lon_coords, corner_lon_len), span_to_vector(corner_lat_coords, corner_lat_len), tile, origin_i, origin_j);
+        const std::string path = cstr_to_string(config_path, path_len);
+        const CeceGridSpec c_grid = to_c_grid(spec, to_c_topology(spec.topology));
+        cece_sim_create(path.c_str(), static_cast<int>(path.length()), &c_grid, mpi_comm_f, out_sim, rc);
+    } catch (const std::exception& e) {
+        cece::LogFatal(std::string("[SIM FATAL] cece_sim_create_from_esmf_block rejected the block: ") + e.what());
         set_out(rc, -1);
         set_out(out_sim, nullptr);
     }

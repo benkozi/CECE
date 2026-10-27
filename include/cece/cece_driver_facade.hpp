@@ -120,6 +120,12 @@ class CeceDriverOrchestrator {
    public:
     CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
                            int lat_len, MPI_Comm comm_c);
+    /// Host-block form: the target grid is one PET's DE block of a parent grid with explicit corners
+    /// ((nx+1)*(ny+1) each, x fastest). The block is the whole local destination (no band split) and the
+    /// communicator is kept only for the collective readiness gates. Empty corner arrays mean "none".
+    CeceDriverOrchestrator(const std::string& config_file, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
+                           int lat_len, const double* corner_lon_coords, int corner_lon_len, const double* corner_lat_coords, int corner_lat_len,
+                           bool host_block, MPI_Comm comm_c);
     ~CeceDriverOrchestrator();
 
     // Prevent copy/move construction and assignment (Rule of Five)
@@ -352,6 +358,10 @@ class CeceDriverOrchestrator {
     int nx_{0}, ny_{0}, nz_{0};
     std::vector<double> target_lons_;
     std::vector<double> target_lats_;
+    // Explicit destination corners of a host block ((nx_+1)*(ny_+1), x fastest); empty otherwise.
+    std::vector<double> target_corner_lons_;
+    std::vector<double> target_corner_lats_;
+    bool host_block_{false};
     int step_index_{0};
     MPI_Comm comm_c_{MPI_COMM_NULL};
 
@@ -504,6 +514,9 @@ class CeceDriverOrchestrator {
 }  // namespace cece
 
 extern "C" {
+void cece_driver_create_block(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, int lon_len,
+                              const double* lat_coords, int lat_len, const double* corner_lon_coords, int corner_lon_len,
+                              const double* corner_lat_coords, int corner_lat_len, int host_block, int mpi_comm_f, void** driver_ptr_out, int* rc);
 void cece_driver_create(const char* yaml_path, int path_len, int nx, int ny, int nz, const double* lon_coords, int lon_len, const double* lat_coords,
                         int lat_len, int mpi_comm_f, void** driver_ptr_out, int* rc);
 
