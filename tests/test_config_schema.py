@@ -147,6 +147,17 @@ def test_runtime_driver_grid_name_and_log_file_round_trip():
     assert config.CeceConfig.from_dict({"driver": dumped}).to_dict()["driver"] == dumped
 
 
+def test_driver_num_threads_round_trip_and_bounds():
+    parsed = config.CeceConfig.from_dict({"driver": {"num_threads": 2}})
+
+    dumped = parsed.to_dict()["driver"]
+    assert dumped["num_threads"] == 2
+    assert config.CeceConfig.from_dict({"driver": dumped}).to_dict()["driver"] == dumped
+    assert config.CeceConfig.from_dict({"driver": {}}).driver.num_threads is None
+    with pytest.raises(ValueError, match=r"driver\.num_threads must be >= 1"):
+        config.CeceConfig.from_dict({"driver": {"num_threads": 0}})
+
+
 def test_output_global_attributes_round_trip():
     parsed = config.CeceConfig.from_dict({
         "output": {

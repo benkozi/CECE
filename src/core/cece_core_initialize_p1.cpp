@@ -33,6 +33,7 @@
 #include "cece/cece_config.hpp"
 #include "cece/cece_config_path.hpp"
 #include "cece/cece_diagnostics.hpp"
+#include "cece/cece_host_threads.hpp"
 #include "cece/cece_internal.hpp"
 #include "cece/cece_physics_factory.hpp"
 #include "cece/cece_stacking_engine.hpp"
@@ -75,31 +76,56 @@ void cece_core_initialize_p1(void** data_ptr_ptr, int* rc) {
 
     std::cout << "INFO: CECE Initialize Phase 1 (IPDv00p1) - Core initialization" << std::endl;
 
-    // 1. Initialize Kokkos if not already initialized
+    // 1. Parse YAML configuration (before Kokkos: driver.num_threads sets its thread count)
+    const std::string config_path = cece::GetConfigFilePath();
+    std::cout << "INFO: Parsing " << config_path << std::endl;
+    std::cout << "DEBUG: Full config path: '" << config_path << "'" << std::endl;
+    cece::CeceConfig config;
+    try {
+        config = cece::ParseConfig(config_path);
+        std::cout << "INFO: Configuration parsed successfully" << std::endl;
+        std::cout << "INFO: Found " << config.species_layers.size() << " emission species" << std::endl;
+        std::cout << "INFO: Found " << config.physics_schemes.size() << " physics schemes" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR in cece_core_initialize_p1: Failed to parse cece_config.yaml: " << e.what() << std::endl;
+        if (rc != nullptr) {
+            *rc = -1;
+        }
+        return;
+    } catch (...) {
+        std::cerr << "ERROR in cece_core_initialize_p1: Unknown error parsing cece_config.yaml" << std::endl;
+        if (rc != nullptr) {
+            *rc = -1;
+        }
+        return;
+    }
+
+    // 2. Initialize Kokkos if not already initialized. Threads: driver.num_threads,
+    // else the host's count (the NUOPC cap passes the PEs ESMF gives this PET),
+    // else OMP_NUM_THREADS, else the Kokkos default of every hardware thread.
+    const int host_count = cece::GetHostThreadCount();
+    const cece::HostThreadChoice choice = cece::ResolveHostThreads(config.driver_config.num_threads, host_count, std::getenv("OMP_NUM_THREADS"));
     bool kokkos_initialized_here = false;
     if (!Kokkos::is_initialized()) {
         std::cout << "INFO: Initializing Kokkos execution space" << std::endl;
 
         Kokkos::InitializationSettings args;
 
-        // Configure OpenMP threads if enabled
 #ifdef KOKKOS_ENABLE_OPENMP
-        const char* num_threads = std::getenv("OMP_NUM_THREADS");
-        if (num_threads != nullptr) {
-            char* end;
-            long threads = std::strtol(num_threads, &end, 10);
-            if (end != num_threads && *end == '\0' && threads > 0) {
-                if (threads > std::numeric_limits<int>::max()) {
-                    std::cout << "INFO: OMP_NUM_THREADS value " << threads << " exceeds INT_MAX; "
-                              << "clamping to " << std::numeric_limits<int>::max() << std::endl;
-                    threads = std::numeric_limits<int>::max();
-                }
-                args.set_num_threads(static_cast<int>(threads));
-                std::cout << "INFO: Setting OpenMP threads to " << threads << std::endl;
-            }
+        if (choice.threads > 0) {
+            args.set_num_threads(choice.threads);
+        }
+        if (choice.source == "config") {
+            std::cout << "CECE: Kokkos OpenMP threads " << choice.threads << " (source config, driver.num_threads)" << std::endl;
+        } else if (choice.source == "vm") {
+            std::cout << "CECE: Kokkos OpenMP threads " << choice.threads << " (PEs on this PET " << host_count << ", source vm)" << std::endl;
+        } else if (choice.threads > 0) {
+            std::cout << "CECE: Kokkos OpenMP threads " << choice.threads << " (source OMP_NUM_THREADS)" << std::endl;
         } else {
-            // Default to all available threads if not specified
-            std::cout << "INFO: OMP_NUM_THREADS not set - using all available threads" << std::endl;
+            std::cout << "CECE: Kokkos OpenMP threads: all available (OMP_NUM_THREADS not set)" << std::endl;
+        }
+        if (choice.source != "OMP_NUM_THREADS" && std::getenv("OMP_NUM_THREADS") != nullptr) {
+            std::cout << "INFO: OMP_NUM_THREADS=" << std::getenv("OMP_NUM_THREADS") << " ignored (source " << choice.source << ")" << std::endl;
         }
 #endif
 
@@ -164,38 +190,17 @@ void cece_core_initialize_p1(void** data_ptr_ptr, int* rc) {
     } else {
         std::cout << "INFO: Kokkos already initialized - using existing instance" << std::endl;
         std::cout << "INFO: Default execution space: " << Kokkos::DefaultExecutionSpace::name() << std::endl;
-    }
-
-    // 2. Parse YAML configuration
-    const std::string config_path = cece::GetConfigFilePath();
-    std::cout << "INFO: Parsing " << config_path << std::endl;
-    std::cout << "DEBUG: Full config path: '" << config_path << "'" << std::endl;
-    cece::CeceConfig config;
-    try {
-        config = cece::ParseConfig(config_path);
-        std::cout << "INFO: Configuration parsed successfully" << std::endl;
-        std::cout << "INFO: Found " << config.species_layers.size() << " emission species" << std::endl;
-        std::cout << "INFO: Found " << config.physics_schemes.size() << " physics schemes" << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR in cece_core_initialize_p1: Failed to parse cece_config.yaml: " << e.what() << std::endl;
-        if (rc != nullptr) {
-            *rc = -1;
+        // Another component initialized Kokkos; it cannot be narrowed now, so
+        // refuse an instance running more threads than CECE was given.
+        const int requested = choice.source == "config" || choice.source == "vm" ? choice.threads : 0;
+        const std::string mismatch = cece::CheckExistingConcurrency(requested, Kokkos::DefaultHostExecutionSpace().concurrency());
+        if (!mismatch.empty()) {
+            std::cerr << "ERROR in cece_core_initialize_p1: " << mismatch << std::endl;
+            if (rc != nullptr) {
+                *rc = -1;
+            }
+            return;
         }
-        // Clean up Kokkos if we initialized it
-        if (kokkos_initialized_here && Kokkos::is_initialized()) {
-            Kokkos::finalize();
-        }
-        return;
-    } catch (...) {
-        std::cerr << "ERROR in cece_core_initialize_p1: Unknown error parsing cece_config.yaml" << std::endl;
-        if (rc != nullptr) {
-            *rc = -1;
-        }
-        // Clean up Kokkos if we initialized it
-        if (kokkos_initialized_here && Kokkos::is_initialized()) {
-            Kokkos::finalize();
-        }
-        return;
     }
 
     // 3. Allocate CeceInternalData structure

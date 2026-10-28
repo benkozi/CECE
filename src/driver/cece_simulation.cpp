@@ -19,6 +19,7 @@
 #include <mpi.h>
 
 #include <Kokkos_Core.hpp>
+#include <Kokkos_Profiling_ScopedRegion.hpp>
 #include <algorithm>
 #include <ctime>
 #include <memory>
@@ -255,6 +256,8 @@ std::unique_ptr<CeceSimulation> CeceSimulation::create_internal(const std::strin
 }
 
 StepOutcome CeceSimulation::step(const std::string& step_start_iso, const std::string& step_end_iso, int step_index) {
+    // Outermost profiling region of a step: the same span as the cap's ESMF region "CECE: cece_sim_step".
+    Kokkos::Profiling::ScopedRegion step_region("CECE::Step");
     StepOutcome result;
     int rc = 0;
 

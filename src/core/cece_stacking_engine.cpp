@@ -22,6 +22,7 @@
 #include "cece/cece_stacking_engine.hpp"
 
 #include <Kokkos_Core.hpp>
+#include <Kokkos_Profiling_ScopedRegion.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -511,6 +512,7 @@ void StackingEngine::AddSpecies(const std::string& species_name) {
 void StackingEngine::Execute(FieldResolver& resolver, int nx, int ny, int nz,
                              Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace> default_mask, int hour, int day_of_week,
                              int month, ProvenanceTracker* provenance, const LocalTimeService* local_time, std::int64_t elapsed_seconds) {
+    Kokkos::Profiling::ScopedRegion stacking_region("CECE::Stacking");
     if (default_mask.data() == nullptr) {
         default_mask = Kokkos::View<double***, Kokkos::LayoutLeft, Kokkos::DefaultExecutionSpace>("default_mask_internal", nx, ny, nz);
         Kokkos::deep_copy(default_mask, 1.0);

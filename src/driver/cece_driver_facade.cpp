@@ -4,6 +4,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <Kokkos_Core.hpp>
+#include <Kokkos_Profiling_ScopedRegion.hpp>
 #include <algorithm>
 #include <axis/axis.hpp>
 #include <cmath>
@@ -755,6 +756,7 @@ CeceDriverOrchestrator::~CeceDriverOrchestrator() {
 bool CeceDriverOrchestrator::RegridToBandBuffer(const std::string& var_name, const io::RegridPlan& plan, const std::vector<double>& source_record,
                                                 int file_nx, int file_ny, int field_nlev, std::vector<double>& out_buffer,
                                                 std::string& failure_detail) {
+    Kokkos::Profiling::ScopedRegion regrid_region("CECE::Regrid");
     (void)var_name;
     const std::vector<double>& source = source_record;
     const bool distributed_regrid = comm_is_distributed(comm_c_);
@@ -914,6 +916,7 @@ bool CeceDriverOrchestrator::RegridToBandBuffer(const std::string& var_name, con
 
 bool CeceDriverOrchestrator::WriteBandToImport(const std::string& var_name, const std::vector<double>& dest_buffer, int field_nlev,
                                                void* cece_core_data_ptr, std::string& failure_detail) {
+    Kokkos::Profiling::ScopedRegion write_region("CECE::WriteBandToImport");
     // Band decomposition rework (Req 2.1, 2.4, 2.5, 3.2, 3.4): the incoming
     // dest_buffer is now the rank-local BAND buffer produced by
     // RegridToBandBuffer, laid out [level][jrel][i] with element (level, jrel, i)
@@ -1128,6 +1131,10 @@ bool CeceDriverOrchestrator::AssembleBandField(const std::string& var_name, cons
 }
 
 bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* cece_core_data_ptr) {
+    // Profiling regions (Kokkos Tools, no cost without a loaded tool): ingest per stream, named by the
+    // stream's file so a variable's time adds to its stream; plan build, record reads, regrid and the
+    // write-back as their own children.
+    Kokkos::Profiling::ScopedRegion advance_region("CECE::AdvanceTime");
     std::string core_readiness_detail;
     if (!collective_all_ready(halo_comm_ ? &*halo_comm_ : nullptr, comm_c_, cece_core_data_ptr != nullptr, "CECE core-data readiness",
                               core_readiness_detail)) {
@@ -1177,6 +1184,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
         auto cfg_it = stream_configs_.find(var_name);
         const bool has_stream_config = cfg_it != stream_configs_.end();
         const StreamConfig cfg = has_stream_config ? cfg_it->second : StreamConfig{};
+        Kokkos::Profiling::ScopedRegion stream_region("CECE::AdvanceTime::" + std::filesystem::path(cfg.input_file_path).stem().string());
 
         std::string input_file_path = cfg.input_file_path;
         std::string input_var_name = cfg.input_var_name;
@@ -1353,6 +1361,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     InvalidateEndpointCachesForStream(stream_key);
                 } else {
                     bool local_plan_built = false;
+                    Kokkos::Profiling::ScopedRegion plan_region("CECE::RegridPlan");
                     try {
                         local_plan_built =
                             cece::io::build_regrid_plan(read_dataset, nx_, ny_, target_lons_, target_lats_, mapalgo, j0, j1, gridspec_file_, plan,
@@ -1590,6 +1599,7 @@ bool CeceDriverOrchestrator::AdvanceTime(const std::string& time_iso8601, void* 
                     // window are provably never referenced (the window spans
                     // min..max matrix column) and stay zero-filled.
                     auto read_slab = [&](int t_idx, std::vector<double>& out, int& slab_nx, int& slab_ny) -> bool {
+                        Kokkos::Profiling::ScopedRegion read_region("CECE::Read");
                         amio_view_handle slab_view = nullptr;
                         amio_bbox_t bbox{};
                         const int fny_global_full = have_shape ? static_cast<int>(var_shape.extents[var_shape.rank - 2]) : 0;

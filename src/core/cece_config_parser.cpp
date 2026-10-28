@@ -354,6 +354,13 @@ CeceConfig ParseConfig(const std::string& filename) {
             }
             config.driver_config.amio_prefetch_depth = depth;
         }
+        if (driver["num_threads"]) {
+            int threads = driver["num_threads"].as_int();
+            if (threads < 1) {
+                throw std::invalid_argument("driver.num_threads must be >= 1; got " + std::to_string(threads) + ".");
+            }
+            config.driver_config.num_threads = threads;
+        }
     }
 
     // Optional NUOPC field-coupling section. Declares the fields CECE advertises

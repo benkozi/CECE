@@ -68,6 +68,12 @@ module cece_cap_mod
       integer(c_int), value :: path_len
     end subroutine
 
+    subroutine cece_set_host_thread_count(pe_count) &
+                                          bind(C, name="cece_set_host_thread_count")
+      import :: c_int
+      integer(c_int), value :: pe_count
+    end subroutine
+
     subroutine cece_run_log_setup(config_path, path_len) &
                                   bind(C, name="cece_run_log_setup")
       import :: c_char, c_int
@@ -568,6 +574,7 @@ contains
     type(ESMF_VM) :: vm
     integer :: mpi_comm_val
     integer :: pet_count
+    integer :: local_pet, pe_count
     integer(c_int) :: c_rc
     integer(c_int) :: nx_c, ny_c, nz_c, topology_c
     real(c_double) :: lon_min, lon_max, lat_min, lat_max
@@ -614,6 +621,23 @@ contains
       else
         vm_ok = .true.
       end if
+    end if
+
+    ! Kokkos takes its OpenMP thread count from the PEs ESMF gives this PET (1
+    ! for a plain MPI launch, the component's threads under ESMF-managed
+    ! threading), not from OMP_NUM_THREADS or every hardware thread. Without a
+    ! VM the core falls back to OMP_NUM_THREADS.
+    if (vm_ok) then
+      call ESMF_VMGet(vm, localPet=local_pet, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      call ESMF_VMGet(vm, local_pet, peCount=pe_count, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      call cece_set_host_thread_count(int(pe_count, c_int))
+      write(wmsg, '(A,I0,A)') '[Cap] Kokkos OpenMP threads from the ESMF VM: ', pe_count, &
+        ' PE(s) on this PET'
+      call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
     end if
 
     ! Resolve the grid source. A parent grid/mesh already associated with the
@@ -722,6 +746,7 @@ contains
           ', block i=', gx_i0, '..', gx_i0 + gx_nx - 1, ' j=', gx_j0, '..', gx_j0 + gx_ny - 1, &
           ' (', gx_nx, 'x', gx_ny, '), corners ', gx_nx + 1, 'x', gx_ny + 1
         call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+        call ESMF_TraceRegionEnter("CECE: create sim")
         call cece_sim_create_from_esmf_block(trim(g_config_file_path)//c_null_char, &
           int(len_trim(g_config_file_path), c_int), &
           int(gx_nx, c_int), int(gx_ny, c_int), nz_cfg, int(gx_is_rad, c_int), &
@@ -730,6 +755,7 @@ contains
           gx_corner_lat, int(size(gx_corner_lat), c_int), &
           int(gx_tile, c_int), int(gx_i0, c_int), int(gx_j0, c_int), &
           int(mpi_comm_val, c_int), g_sim_ptr, c_rc)
+        call ESMF_TraceRegionExit("CECE: create sim")
         if (allocated(gx_lon)) deallocate(gx_lon)
         if (allocated(gx_lat)) deallocate(gx_lat)
         if (allocated(gx_corner_lon)) deallocate(gx_corner_lon)
@@ -745,7 +771,9 @@ contains
         write(wmsg, '(A,I0,A,I0,A,I0,A,I0)') '[Cap] Simulation grid from parent ESMF DE block: ', &
           gx_nx, 'x', gx_ny, 'x', int(nz_cfg), ' on tile ', gx_tile
         call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+        call ESMF_TraceRegionEnter("CECE: bind exports")
         call realize_export_fields(comp, parent_grid, grid_is_present, int(nz_cfg), rc)
+        call ESMF_TraceRegionExit("CECE: bind exports")
         if (rc /= ESMF_SUCCESS) return  ! bail out
         call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
           ESMF_LOGMSG_INFO)
@@ -774,6 +802,7 @@ contains
         return  ! bail out
       end if
 
+      call ESMF_TraceRegionEnter("CECE: create sim")
       call cece_sim_create_from_esmf(trim(g_config_file_path)//c_null_char, &
                                      int(len_trim(g_config_file_path), c_int), &
                                      int(gx_nx, c_int), int(gx_ny, c_int), &
@@ -781,6 +810,7 @@ contains
                                      gx_lon, int(size(gx_lon), c_int), &
                                      gx_lat, int(size(gx_lat), c_int), &
                                      int(mpi_comm_val, c_int), g_sim_ptr, c_rc)
+      call ESMF_TraceRegionExit("CECE: create sim")
       if (allocated(gx_lon)) deallocate(gx_lon)
       if (allocated(gx_lat)) deallocate(gx_lat)
       if (c_rc /= 0 .or. .not. c_associated(g_sim_ptr)) then
@@ -800,7 +830,9 @@ contains
       ! on the parent geometry (a mesh-backed component is left unconnected:
       ! emission fields are grid fields, and offering an unsupported
       ! geometry fails rather than silently mis-coupling).
+      call ESMF_TraceRegionEnter("CECE: bind exports")
       call realize_export_fields(comp, parent_grid, grid_is_present, int(nz_cfg), rc)
+      call ESMF_TraceRegionExit("CECE: bind exports")
       if (rc /= ESMF_SUCCESS) return  ! bail out
       call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
         ESMF_LOGMSG_INFO)
@@ -814,9 +846,11 @@ contains
     ! export-field registration, the driver orchestrator, and the output
     ! writer. If neither a parent grid nor a derivable YAML grid exists, the
     ! facade call fails loudly below — there is no silent substitution.
+    call ESMF_TraceRegionEnter("CECE: create sim")
     call cece_sim_create_from_yaml(trim(g_config_file_path)//c_null_char, &
                                    int(len_trim(g_config_file_path), c_int), &
                                    int(mpi_comm_val, c_int), g_sim_ptr, c_rc)
+    call ESMF_TraceRegionExit("CECE: create sim")
     if (c_rc /= 0 .or. .not. c_associated(g_sim_ptr)) then
       write(wmsg, '(A,I0)') '[Cap] Failed to create CECE simulation rc=', int(c_rc)
       g_sim_ptr = c_null_ptr
@@ -877,7 +911,9 @@ contains
     ! the component keeps using this grid until the framework tears it down.
     ! Consistent with the NUOPC model templates, the grid handle is released
     ! with the component at ESMF_Finalize rather than manually.
+    call ESMF_TraceRegionEnter("CECE: bind exports")
     call realize_export_fields(comp, grid, .true., nz_c, rc)
+    call ESMF_TraceRegionExit("CECE: bind exports")
     if (rc /= ESMF_SUCCESS) return  ! bail out
 
     call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
@@ -1247,6 +1283,7 @@ contains
     ! the transferred grid; the cap only hands that borrowed pointer and the
     ! field's per-PET extents to the facade, which resolves the configured
     ! input name to the import-state key and copies it in.
+    call ESMF_TraceRegionEnter("CECE: import copy")
     if (allocated(g_import_names)) then
       if (size(g_import_names) > 0) then
         call NUOPC_ModelGet(comp, importState=importState, rc=rc)
@@ -1299,12 +1336,15 @@ contains
         end do
       end if
     end if
+    call ESMF_TraceRegionExit("CECE: import copy")
 
+    call ESMF_TraceRegionEnter("CECE: cece_sim_step")
     call cece_sim_step(g_sim_ptr, trim(step_start_str)//c_null_char, &
                        int(len_trim(step_start_str), c_int), &
                        trim(step_end_str)//c_null_char, &
                        int(len_trim(step_end_str), c_int), &
                        int(g_step_count, c_int), complete_c, c_rc)
+    call ESMF_TraceRegionExit("CECE: cece_sim_step")
     if (c_rc < 0) then
       write(wmsg, '(A,I0)') '[Cap] cece_sim_step failed rc=', int(c_rc)
       call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
@@ -1344,7 +1384,9 @@ contains
 
     ! Unconnected fields were pruned from the export state at realization,
     ! so only coupled exports are stamped here.
+    call ESMF_TraceRegionEnter("CECE: timestamp")
     call NUOPC_SetTimestamp(exportState, g_step_start_time, rc=rc)
+    call ESMF_TraceRegionExit("CECE: timestamp")
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
   end subroutine StampExports

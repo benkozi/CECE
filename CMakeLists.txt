@@ -489,6 +489,7 @@ set(
   src/core/cece_core_run.cpp
   src/core/cece_core_finalize.cpp
   src/core/cece_config_path.cpp
+  src/core/cece_host_threads.cpp
   src/core/cece_c_api.cpp
   src/core/cece_config_validator.cpp
   src/core/cece_run_info.cpp

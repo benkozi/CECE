@@ -922,6 +922,7 @@ class DriverConfig:
     amio_staging_buffer_count: int = 8
     amio_staging_buffer_capacity_bytes: int = 33554432
     amio_prefetch_depth: int = 2
+    num_threads: int | None = None
 
     def validate(self) -> None:
         for key in ("start_time", "end_time"):
@@ -975,6 +976,10 @@ class DriverConfig:
             _validate_integer(getattr(self, key), f"driver.{key}")
             if getattr(self, key) < 1:
                 raise ValueError(f"driver.{key} must be >= 1")
+        if self.num_threads is not None:
+            _validate_integer(self.num_threads, "driver.num_threads")
+            if self.num_threads < 1:
+                raise ValueError("driver.num_threads must be >= 1")
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any], where: str = "driver") -> DriverConfig:
@@ -994,6 +999,7 @@ class DriverConfig:
                 "amio_staging_buffer_count",
                 "amio_staging_buffer_capacity_bytes",
                 "amio_prefetch_depth",
+                "num_threads",
             },
             where,
         )
@@ -1963,6 +1969,8 @@ class CeceConfig:
                 "amio_staging_buffer_capacity_bytes": driver.amio_staging_buffer_capacity_bytes,
                 "amio_prefetch_depth": driver.amio_prefetch_depth,
             }
+            if driver.num_threads is not None:
+                result["driver"]["num_threads"] = driver.num_threads
         result.update(self._nuopc_section())
         return result
 

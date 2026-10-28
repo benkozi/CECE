@@ -190,6 +190,12 @@ target_compile_definitions(
   test_ccpp_readiness
   PRIVATE CECE_TEST_CONFIG="${PROJECT_SOURCE_DIR}/tests/cece_control_mock.yaml"
 )
+# OpenMP thread count from the host (the NUOPC cap's ESMF VM)
+cece_add_gtest(test_host_threads NO_CECE LINK cece_core)
+target_compile_definitions(
+  test_host_threads
+  PRIVATE CECE_TEST_CONFIG="${PROJECT_SOURCE_DIR}/tests/cece_control_mock.yaml"
+)
 
 # --- Physics schemes ---------------------------------------------------------
 # FENGSHA Dust Scheme Property Tests

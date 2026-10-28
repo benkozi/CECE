@@ -445,6 +445,7 @@ struct DriverConfig {
     /// input file per rank on the pre-lazy pool).
     int amio_staging_buffer_capacity_bytes = 33554432;
     int amio_prefetch_depth = 2;  ///< AMIO read look-ahead depth (default: 2). Lower = fewer in-flight slabs.
+    int num_threads = 0;          ///< Kokkos OpenMP threads; 0 = the host's PEs per PET, else OMP_NUM_THREADS.
 };
 
 /**

@@ -25,6 +25,7 @@
  * @version 1.0
  */
 
+#include <Kokkos_Profiling_ScopedRegion.hpp>
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
@@ -167,6 +168,7 @@ extern "C" {
  */
 void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc) {
     *rc = 0;
+    Kokkos::Profiling::ScopedRegion run_region("CECE::Run");
     try {
         auto* d = static_cast<cece::CeceInternalData*>(data_ptr);
         if (!d) {
@@ -181,7 +183,10 @@ void cece_core_run(void* data_ptr, int hour, int day_of_week, int* rc) {
             ExecuteStepUnconditional(*d, hour, day_of_week);
         }
 
-        SyncAndCopyState(*d);
+        {
+            Kokkos::Profiling::ScopedRegion copy_region("CECE::ExportCopy");
+            SyncAndCopyState(*d);
+        }
 
     } catch (const std::exception& e) {
         std::cerr << "CECE_Run: " << e.what() << "\n";
