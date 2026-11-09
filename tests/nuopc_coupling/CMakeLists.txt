@@ -37,8 +37,10 @@ endif()
 
 # -----------------------------------------------------------------------
 # Integration test: sink-received exports == standalone output (np1/np2),
-# unconnected exports pruned at realization. Gated on the CEDS fixture like
-# the driver parity tests.
+# unconnected exports pruned at realization, and the host-designated geometry
+# cases (CECE_SetHostGeometry: uniform host grid at np1/np2, a six-tile cubed
+# sphere at np6 launched oversubscribed, and two negative cases). Gated on the
+# CEDS fixture like the driver parity tests.
 # -----------------------------------------------------------------------
 if(EXISTS "${PROJECT_SOURCE_DIR}/data/OC-em-anthro_CMIP_CEDS_2023.nc")
   add_test(

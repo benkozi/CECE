@@ -19,3 +19,6 @@ field_dictionary:
     - standard_name: air_temperature
       canonical_units: K
       description: Near-surface air temperature
+    - standard_name: inst_tracer_mass_frac
+      canonical_units: kg kg-1
+      description: Host tracer array; the host-geometry cases read its grid

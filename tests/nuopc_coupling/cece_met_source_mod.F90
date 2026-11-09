@@ -36,12 +36,30 @@ module cece_met_source_mod
   private
 
   public :: CECE_MET_SOURCE_SetServices
-  public :: met_source_set_value
+  public :: met_source_set_value, met_source_set_hostgeom
+  public :: met_source_host_field
 
   !> @brief Standard name, state-item name, and units of the single export.
   character(len=*), parameter :: g_std_name = "air_temperature"
   character(len=*), parameter :: g_item_name = "temperature"
   character(len=*), parameter :: g_units = "K"
+
+  !> @brief Host-geometry mode ("" = off, "uniform" or "cubed"). In this mode
+  !> the component plays the host of CECE_SetHostGeometry: instead of the met
+  !> export it realizes one rank-4 tracer field (two ungridded dimensions, the
+  !> shape of a host model's tracer array) on its own grid, and CECE takes its
+  !> export grid from that field. "uniform" is the fixture's lat-lon grid;
+  !> "cubed" is a six-tile cubed sphere with CENTER and CORNER coordinates and
+  !> one DE per tile, which needs six PETs.
+  character(len=16), save :: g_hostgeom = ""
+
+  !> @brief Name (standard name and state item) of the host-geometry field.
+  character(len=*), parameter :: met_source_host_field = "inst_tracer_mass_frac"
+
+  !> @brief Tile size of the "cubed" host grid and the tracer field's ungridded extents.
+  integer, parameter :: g_cubed_tile_size = 8
+  integer, parameter :: g_host_levels = 2
+  integer, parameter :: g_host_tracers = 3
 
   !> @brief Constant value written into the export field every Advance.
   real(esmf_kind_r8), save :: g_value = 310.0_esmf_kind_r8
@@ -66,6 +84,12 @@ contains
     real(esmf_kind_r8), intent(in) :: value
     g_value = value
   end subroutine met_source_set_value
+
+  !> @brief Select the host-geometry mode ("uniform" or "cubed"; "" turns it off).
+  subroutine met_source_set_hostgeom(kind)
+    character(len=*), intent(in) :: kind
+    g_hostgeom = kind
+  end subroutine met_source_set_hostgeom
 
   !> @brief SetServices for the met source component.
   subroutine CECE_MET_SOURCE_SetServices(gcomp, rc)
@@ -123,6 +147,20 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
 
+    if (len_trim(g_hostgeom) > 0) then
+      ! Host-geometry mode: the one export is the tracer field CECE reads its
+      ! grid from. Nothing consumes it; NUOPC leaves a model's unconnected
+      ! exports in place, so it is realized all the same.
+      call NUOPC_Advertise(exportState, StandardName=met_source_host_field, &
+        name=met_source_host_field, TransferOfferGeomObject='will provide', &
+        SharePolicyField='share', SharePolicyGeomObject='share', rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      call ESMF_LogWrite('[MetSource] Advertised host-geometry export "'// &
+        met_source_host_field//'" ('//trim(g_hostgeom)//' grid)', ESMF_LOGMSG_INFO)
+      return
+    end if
+
     ! "will provide" with reference sharing requested. NUOPC_Advertise
     ! defaults the share policies to "not share", which would make the
     ! Connector regrid the grid instead of aliasing storage; sharing is
@@ -151,6 +189,7 @@ contains
     type(ESMF_Field) :: field
     type(ESMF_VM) :: vm
     integer :: pet_count
+    integer :: reg_decomp(2, 6)
     character(len=ESMF_MAXSTR) :: msg
 
     rc = ESMF_SUCCESS
@@ -158,6 +197,23 @@ contains
     call NUOPC_ModelGet(gcomp, exportState=exportState, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
+
+    if (trim(g_hostgeom) == "cubed") then
+      ! Six tiles, one DE each (run on six PETs), with the cell corners CECE's
+      ! host-block path needs.
+      reg_decomp = 1
+      grid = ESMF_GridCreateCubedSphere(tileSize=g_cubed_tile_size, &
+        regDecompPTile=reg_decomp, &
+        staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), &
+        coordSys=ESMF_COORDSYS_SPH_DEG, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      call realize_host_field(exportState, grid, rc)
+      if (rc /= ESMF_SUCCESS) return  ! bail out
+      call ESMF_LogWrite('[MetSource] Realized host-geometry export on a'// &
+        ' six-tile cubed sphere', ESMF_LOGMSG_INFO)
+      return
+    end if
 
     ! Split latitude across the component's PETs so each rank's local slab
     ! matches the row band CECE owns; the connector then copies band-to-band
@@ -172,11 +228,23 @@ contains
     end if
     if (pet_count < 1) pet_count = 1
 
-    grid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/g_nx, g_ny/), &
-      minCornerCoord=(/g_lon_min, g_lat_min/), &
-      maxCornerCoord=(/g_lon_max, g_lat_max/), &
-      regDecomp=(/1, pet_count/), &
-      coordSys=ESMF_COORDSYS_SPH_DEG, rc=rc)
+    if (trim(g_hostgeom) == "uniform") then
+      ! As the host of CECE's grid the uniform grid must carry its centre
+      ! coordinates: the constructor fills a stagger only when asked to. The
+      ! extents are the first and the last cell centre, as in the fixture.
+      grid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/g_nx, g_ny/), &
+        minCornerCoord=(/g_lon_min, g_lat_min/), &
+        maxCornerCoord=(/g_lon_max, g_lat_max/), &
+        regDecomp=(/1, pet_count/), &
+        coordSys=ESMF_COORDSYS_SPH_DEG, &
+        staggerLocList=(/ESMF_STAGGERLOC_CENTER/), rc=rc)
+    else
+      grid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/g_nx, g_ny/), &
+        minCornerCoord=(/g_lon_min, g_lat_min/), &
+        maxCornerCoord=(/g_lon_max, g_lat_max/), &
+        regDecomp=(/1, pet_count/), &
+        coordSys=ESMF_COORDSYS_SPH_DEG, rc=rc)
+    end if
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
 
@@ -186,6 +254,14 @@ contains
     call ESMF_GridCompSet(gcomp, grid=grid, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
+
+    if (trim(g_hostgeom) == "uniform") then
+      call realize_host_field(exportState, grid, rc)
+      if (rc /= ESMF_SUCCESS) return  ! bail out
+      call ESMF_LogWrite('[MetSource] Realized host-geometry export on the'// &
+        ' uniform grid', ESMF_LOGMSG_INFO)
+      return
+    end if
 
     ! Plain 2-D grid field (both grid dimensions map to the field, no
     ! ungridded vertical) — the shape CECE realizes its 2-D met import to.
@@ -205,6 +281,32 @@ contains
       line=__LINE__, file=__FILE__)) return  ! bail out
   end subroutine RealizeProvided
 
+  !> @brief Create and realize the rank-4 host-geometry field on @p grid.
+  subroutine realize_host_field(exportState, grid, rc)
+    type(ESMF_State), intent(inout) :: exportState
+    type(ESMF_Grid), intent(in) :: grid
+    integer, intent(out) :: rc
+
+    type(ESMF_Field) :: field
+    real(esmf_kind_r8), pointer :: p4(:,:,:,:)
+
+    rc = ESMF_SUCCESS
+    field = ESMF_FieldCreate(grid, typekind=ESMF_TYPEKIND_R8, &
+      staggerloc=ESMF_STAGGERLOC_CENTER, ungriddedLBound=(/1, 1/), &
+      ungriddedUBound=(/g_host_levels, g_host_tracers/), &
+      name=met_source_host_field, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+    nullify(p4)
+    call ESMF_FieldGet(field, farrayPtr=p4, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+    if (associated(p4)) p4 = 0.0_esmf_kind_r8
+    call NUOPC_Realize(exportState, field=field, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+  end subroutine realize_host_field
+
   !> @brief Fill the export field with the constant forcing value.
   subroutine Advance(gcomp, rc)
     type(ESMF_GridComp) :: gcomp
@@ -216,6 +318,12 @@ contains
     character(len=ESMF_MAXSTR) :: msg
 
     rc = ESMF_SUCCESS
+
+    ! Host-geometry mode: the tracer field only lends its grid; nothing to fill.
+    if (len_trim(g_hostgeom) > 0) then
+      g_step = g_step + 1
+      return
+    end if
 
     call NUOPC_ModelGet(gcomp, exportState=exportState, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &

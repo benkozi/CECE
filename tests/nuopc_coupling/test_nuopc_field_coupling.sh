@@ -89,6 +89,8 @@ echo "  - configured-but-unconnected export is pruned at realization"
 echo "  - host-provided import advertised, realized, copied (np1)"
 echo "  - standalone NUOPC app fails without a host dictionary (negative)"
 echo "  - standalone NUOPC app with dictionary == uncoupled output"
+echo "  - host-designated geometry: uniform (np1, np2), six tiles (np6),"
+echo "    wrong component order and two grid sources (negative)"
 echo " Fixture: $CONFIG_TEMPLATE"
 echo "========================================================================"
 
@@ -337,6 +339,112 @@ NUOPC_NC="$(nuopc_app_run dict --field-dictionary "$DICTIONARY")" || exit 1
 "$COMPARATOR_BIN" "$CXX_NC_1" "$NUOPC_NC" "$VAR" 0 \
     || fail "standalone NUOPC app '${VAR}' differs from C++ driver (dictionary changed output)"
 echo "PASS: standalone NUOPC app with dictionary matches uncoupled output"
+
+# ------------------------------------------------------------------------
+# 8. Scenario 5: host-designated geometry (CECE_SetHostGeometry). The met
+#    source plays the host: it realizes a rank-4 tracer field on its own grid
+#    and the driver names that field as CECE's grid source, so CECE exports on
+#    the host's ESMF_Grid object instead of a grid it builds or is handed.
+# ------------------------------------------------------------------------
+HOST_LINE="\[Cap\] grid source: host field MET/inst_tracer_mass_frac"
+
+# expect_fail_case <tag> <np> <message regex> [extra app args...]
+# The run must exit non-zero and a file of the case directory (stdout or a
+# PET log) must contain the message.
+expect_fail_case() {
+    local tag="$1" np="$2" pattern="$3"
+    shift 3
+    local cwd="$WORKDIR/app_${tag}"
+    local cfg="$WORKDIR/config_app_${tag}.yaml"
+    sed "s|^\(\s*directory:\).*|\1 ${cwd}/out_cece|" "$CONFIG_TEMPLATE" > "$cfg" \
+        || fail "failed to render config for ${tag}"
+    mkdir -p "$cwd"
+    if ( cd "$cwd" && OMP_NUM_THREADS=1 OMP_PROC_BIND=false \
+            "$MPIRUN" "${MPI_PREFLAGS[@]}" "$NPFLAG" "$np" "$APP" \
+            --config "$cfg" --dictionary "$DICTIONARY" --sinkdir "$cwd" "$@" \
+            > "$cwd/run.log" 2>&1 ); then
+        tail -n 40 "$cwd/run.log" >&2
+        fail "${tag} succeeded (expected a failure)"
+    fi
+    if ! grep -Rqs -E "$pattern" "$cwd"; then
+        tail -n 40 "$cwd/run.log" >&2
+        grep -Rsn "\[Cap\]" "$cwd" | tail -n 20 >&2 || true
+        fail "${tag} failed without the expected message: ${pattern}"
+    fi
+}
+
+# 5a. Single-tile host grid at np1 and np2. The host's grid has the fixture's
+#     geometry, but its coordinates are ESMF's (ESMF_GridCreateNoPeriDimUfrm),
+#     not the ones CECE derives from the YAML extents, and the two differ in
+#     the last bit; the regrid weights then differ at round-off. So against the
+#     standalone output the comparison is within HOST_TOL (absolute, far below
+#     any flux of interest), while np1 against np2 on the same host grid is
+#     bit-for-bit. The cap must report the host field as its grid source.
+HOST_TOL="1e-20"
+echo "--- Scenario 5a: host-field grid, uniform, -np 1 and -np 2"
+coupled_sink_file hostgeom_uniform_np1 1 "$WORKDIR/sink_hg_np1" --hostgeom uniform || exit 1
+SINK_NC_HG1="$WORKDIR/sink_hg_np1/sink_${VAR}_1.nc"
+[ -f "$SINK_NC_HG1" ] || fail "host-geometry run produced no ${VAR} file at np1"
+"$COMPARATOR_BIN" "$CXX_NC_1" "$SINK_NC_HG1" "$VAR" "$HOST_TOL" \
+    || fail "sink '${VAR}' on the host-field grid differs from standalone beyond ${HOST_TOL} (np1)"
+grep -Rqs -E "${HOST_LINE} \(tileCount=1\)" "$WORKDIR/app_hostgeom_uniform_np1" \
+    || fail "provenance line missing (uniform host grid, np1)"
+# np2 also calls the setter twice: the second call must replace the first.
+coupled_sink_file hostgeom_uniform_np2 2 "$WORKDIR/sink_hg_np2" \
+    --hostgeom uniform --hostgeom-twice || exit 1
+SINK_NC_HG2="$WORKDIR/sink_hg_np2/sink_${VAR}_1.nc"
+[ -f "$SINK_NC_HG2" ] || fail "host-geometry run produced no ${VAR} file at np2"
+"$COMPARATOR_BIN" "$CXX_NC_2" "$SINK_NC_HG2" "$VAR" "$HOST_TOL" \
+    || fail "sink '${VAR}' on the host-field grid differs from standalone beyond ${HOST_TOL} (np2)"
+"$COMPARATOR_BIN" "$SINK_NC_HG1" "$SINK_NC_HG2" "$VAR" 0 \
+    || fail "sink '${VAR}' on the host-field grid NOT bit-for-bit equal between np1 and np2"
+grep -Rqs -E "${HOST_LINE} \(tileCount=1\)" "$WORKDIR/app_hostgeom_uniform_np2" \
+    || fail "provenance line missing (uniform host grid, np2)"
+grep -Rqs "host geometry source replaced: air_temperature -> inst_tracer_mass_frac" \
+    "$WORKDIR/app_hostgeom_uniform_np2" \
+    || fail "second CECE_SetHostGeometry call did not log the replacement"
+grep -Rqs "\[Cap\] Parent grid:" "$WORKDIR/app_hostgeom_uniform_np2" \
+    && fail "cap reported a parent grid although the grid came from the host field"
+echo "PASS: host-field grid (uniform): np1 == np2 bit-for-bit, standalone within ${HOST_TOL}; setter replace logged"
+
+# 5b. Six-tile host grid, one DE per PET (the host-block path needs exactly
+#     that, so this case has no np1 form and no standalone counterpart). The
+#     file writer is off (it gathers by latitude band) and the sink does not
+#     write; the evidence is the cap's lines on every PET and the share status.
+echo "--- Scenario 5b: host-field grid, six-tile cubed sphere, -np 6"
+CUBED_TEMPLATE="$WORKDIR/config_template_cubed.yaml"
+sed '/^output:/,/^[^ #]/ s/^\(\s*enabled:\).*/\1 false/' "$CONFIG_TEMPLATE" > "$CUBED_TEMPLATE" \
+    || fail "failed to render the cubed-sphere config"
+SAVED_TEMPLATE="$CONFIG_TEMPLATE"
+CONFIG_TEMPLATE="$CUBED_TEMPLATE"
+coupled_sink_file hostgeom_cubed 6 "$WORKDIR/sink_hg_cubed" \
+    --hostgeom cubed --sink-nowrite || exit 1
+CONFIG_TEMPLATE="$SAVED_TEMPLATE"
+CUBED_DIR="$WORKDIR/app_hostgeom_cubed"
+n_src="$(grep -ls -E "${HOST_LINE} \(tileCount=6, local DE [0-5] of tile [1-6]\)" "$CUBED_DIR"/PET*.ESMF_LogFile | wc -l)"
+[ "$n_src" -eq 6 ] || fail "provenance line on ${n_src} of 6 PETs (cubed host grid)"
+n_blk="$(grep -ls -E "\[Cap\] Host grid block: .* \(8x8\), corners 9x9" "$CUBED_DIR"/PET*.ESMF_LogFile | wc -l)"
+[ "$n_blk" -eq 6 ] || fail "host grid block line on ${n_blk} of 6 PETs"
+n_shr="$(grep -ls "\[Sink\] import ${VAR} ShareStatusField=shared" "$CUBED_DIR"/PET*.ESMF_LogFile | wc -l)"
+[ "$n_shr" -eq 6 ] || fail "sink import '${VAR}' reference-shared on ${n_shr} of 6 PETs"
+grep -Rqs "ShareStatusField=not shared" "$CUBED_DIR" \
+    && fail "a sink import is not reference-shared on the cubed host grid"
+echo "PASS: host-field grid (six tiles): block path on 6 PETs, exports reference-shared"
+
+# 5c. Negative: CECE added before the host. Its realize phase then runs before
+#     the host's, finds the field unrealized, and must say so by name.
+echo "--- Scenario 5c: host listed after CECE fails by name"
+expect_fail_case hostgeom_cece_first 1 \
+    "host geometry field inst_tracer_mass_frac of MET is not realized; the host must precede CECE" \
+    --hostgeom uniform --cece-first
+echo "PASS: wrong component order rejected with the named message"
+
+# 5d. Negative: a grid attached to the component AND a host geometry.
+echo "--- Scenario 5d: parent grid plus host geometry is refused"
+expect_fail_case hostgeom_conflict 1 \
+    "both a parent grid on the component and a host geometry field MET/inst_tracer_mass_frac are set" \
+    --hostgeom uniform --attach-grid
+echo "PASS: two grid sources at once rejected"
 
 echo "========================================================================"
 echo " ALL FIELD-COUPLING CHECKS PASSED"

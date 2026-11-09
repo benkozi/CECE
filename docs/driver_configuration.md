@@ -221,20 +221,72 @@ When the driver is executed directly (not invoked by a NUOPC_Driver framework):
 
 ### Coupled Mode
 
-When the cap is invoked by a NUOPC_Driver framework, the component may be associated
-with a parent grid before realization:
+When the cap is invoked by a NUOPC_Driver framework, the export grid comes from one of
+three sources, tried in this order at `InitializeRealize`:
 
+1. **Host field.** The driver names a sibling component and one of its export fields
+   with `CECE_SetHostGeometry(host_comp, field_name, rc)`; the cap reads that field's
+   `ESMF_Grid` and realizes its exports on the same grid object.
+2. **Parent grid.** An `ESMF_Grid` or `ESMF_Mesh` the host attached to the CECE
+   component (`ESMF_GridCompSet`).
+3. **Config grid.** The YAML grid, when neither of the above is present.
+
+A host field and a parent grid set together are an error naming both; the cap does not
+choose between them.
+
+**Why the host-field source exists.** A host model such as an atmosphere creates its
+grid inside its own initialization, so the driver never holds it and cannot attach it
+to CECE. NUOPC's geometry transfer cannot deliver it either: CECE provides its export
+fields, a providing field must be realized before `label_RealizeProvided` returns, and a
+geometry accepted from another component only arrives in the later accept phases (NUOPC
+reference manual, section 2.4.7). Reading the grid off the host's already realized field
+closes that gap, and it guarantees that CECE and every consumer of the host's field
+(for example a chemistry component that takes its grid from the host's tracer array)
+run on one grid with one decomposition.
+
+**Ordering requirement.** The driver runs each initialize phase over its children in the
+order they were added, and the cap reads the host's field at the start of its own
+realize phase. The host must therefore be added before CECE. If it is not, the cap
+stops with
+
+```
+[Cap] host geometry field <name> of <host> is not realized; the host must precede CECE in the driver's component list
+```
+
+```fortran
+call NUOPC_DriverAddComp(driver, "ATM", atmSS, comp=atm_comp, rc=rc)
+call NUOPC_DriverAddComp(driver, "CECE", CECE_SetServices, comp=cece_comp, rc=rc)
+call CECE_SetHostGeometry(atm_comp, "inst_tracer_mass_frac", rc)
+```
+
+The setter only records the source; it may be called any time before the driver
+initializes its children. A second call replaces the first.
+
+**Which source was used** is logged once per PET:
+
+| Source | Log line |
+| --- | --- |
+| Host field | `[Cap] grid source: host field <host>/<field> (tileCount=<n>, local DE <d> of tile <t>)` |
+| Parent grid | `[Cap] Parent grid: tileCount=...` on a multi-tile grid; a single-tile parent grid has no line of its own (neither of the other two appears) |
+| Config grid | warning `[Cap] No parent grid or mesh associated with the component; resolving the target grid from the CECE config.` |
+
+A host-field grid and a parent grid are treated alike from there on:
+
+- A **multi-tile grid** (a cubed sphere) takes the host-block path: each PET's single DE,
+  with the grid's own CORNER-stagger cell corners, is the core's whole local grid. This
+  needs exactly one DE per PET and a DE that owns a closed corner ring, i.e. one DE per
+  tile; `output.enabled` and `local_time.enabled` are refused on it.
 - Clock is provided by framework (cap skips clock creation)
-- **Parent-grid precedence**: if the host associates an `ESMF_Grid` or `ESMF_Mesh` with
+- **Single-tile grids**: if the host associates an `ESMF_Grid` or `ESMF_Mesh` with
   the component, the cap extracts its global coordinates across PETs and builds the
   simulation on that grid (rectilinear from 1-D coords, curvilinear from flattened 2-D
   GRIDSPEC coords, unstructured from mesh node lists). Radians are converted and
   longitudes wrapped in the shared C++ code; unsupported shapes fail loudly with a
   named diagnostic — never a uniform-grid fallback.
-- When both a parent grid and a YAML grid exist, the parent wins and a single warning
-  names the ignored YAML grid; the sources are never merged.
+- When a host-field or parent grid and a YAML grid both exist, the former wins and a
+  single warning names the ignored YAML grid; the sources are never merged.
 - `nz` always comes from `driver.grid.nz` in the config, never from the flat 2-D grid.
-- With no parent grid, the cap falls back to the config-built path — the exact same
+- With no host field and no parent grid, the cap falls back to the config-built path — the exact same
   YAML grid resolution the C++ driver runs.
 - Driver operates normally without a driver configuration section (documented defaults)
 

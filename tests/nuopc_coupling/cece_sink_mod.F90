@@ -41,7 +41,7 @@ module cece_sink_mod
   public :: CECE_SINK_SetServices
   public :: sink_begin_fields, sink_add_import_field, sink_end_fields
   public :: sink_set_vertical_layers, sink_set_output_dir
-  public :: sink_has_fields
+  public :: sink_has_fields, sink_set_write
 
   !> @brief Number of import fields the sink advertises (set by the app).
   integer, save :: g_nfields = 0
@@ -61,6 +61,10 @@ module cece_sink_mod
 
   !> @brief Directory the per-step sink NetCDF files are written into.
   character(len=ESMF_MAXSTR), save :: g_outdir = "."
+
+  !> @brief When false the sink receives its imports but writes no files (a
+  !> multi-tile host grid has no single global file to compare against).
+  logical, save :: g_write = .true.
 
   !> @brief Monotonic Advance counter, used to name the per-step output file.
   integer, save :: g_step = 0
@@ -139,6 +143,12 @@ contains
     character(len=*), intent(in) :: dir
     g_outdir = dir
   end subroutine sink_set_output_dir
+
+  !> @brief Turn the per-step NetCDF output on or off (default on).
+  subroutine sink_set_write(enable)
+    logical, intent(in) :: enable
+    g_write = enable
+  end subroutine sink_set_write
 
   !> @brief SetServices for the sink component.
   subroutine CECE_SINK_SetServices(gcomp, rc)
@@ -281,7 +291,7 @@ contains
     type(ESMF_State) :: importState
     type(ESMF_Field) :: field
     integer :: i
-    character(len=ESMF_MAXSTR) :: fname, msg
+    character(len=ESMF_MAXSTR) :: fname, msg, share_status
     logical :: connected
 
     rc = ESMF_SUCCESS
@@ -306,6 +316,18 @@ contains
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
         line=__LINE__, file=__FILE__)) return  ! bail out
 
+      ! Once, on the first step: how the Connector delivered this import. A
+      ! reference-shared field reports "shared" (NUOPC reference 2.4.8).
+      if (g_step == 1) then
+        call NUOPC_GetAttribute(field, name="ShareStatusField", &
+          value=share_status, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+        call ESMF_LogWrite('[Sink] import '//trim(g_names(i))// &
+          ' ShareStatusField='//trim(share_status), ESMF_LOGMSG_INFO)
+      end if
+      if (.not. g_write) cycle
+
       write(fname, '(A,A,A,A,I0,A)') trim(g_outdir), '/sink_', &
         trim(g_names(i)), '_', g_step, '.nc'
       ! ESMF's PIO layer assembles the distributed field into one global file
@@ -317,7 +339,7 @@ contains
         line=__LINE__, file=__FILE__)) return  ! bail out
     end do
 
-    write(msg, '(A,I0,A)') '[Sink] Advance wrote fields for step ', g_step
+    write(msg, '(A,I0,A)') '[Sink] Advance handled fields for step ', g_step
     call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
   end subroutine Advance
 

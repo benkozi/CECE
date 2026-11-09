@@ -844,7 +844,7 @@ contains
                                    int(len_trim(g_config_file_path), c_int), &
                                    nz_cfg, c_rc)
       if (c_rc /= 0 .or. nz_cfg <= 0) then
-        write(wmsg, '(A,I0)') '[Cap] Could not resolve vertical layer count', &
+        write(wmsg, '(A,I0)') '[Cap] Could not resolve vertical layer count'// &
           ' from config rc=', int(c_rc)
         call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
           line=__LINE__, file=__FILE__, rcToReturn=rc)
@@ -862,7 +862,7 @@ contains
                                        desc_len, c_rc)
       if (c_rc == 0 .and. desc_len > 0) then
         if (desc_len <= len(yaml_desc)) then
-          write(wmsg, '(A,A)') '[Cap] Parent ESMF grid takes precedence;', &
+          write(wmsg, '(A,A)') '[Cap] Parent ESMF grid takes precedence;'// &
             ' ignoring the CECE config grid: ', yaml_desc(1:desc_len)
         else
           wmsg = '[Cap] Parent ESMF grid takes precedence; ignoring the CECE config grid.'
@@ -981,7 +981,7 @@ contains
       if (allocated(gx_lon)) deallocate(gx_lon)
       if (allocated(gx_lat)) deallocate(gx_lat)
       if (c_rc /= 0 .or. .not. c_associated(g_sim_ptr)) then
-        write(wmsg, '(A,I0)') '[Cap] Failed to create CECE simulation on the', &
+        write(wmsg, '(A,I0)') '[Cap] Failed to create CECE simulation on the'// &
           ' parent-provided grid rc=', int(c_rc)
         g_sim_ptr = c_null_ptr
         call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
@@ -989,7 +989,7 @@ contains
         return  ! bail out
       end if
 
-      write(wmsg, '(A,I0,A,I0,A,I0)') '[Cap] Simulation grid from parent ESMF', &
+      write(wmsg, '(A,I0,A,I0,A,I0)') '[Cap] Simulation grid from parent ESMF'// &
         ' object: ', gx_nx, 'x', gx_ny, 'x', int(nz_cfg)
       call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
       ! The component is already associated with the parent grid/mesh, so no

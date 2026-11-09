@@ -208,9 +208,18 @@ mpirun -np 4 ./cece_nuopc_single_driver
 ### Coupled Mode Execution
 
 When the cap is invoked by a NUOPC_Driver framework (coupled mode), the grid can come
-from two sources, resolved in this order at `InitializeRealize`:
+from three sources, resolved in this order at `InitializeRealize`:
 
-1. **Parent-provided grid (wins).** If the host associates an `ESMF_Grid` or `ESMF_Mesh`
+1. **Host field (wins).** The driver calls
+   `CECE_SetHostGeometry(host_comp, field_name, rc)` to name an export field of a sibling
+   component; the cap realizes its exports on that field's `ESMF_Grid`. Use this when the
+   host creates its grid during its own initialization and a consumer of CECE's exports
+   takes its grid from the same host field: NUOPC cannot transfer a geometry to a
+   component that must provide fields on it in the same initialization (NUOPC reference
+   manual, section 2.4.7). The host must be added to the driver before CECE; otherwise
+   the cap stops with `host geometry field <name> of <host> is not realized`. See
+   `driver_configuration.md`, Coupled Mode, for the details and the log lines.
+2. **Parent-provided grid.** If the host associates an `ESMF_Grid` or `ESMF_Mesh`
    with the component before realization, the cap extracts its global coordinates across
    PETs and builds the simulation on that grid. Supported parent topologies:
    - 1-D `lon[nx]` x `lat[ny]` center coordinates -> rectilinear
@@ -219,12 +228,13 @@ from two sources, resolved in this order at `InitializeRealize`:
    Radian coordinate systems are converted to degrees and longitudes wrapped to
    `[-180, 180)` in the shared C++ code. An unsupported parent shape fails loudly
    with a named diagnostic — there is **no fallback to a uniform grid**.
-2. **Config-built grid (fallback).** With no parent grid, the cap resolves the grid from
+3. **Config-built grid (fallback).** With neither, the cap resolves the grid from
    the CECE YAML through the exact same code path as the C++ driver (named grid,
    `gridspec_file`, stream-inferred coordinates, or uniform `driver.grid` extents).
 
-**Precedence:** when both a parent grid and a YAML grid are present, the parent wins and
-a single warning names the ignored YAML grid. The two sources are never merged.
+**Precedence:** when a host-field or parent grid and a YAML grid are present, the former
+wins and a single warning names the ignored YAML grid. The sources are never merged. A
+host field and a parent grid set together are an error.
 
 **Vertical layers:** `nz` is always taken from `driver.grid.nz` in the config — never
 inferred from the flat 2-D parent grid, which carries no vertical dimension.
@@ -286,9 +296,9 @@ branch, the target grid is selected as:
      `lat_min`/`lat_max` extents
    - `ny = 1` yields a flattened 1-D node row (unstructured topology)
 
-4. **In coupled mode (cap only):** a parent-provided ESMF Grid/Mesh takes precedence
-   over all of the above (see Coupled Mode Execution); the YAML grid is used only when
-   no parent grid is associated. This is the use case of a host model (NUOPC driver or
+4. **In coupled mode (cap only):** a host-designated field's grid, or else a
+   parent-provided ESMF Grid/Mesh, takes precedence over all of the above (see Coupled
+   Mode Execution); the YAML grid is used only when neither is present. This is the use case of a host model (NUOPC driver or
    mediator) that owns the discretization: CECE must emit on the host's grid so the
    exchanged fields are geographically consistent without regridding, and the YAML
    grid section then only supplies the vertical layer count.

@@ -25,7 +25,7 @@ module coupling_driver_mod
   use NUOPC_Driver, only: driver_label_SetRunSequence => label_SetRunSequence
   use NUOPC_Connector, connectorSS => SetServices
   use cece_cap_mod, ceceSS => CECE_SetServices
-  use cece_cap_mod, only: CECE_SetConfigPath
+  use cece_cap_mod, only: CECE_SetConfigPath, CECE_SetHostGeometry
   use cece_sink_mod
   use cece_met_source_mod
   use, intrinsic :: iso_c_binding
@@ -37,6 +37,7 @@ module coupling_driver_mod
   public :: coupling_driver_SS
   public :: set_coupling_config, set_coupling_dictionary, set_coupling_sinkdir
   public :: set_coupling_sink_skip, set_coupling_metsource
+  public :: set_coupling_hostgeom
 
   !> @brief CECE YAML config path (shared with the cap and the sink setup).
   character(len=512), save :: g_config_file = "cece_config.yaml"
@@ -55,6 +56,22 @@ module coupling_driver_mod
   !> @brief When true, add the constant met-source peer and a Connector from
   !> its export into CECE's import, exercising the host-forcing import path.
   logical, save :: g_metsource = .false.
+
+  !> @brief Host-geometry scenario ("" = off, "uniform" or "cubed"): the met
+  !> source realizes a tracer field on its own grid and CECE is pointed at it
+  !> with CECE_SetHostGeometry, so CECE exports on the host's ESMF_Grid.
+  character(len=16), save :: g_hostgeom = ""
+
+  !> @brief Add CECE before the host (the order CECE_SetHostGeometry forbids):
+  !> the negative case, which must fail with the cap's "not realized" message.
+  logical, save :: g_cece_first = .false.
+
+  !> @brief Call CECE_SetHostGeometry twice (the second call replaces the first).
+  logical, save :: g_hostgeom_twice = .false.
+
+  !> @brief Also attach a grid to the CECE component: with a host geometry set
+  !> the cap must refuse the two sources together.
+  logical, save :: g_attach_grid = .false.
 
   !> @brief Driver clock, created in SetModelServices. NUOPC child components
   !> read the driver's internal clock during their own Initialize, so it must
@@ -144,6 +161,16 @@ contains
     g_metsource = enable
   end subroutine set_coupling_metsource
 
+  !> @brief Configure the host-geometry scenario (see the module variables).
+  subroutine set_coupling_hostgeom(kind, cece_first, twice, attach_grid)
+    character(len=*), intent(in) :: kind
+    logical, intent(in) :: cece_first, twice, attach_grid
+    g_hostgeom = kind
+    g_cece_first = cece_first
+    g_hostgeom_twice = twice
+    g_attach_grid = attach_grid
+  end subroutine set_coupling_hostgeom
+
   !> @brief True when @p name appears in the comma-separated skip list.
   function in_skip_list(name) result(found)
     character(len=*), intent(in) :: name
@@ -230,8 +257,18 @@ contains
     integer :: c_path_len
     character(len=64) :: start_time_str, end_time_str
     integer :: timestep_sec
+    logical :: hostgeom
+    type(ESMF_Grid) :: stray_grid
 
     rc = ESMF_SUCCESS
+
+    hostgeom = (len_trim(g_hostgeom) > 0)
+    if (hostgeom .and. g_metsource) then
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
+        msg='[CouplingDriver] --hostgeom and --metsource are separate scenarios', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
 
     ! Point the cap at the config file (same path the sink setup reads).
     call CECE_SetConfigPath(trim(g_config_file), rc)
@@ -356,10 +393,55 @@ contains
       trim(start_time_str), ' -> ', trim(end_time_str), ' step ', timestep_sec, 's'
     call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
 
-    ! Add CECE (component builds its own grid in Realize).
+    ! Host-geometry scenario: the host is added BEFORE CECE, because the driver
+    ! runs each initialize phase over its children in the order they were added
+    ! and CECE reads the host's realized field at the start of its own realize
+    ! phase. --cece-first reverses the order to provoke the cap's failure.
+    if (hostgeom) call met_source_set_hostgeom(trim(g_hostgeom))
+    if (hostgeom .and. .not. g_cece_first) then
+      call NUOPC_DriverAddComp(driver, "MET", CECE_MET_SOURCE_SetServices, &
+        comp=met_comp, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+    end if
+
+    ! Add CECE (without a host geometry the component builds its own grid in
+    ! Realize).
     call NUOPC_DriverAddComp(driver, "CECE", ceceSS, comp=cece_comp, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
       line=__LINE__, file=__FILE__)) return  ! bail out
+
+    if (hostgeom) then
+      if (g_cece_first) then
+        call NUOPC_DriverAddComp(driver, "MET", CECE_MET_SOURCE_SetServices, &
+          comp=met_comp, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+      end if
+      if (g_hostgeom_twice) then
+        ! A first source that the second call must replace.
+        call CECE_SetHostGeometry(met_comp, "air_temperature", rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+      end if
+      call CECE_SetHostGeometry(met_comp, met_source_host_field, rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      if (g_attach_grid) then
+        stray_grid = ESMF_GridCreateNoPeriDimUfrm(maxIndex=(/4, 4/), &
+          minCornerCoord=(/0.0_ESMF_KIND_R8, 0.0_ESMF_KIND_R8/), &
+          maxCornerCoord=(/4.0_ESMF_KIND_R8, 4.0_ESMF_KIND_R8/), &
+          coordSys=ESMF_COORDSYS_SPH_DEG, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+        call ESMF_GridCompSet(cece_comp, grid=stray_grid, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+      end if
+      call ESMF_LogWrite('[CouplingDriver] Host geometry: CECE takes its grid'// &
+        ' from MET/'//met_source_host_field//' ('//trim(g_hostgeom)//')', &
+        ESMF_LOGMSG_INFO)
+    end if
 
     ! Add the sink peer.
     call NUOPC_DriverAddComp(driver, "SINK", CECE_SINK_SetServices, &
@@ -438,6 +520,14 @@ contains
     ! source advances, so CECE receives the met source's PREVIOUS step-end stamp
     ! (the framework default), which equals CECE's own step-start clock time and
     ! satisfies the consumer's default import-time check.
+    ! Host-geometry scenario: the host only lends its grid, so it runs first
+    ! with no connector into CECE.
+    if (len_trim(g_hostgeom) > 0) then
+      call NUOPC_DriverAddRunElement(driver, slot=1, compLabel="MET", rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+    end if
+
     if (g_metsource) then
       call NUOPC_DriverAddRunElement(driver, slot=1, srcCompLabel="MET", &
         dstCompLabel="CECE", rc=rc)
@@ -484,7 +574,8 @@ program test_coupling_app
   use mpi
   use coupling_driver_mod, only: coupling_driver_SS, set_coupling_config, &
     set_coupling_dictionary, set_coupling_sinkdir, set_coupling_sink_skip, &
-    set_coupling_metsource
+    set_coupling_metsource, set_coupling_hostgeom
+  use cece_sink_mod, only: sink_set_write
 
   implicit none
 
@@ -493,12 +584,19 @@ program test_coupling_app
   character(len=512) :: arg, nextarg
   character(len=512) :: config_file, dict_file, sink_dir, sink_skip
   logical :: have_config, have_dict, metsource
+  character(len=16) :: hostgeom
+  logical :: cece_first, hostgeom_twice, attach_grid, sink_write
 
   config_file = ""
   dict_file = ""
   sink_dir = "."
   sink_skip = ""
   metsource = .false.
+  hostgeom = ""
+  cece_first = .false.
+  hostgeom_twice = .false.
+  attach_grid = .false.
+  sink_write = .true.
 
   nargs = command_argument_count()
   i = 1
@@ -523,6 +621,22 @@ program test_coupling_app
     else if (trim(arg) == "--metsource") then
       metsource = .true.
       i = i + 1
+    else if (trim(arg) == "--hostgeom") then
+      call get_command_argument(i + 1, nextarg)
+      hostgeom = trim(nextarg)
+      i = i + 2
+    else if (trim(arg) == "--cece-first") then
+      cece_first = .true.
+      i = i + 1
+    else if (trim(arg) == "--hostgeom-twice") then
+      hostgeom_twice = .true.
+      i = i + 1
+    else if (trim(arg) == "--attach-grid") then
+      attach_grid = .true.
+      i = i + 1
+    else if (trim(arg) == "--sink-nowrite") then
+      sink_write = .false.
+      i = i + 1
     else
       i = i + 1
     end if
@@ -536,6 +650,11 @@ program test_coupling_app
   end if
   if (.not. have_dict) then
     write(*,'(A)') "ERROR: --dictionary <yaml> is required"
+    call exit(2)
+  end if
+  if (len_trim(hostgeom) > 0 .and. trim(hostgeom) /= "uniform" &
+      .and. trim(hostgeom) /= "cubed") then
+    write(*,'(A)') "ERROR: --hostgeom takes uniform or cubed"
     call exit(2)
   end if
 
@@ -559,11 +678,14 @@ program test_coupling_app
   call set_coupling_sinkdir(trim(sink_dir))
   call set_coupling_sink_skip(trim(sink_skip))
   call set_coupling_metsource(metsource)
+  call set_coupling_hostgeom(trim(hostgeom), cece_first, hostgeom_twice, attach_grid)
+  call sink_set_write(sink_write)
 
   write(*,'(A,A)') "INFO: [couplingApp] config:     ", trim(config_file)
   write(*,'(A,A)') "INFO: [couplingApp] dictionary: ", trim(dict_file)
   write(*,'(A,A)') "INFO: [couplingApp] sinkdir:    ", trim(sink_dir)
   write(*,'(A,L1)') "INFO: [couplingApp] metsource:  ", metsource
+  write(*,'(A,A)') "INFO: [couplingApp] hostgeom:   ", trim(hostgeom)
 
   drvComp = ESMF_GridCompCreate(name="coupling_driver", rc=rc)
   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
