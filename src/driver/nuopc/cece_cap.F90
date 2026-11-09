@@ -26,13 +26,26 @@ module cece_cap_mod
 
   private
 
-  public :: CECE_SetServices, CECE_SetConfigPath
+  public :: CECE_SetServices, CECE_SetConfigPath, CECE_SetHostGeometry
 
   !> @brief Shared simulation handle (opaque cece::CeceSimulation*).
   type(c_ptr), save :: g_sim_ptr = c_null_ptr
 
   !> @brief Module-level config file path (save ensures persistence across phases).
   character(len=512), save :: g_config_file_path = "cece_control_mock.yaml"
+
+  !> @brief Host-designated geometry source (CECE_SetHostGeometry): a sibling
+  !> component of the same driver and the name of one of its export fields.
+  !> When set, the export grid is the grid of that field, read at the start of
+  !> the provided-realize phase, so CECE and every consumer of the host's field
+  !> run on one ESMF_Grid object. NUOPC's geometry transfer cannot deliver
+  !> this: a "provide" field must be realized before label_RealizeProvided
+  !> returns, and an accepted geometry only arrives in the later accept phases
+  !> (NUOPC reference 2.4.7). The driver runs each initialize phase over its
+  !> children in the order they were added, so the host must precede CECE.
+  logical, save :: g_host_geom_set = .false.
+  type(ESMF_GridComp), save :: g_host_comp
+  character(len=ESMF_MAXSTR), save :: g_host_field_name = ' '
 
   !> @brief Monotonic step counter; the shared writer counts steps 1-based.
   integer, save :: g_step_count = 0
@@ -278,6 +291,118 @@ contains
     g_config_file_path = config_path
     rc = ESMF_SUCCESS
   end subroutine CECE_SetConfigPath
+
+  !> @brief Name a sibling component's export field as the source of the
+  !> export grid. Call before the driver initializes its children (typically
+  !> right after NUOPC_DriverAddComp). The host must precede CECE in the
+  !> driver's component list so its field is realized first. A second call
+  !> replaces the earlier source. Precedence of the three grid sources: host
+  !> field, then a grid or mesh attached to the component, then the config grid.
+  subroutine CECE_SetHostGeometry(host_comp, field_name, rc)
+    type(ESMF_GridComp), intent(in) :: host_comp
+    character(len=*), intent(in) :: field_name
+    integer, intent(out) :: rc
+
+    rc = ESMF_SUCCESS
+    if (len_trim(field_name) == 0) then
+      call ESMF_LogSetError(rcToCheck=ESMF_RC_ARG_BAD, &
+        msg='[Cap] CECE_SetHostGeometry: the field name is empty', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return
+    end if
+    if (len_trim(field_name) > len(g_host_field_name)) then
+      call ESMF_LogSetError(rcToCheck=ESMF_RC_ARG_BAD, &
+        msg='[Cap] CECE_SetHostGeometry: the field name is longer than ESMF_MAXSTR', &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return
+    end if
+    if (g_host_geom_set) then
+      call ESMF_LogWrite('[Cap] host geometry source replaced: '// &
+        trim(g_host_field_name)//' -> '//trim(field_name), ESMF_LOGMSG_INFO)
+    end if
+    g_host_comp = host_comp
+    g_host_field_name = field_name
+    g_host_geom_set = .true.
+  end subroutine CECE_SetHostGeometry
+
+  !> @brief The grid of the host-designated field (see CECE_SetHostGeometry).
+  !>
+  !> Reads the host's export state through its component handle (the state the
+  !> driver passed to the host's last executed phase), the named field, and the
+  !> field's grid. A missing state, a missing item or a field that is not
+  !> completely created all mean the host has not realized it yet, i.e. the
+  !> host does not precede CECE in the driver's component list.
+  subroutine host_field_grid(grid, host_name, rc)
+    type(ESMF_Grid), intent(out) :: grid
+    character(len=*), intent(out) :: host_name
+    integer, intent(out) :: rc
+
+    type(ESMF_State) :: host_export
+    type(ESMF_Field) :: field
+    type(ESMF_StateItem_Flag) :: item_type
+    type(ESMF_FieldStatus_Flag) :: field_status
+    type(ESMF_GeomType_Flag) :: geom_type
+    logical :: state_present, realized
+    character(len=700) :: wmsg
+
+    rc = ESMF_SUCCESS
+    host_name = ' '
+    call ESMF_GridCompGet(g_host_comp, name=host_name, &
+      exportStateIsPresent=state_present, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, &
+      msg='[Cap] the host component given to CECE_SetHostGeometry is not usable', &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+
+    realized = .false.
+    if (state_present) then
+      call NUOPC_ModelGet(g_host_comp, exportState=host_export, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      call ESMF_StateGet(host_export, itemName=trim(g_host_field_name), &
+        itemType=item_type, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+        line=__LINE__, file=__FILE__)) return  ! bail out
+      if (item_type == ESMF_STATEITEM_FIELD) then
+        call ESMF_StateGet(host_export, itemName=trim(g_host_field_name), &
+          field=field, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+        call ESMF_FieldGet(field, status=field_status, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+          line=__LINE__, file=__FILE__)) return  ! bail out
+        realized = (field_status == ESMF_FIELDSTATUS_COMPLETE)
+      else if (.not. (item_type == ESMF_STATEITEM_NOTFOUND)) then
+        write(wmsg, '(A)') '[Cap] host geometry item '//trim(g_host_field_name)// &
+          ' of '//trim(host_name)//' is not a field'
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+    end if
+    if (.not. realized) then
+      write(wmsg, '(A)') '[Cap] host geometry field '//trim(g_host_field_name)// &
+        ' of '//trim(host_name)//' is not realized; the host must precede CECE'// &
+        " in the driver's component list"
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
+
+    call ESMF_FieldGet(field, geomtype=geom_type, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+    if (.not. (geom_type == ESMF_GEOMTYPE_GRID)) then
+      write(wmsg, '(A)') '[Cap] host geometry field '//trim(g_host_field_name)// &
+        ' of '//trim(host_name)//' is not built on an ESMF_Grid; emission'// &
+        ' exports are grid fields (no fallback)'
+      call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+        line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return  ! bail out
+    end if
+    call ESMF_FieldGet(field, grid=grid, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
+      line=__LINE__, file=__FILE__)) return  ! bail out
+  end subroutine host_field_grid
 
   !> @brief SetServices routine for the production CECE component
   subroutine CECE_SetServices(gcomp, rc)
@@ -587,7 +712,10 @@ contains
     integer :: gx_nx, gx_ny, gx_is_rad, gx_rc
     real(ESMF_KIND_R8), allocatable :: gx_lon(:), gx_lat(:)
     ! Multi-tile (host-block) parent grid state
-    integer :: gx_tile_count, gx_tile, gx_i0, gx_j0
+    integer :: gx_tile_count, gx_tile, gx_i0, gx_j0, gx_de
+    ! Host-designated geometry (CECE_SetHostGeometry)
+    logical :: grid_from_host
+    character(len=ESMF_MAXSTR) :: host_name
     real(ESMF_KIND_R8), allocatable :: gx_corner_lon(:), gx_corner_lat(:)
     integer(c_int) :: nz_cfg
     integer(c_int) :: desc_len
@@ -659,6 +787,27 @@ contains
       mesh_is_present = .false.
       rc = ESMF_SUCCESS
     end if
+    ! A host-designated field is the first grid source. Its grid stands in for
+    ! the parent grid below, so the single-tile and the host-block paths run
+    ! unchanged; a geometry attached to the component at the same time is a
+    ! configuration error, not a precedence question.
+    grid_from_host = .false.
+    if (g_host_geom_set) then
+      if (grid_is_present .or. mesh_is_present) then
+        call ESMF_GridCompGet(g_host_comp, name=host_name, rc=rc)
+        if (rc /= ESMF_SUCCESS) host_name = '?'
+        write(wmsg, '(A)') '[Cap] both a parent grid on the component and a host'// &
+          ' geometry field '//trim(host_name)//'/'//trim(g_host_field_name)// &
+          ' are set; use one'
+        call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, msg=trim(wmsg), &
+          line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return  ! bail out
+      end if
+      call host_field_grid(parent_grid, host_name, rc)
+      if (rc /= ESMF_SUCCESS) return  ! bail out
+      grid_from_host = .true.
+      grid_is_present = .true.
+    end if
     if (.not. grid_is_present .and. .not. mesh_is_present) then
       ! No host-supplied geometry: the grid comes from the CECE config. This
       ! is the supported standalone/testing configuration, but a coupled
@@ -667,7 +816,7 @@ contains
         ' component; resolving the target grid from the CECE config.', &
         ESMF_LOGMSG_WARNING)
     end if
-    if (grid_is_present) then
+    if (grid_is_present .and. .not. grid_from_host) then
       call ESMF_GridCompGet(comp, grid=parent_grid, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, &
         line=__LINE__, file=__FILE__)) return  ! bail out
@@ -733,7 +882,7 @@ contains
       end if
       if (grid_is_present .and. gx_tile_count > 1) then
         call cece_cap_extract_local_block(parent_grid, gx_tile_count, gx_tile, gx_i0, gx_j0, &
-          gx_nx, gx_ny, gx_is_rad, gx_lon, gx_lat, gx_corner_lon, gx_corner_lat, gx_rc)
+          gx_nx, gx_ny, gx_is_rad, gx_lon, gx_lat, gx_corner_lon, gx_corner_lat, gx_de, gx_rc)
         if (gx_rc /= ESMF_SUCCESS) then
           call ESMF_LogSetError(rcToCheck=ESMF_FAILURE, &
             msg='[Cap] Multi-tile parent grid: DE block extraction failed;'// &
@@ -741,10 +890,22 @@ contains
             line=__LINE__, file=__FILE__, rcToReturn=rc)
           return  ! bail out
         end if
-        write(wmsg, '(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0)') &
-          '[Cap] Parent grid: tileCount=', gx_tile_count, ', local DE on tile ', gx_tile, &
-          ', block i=', gx_i0, '..', gx_i0 + gx_nx - 1, ' j=', gx_j0, '..', gx_j0 + gx_ny - 1, &
-          ' (', gx_nx, 'x', gx_ny, '), corners ', gx_nx + 1, 'x', gx_ny + 1
+        if (grid_from_host) then
+          ! Geometry provenance, once per PET.
+          write(wmsg, '(A,I0,A,I0,A,I0,A)') '[Cap] grid source: host field '// &
+            trim(host_name)//'/'//trim(g_host_field_name)//' (tileCount=', gx_tile_count, &
+            ', local DE ', gx_de, ' of tile ', gx_tile, ')'
+          call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
+          write(wmsg, '(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0)') &
+            '[Cap] Host grid block: i=', gx_i0, '..', gx_i0 + gx_nx - 1, &
+            ' j=', gx_j0, '..', gx_j0 + gx_ny - 1, &
+            ' (', gx_nx, 'x', gx_ny, '), corners ', gx_nx + 1, 'x', gx_ny + 1
+        else
+          write(wmsg, '(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0)') &
+            '[Cap] Parent grid: tileCount=', gx_tile_count, ', local DE on tile ', gx_tile, &
+            ', block i=', gx_i0, '..', gx_i0 + gx_nx - 1, ' j=', gx_j0, '..', gx_j0 + gx_ny - 1, &
+            ' (', gx_nx, 'x', gx_ny, '), corners ', gx_nx + 1, 'x', gx_ny + 1
+        end if
         call ESMF_LogWrite(trim(wmsg), ESMF_LOGMSG_INFO)
         call ESMF_TraceRegionEnter("CECE: create sim")
         call cece_sim_create_from_esmf_block(trim(g_config_file_path)//c_null_char, &
@@ -778,6 +939,12 @@ contains
         call ESMF_LogWrite('[Cap] InitializeRealize completed successfully', &
           ESMF_LOGMSG_INFO)
         return
+      end if
+
+      if (grid_from_host) then
+        ! Geometry provenance for a single-tile host grid, once per PET.
+        call ESMF_LogWrite('[Cap] grid source: host field '//trim(host_name)//'/'// &
+          trim(g_host_field_name)//' (tileCount=1)', ESMF_LOGMSG_INFO)
       end if
 
       ! Extract the global coordinate arrays across PETs. ESMF coordinate

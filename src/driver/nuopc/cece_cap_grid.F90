@@ -41,7 +41,7 @@ contains
   !> stagger. Returned arrays are flattened x fastest: centres nx*ny, corners
   !> (nx+1)*(ny+1). tile is the tile the DE lies on (1-based, ESMF_GridGet
   !> localDE/tile), i0/j0 the tile-global index of the block's first cell
-  !> (ESMF_DistGridGet minIndexPDe). Fails with a named diagnostic when the
+  !> (ESMF_DistGridGet minIndexPDe), de the DE's id (0-based). Fails with a named diagnostic when the
   !> PET holds more or fewer than one DE, when the grid is not a 2-D
   !> spherical grid with 2-D centre coordinates, when the CORNER stagger is
   !> absent, or when the DE's corner ring is open ((nx+1) x (ny+1) corners
@@ -49,7 +49,7 @@ contains
   !> per tile; several DEs per tile need a corner halo this path does not
   !> provide). No fallback.
   subroutine cece_cap_extract_local_block(grid, tile_count, tile, i0, j0, nx, ny, &
-      is_rad, lon, lat, corner_lon, corner_lat, rc)
+      is_rad, lon, lat, corner_lon, corner_lat, de, rc)
     type(ESMF_Grid), intent(in)  :: grid
     integer,         intent(out) :: tile_count
     integer,         intent(out) :: tile
@@ -62,9 +62,10 @@ contains
     real(ESMF_KIND_R8), allocatable, intent(out) :: lat(:)
     real(ESMF_KIND_R8), allocatable, intent(out) :: corner_lon(:)
     real(ESMF_KIND_R8), allocatable, intent(out) :: corner_lat(:)
+    integer,         intent(out) :: de
     integer,         intent(out) :: rc
 
-    integer :: localrc, dim_count, local_de_count, de_count, de
+    integer :: localrc, dim_count, local_de_count, de_count
     type(ESMF_CoordSys_Flag) :: cs
     type(ESMF_DistGrid) :: distgrid
     logical :: corners_present
@@ -74,6 +75,7 @@ contains
 
     rc = ESMF_SUCCESS
     tile_count = 0
+    de = -1
     tile = 0
     i0 = 0
     j0 = 0
