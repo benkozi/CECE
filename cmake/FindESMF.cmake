@@ -27,6 +27,17 @@ if(ESMF_FOUND)
       target_link_libraries(ESMF::ESMF INTERFACE ${ESMF_LIBRARIES})
     endif()
   endif()
+  # ESMF's own config package (9.0.0 betas onward) builds ESMF::ESMF from
+  # esmf.mk's Fortran link line. With the Intel compilers that line carries
+  # -cxxlib, an ifx driver option icpx rejects ("unknown argument"). CECE's
+  # libraries are linked by the C++ driver, which adds the C++ runtime itself.
+  foreach(_cece_esmf_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
+    get_target_property(_cece_esmf_val ESMF::ESMF ${_cece_esmf_prop})
+    if(_cece_esmf_val)
+      list(FILTER _cece_esmf_val EXCLUDE REGEX "^-cxxlib")
+      set_target_properties(ESMF::ESMF PROPERTIES ${_cece_esmf_prop} "${_cece_esmf_val}")
+    endif()
+  endforeach()
   return()
 endif()
 
