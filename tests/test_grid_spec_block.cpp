@@ -14,8 +14,9 @@
  *   - longitude normalization of centres AND corners (ESMF holds [0, 360));
  *   - validate() and describe() on a host block;
  *   - build_block_mesh_with_corners: one node per corner, placed exactly where the corners are, and
- *     identical node coordinates to the synthesized-corner mesh when fed the midpoint corners of a
- *     uniform grid (ties the new path to the old one on the geometry they share).
+ *     identical interior node coordinates to the synthesized-corner mesh when fed the midpoint
+ *     corners of a uniform grid (ties the new path to the old one on the geometry they share; the
+ *     block edge is where the two differ, by design).
  */
 #include <gtest/gtest.h>
 
@@ -129,19 +130,25 @@ TEST(BlockMesh, NodesAreExactlyTheGivenCorners) {
     }
 }
 
-TEST(BlockMesh, MatchesSynthesizedCornersOnAUniformGrid) {
-    // On a uniform grid the midpoint corners the old path synthesizes ARE the explicit corners, so the
-    // two meshes must coincide node for node; any disagreement means the corner layout convention
-    // (x fastest, (nx+1)*(ny+1)) drifted between the two builders.
+TEST(BlockMesh, MatchesSynthesizedInteriorCornersOnAUniformGrid) {
+    // Away from the block edge, the midpoint corners the old path synthesizes on a uniform grid ARE the
+    // explicit corners, so the two meshes must coincide there node for node; any disagreement means
+    // the corner layout convention (x fastest, (nx+1)*(ny+1)) drifted between the two builders.
+    // Edge nodes are left out on purpose. With no centre beyond the edge, the synthesis averages only
+    // the centres that exist and puts the node half a cell inside the true corner (the edge cells'
+    // centre line); that shortfall at tile edges and DE seams is what the explicit-corner path is for.
     const Block b = make_block(-60.0, -15.0);
     auto explicit_mesh = cece::io::build_block_mesh_with_corners(b.nx, b.ny, b.lon, b.lat, b.klon, b.klat);
     auto synthesized = cece::io::build_axis_mesh(b.nx, b.ny, b.lon, b.lat);
     ASSERT_EQ(explicit_mesh.n_nodes(), synthesized.n_nodes());
     const auto a = explicit_mesh.node_coords();
     const auto s = synthesized.node_coords();
-    for (size_t k = 0; k < explicit_mesh.n_nodes(); ++k) {
-        EXPECT_NEAR(a(k, 0), s(k, 0), 1e-9) << "lon of node " << k;
-        EXPECT_NEAR(a(k, 1), s(k, 1), 1e-9) << "lat of node " << k;
+    for (int j = 1; j < b.ny; ++j) {
+        for (int i = 1; i < b.nx; ++i) {
+            const size_t k = static_cast<size_t>(j) * (b.nx + 1) + i;
+            EXPECT_NEAR(a(k, 0), s(k, 0), 1e-9) << "lon of node " << k;
+            EXPECT_NEAR(a(k, 1), s(k, 1), 1e-9) << "lat of node " << k;
+        }
     }
 }
 

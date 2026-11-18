@@ -846,6 +846,7 @@ class TestStandaloneEarthAccessIngestHelper:
                 "earthaccess": mock_ea,
                 "earthaccess.exceptions": fake_exceptions,
                 "xarray": mock_xr,
+                "h5py": MagicMock(),  # only probed for availability
             },
         ):
             result = _standalone_ingest_mod._open_dataset(
@@ -955,7 +956,7 @@ class TestStandaloneEarthAccessIngestHelper:
         mock_xr = MagicMock()
         mock_xr.open_dataset.return_value.__enter__.return_value = dataset
 
-        with patch.dict(sys.modules, {"xarray": mock_xr}):
+        with patch.dict(sys.modules, {"xarray": mock_xr, "h5py": MagicMock()}):
             _stage_mod._validate_downloaded_variables(
                 {
                     "name": "merra2_par",
@@ -978,7 +979,7 @@ class TestStandaloneEarthAccessIngestHelper:
         mock_xr.open_dataset.return_value.__enter__.return_value = dataset
 
         with (
-            patch.dict(sys.modules, {"xarray": mock_xr}),
+            patch.dict(sys.modules, {"xarray": mock_xr, "h5py": MagicMock()}),
             pytest.raises(RuntimeError, match=r"PARDF.*SZA.*Available variables"),
         ):
             _stage_mod._validate_downloaded_variables(
@@ -1012,6 +1013,7 @@ class TestStandaloneEarthAccessIngestHelper:
                 ["sample.nc4"],
             )
 
+    @requires_xarray
     def test_helper_interpolates_to_target_grid(self):
         ds = xr.Dataset(
             {
