@@ -74,10 +74,20 @@ set(CECE_TEST_MPI_ROOT_ENVIRONMENT "OMPI_ALLOW_RUN_AS_ROOT=1" "OMPI_ALLOW_RUN_AS
 #
 # Tests run from the build root (not this subdirectory's binary dir), where
 # the test binaries also land (CMAKE_RUNTIME_OUTPUT_DIRECTORY in tests/).
+#
+# NO_PRETTY_VALUES keeps a value-parameterized test's CTest name the gtest
+# name (Oracle/Suite.Test/cold_t, from the suite's name generator). With
+# pretty values, CMake 3.x rewrites only a numeric index (/0) into the value
+# and otherwise leaves gtest's whole "  # GetParam() = ..." listing comment in
+# the name, and CMake 4.x swaps the generated name for the printed value;
+# either makes names that differ between CMake versions, or (for a struct
+# with no printer) between runs, since gtest dumps its bytes, pointers
+# included.
 function(gtest_discover_tests target)
   _gtest_discover_tests(
     ${target}
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    NO_PRETTY_VALUES
     PROPERTIES LABELS np1 ENVIRONMENT_MODIFICATION "OMP_PROC_BIND=set:false" ${ARGN}
   )
 endfunction()

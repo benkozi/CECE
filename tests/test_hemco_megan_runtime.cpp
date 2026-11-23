@@ -58,6 +58,12 @@ struct OracleRow {
     double expected;
 };
 
+// gtest's printer for the parameter (GetParam() in listings and failure
+// messages): the case id, not a dump of the struct's bytes.
+void PrintTo(const OracleRow& row, std::ostream* os) {
+    *os << row.case_id;
+}
+
 std::vector<OracleRow> LoadOracle(const std::string& path) {
     std::vector<OracleRow> rows;
     std::ifstream stream(path);
