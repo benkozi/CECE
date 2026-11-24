@@ -26,7 +26,7 @@ module cece_cap_mod
 
   private
 
-  public :: CECE_SetServices, CECE_SetConfigPath, CECE_SetHostGeometry
+  public :: CECE_SetServices, CECE_SetConfigPath, CECE_SetHostGeometry, cece_nuopc_export_spec
 
   !> @brief Shared simulation handle (opaque cece::CeceSimulation*).
   type(c_ptr), save :: g_sim_ptr = c_null_ptr
