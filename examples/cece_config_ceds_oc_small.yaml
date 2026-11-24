@@ -19,6 +19,9 @@ driver:
   start_time: "2023-01-01T00:00:00"
   end_time: "2023-02-01T00:00:00"
   timestep_seconds: 2592000 # ~30 days; monthly cadence -> distinct records
+  # A grid generated from driver.grid has centres only; conservative mapping
+  # needs declared cell boundaries (midpoints of the uniform axes).
+  geometry_reconstruction: "rectilinear_midpoint"
   grid:
     nx: 72
     ny: 36

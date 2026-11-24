@@ -53,14 +53,14 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/data/OC-em-anthro_CMIP_CEDS_2023.nc")
       $<TARGET_FILE:cece_standalone_driver> --config
       ${PROJECT_SOURCE_DIR}/examples/cece_config_ceds_oc_small_coupled.yaml --dictionary
       ${CMAKE_CURRENT_SOURCE_DIR}/test_field_dictionary.yaml --comparator
-      ${PROJECT_SOURCE_DIR}/tests/nccmp_var.c --var oc --workdir
+      $<TARGET_FILE:nccmp_var> --var oc --workdir
       ${CMAKE_BINARY_DIR}/_coupling_workdir
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
   )
   set_tests_properties(
     test_nuopc_field_coupling
     PROPERTIES
-      DEPENDS "cece_nuopc_coupling_test;cece_nuopc_app;cece_standalone_driver"
+      DEPENDS "cece_nuopc_coupling_test;cece_nuopc_app;cece_standalone_driver;nccmp_var"
       ENVIRONMENT
         "FI_PROVIDER=tcp;I_MPI_FABRICS=shm;OMPI_ALLOW_RUN_AS_ROOT=1;OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1"
       TIMEOUT 900

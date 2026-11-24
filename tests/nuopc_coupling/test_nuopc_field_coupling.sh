@@ -30,7 +30,7 @@
 #       --cxx-driver  <path to cece_standalone_driver> \
 #       --config      <path to coupled fixture yaml> \
 #       --dictionary  <path to field dictionary yaml> \
-#       --comparator  <path to nccmp_var.c> \
+#       --comparator  <path to the nccmp_var binary> \
 #       --var         <data field name, e.g. "oc"> \
 #       --workdir     <scratch dir (created; kept on failure)>
 #
